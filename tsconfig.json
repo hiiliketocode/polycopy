@@ -31,5 +31,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "supabase/functions", "scripts", "temp-Rebrand"]
+  "exclude": ["node_modules", "supabase/functions", "scripts", "temp-Rebrand", "mcp-server", "workers"]
 }

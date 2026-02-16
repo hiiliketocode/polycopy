@@ -21,6 +21,9 @@ import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-cli
 import { unlockCapital } from '@/lib/live-trading/capital-manager';
 import { fetchAllRows } from '@/lib/live-trading/paginated-query';
 import { getActualFillPrice } from '@/lib/polymarket/fill-price';
+import { emitOrderEvent } from '@/lib/live-trading/event-bus';
+
+const LOST_ORDER_THRESHOLD = 3;
 
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -44,7 +47,7 @@ export async function POST(request: Request) {
         // ═══════════════════════════════════════════════════════════════
         const { data: pendingOrders, error: fetchError } = await supabase
             .from('lt_orders')
-            .select('lt_order_id, strategy_id, user_id, order_id, signal_size_usd, executed_size_usd, shares_bought, status')
+            .select('lt_order_id, strategy_id, user_id, order_id, signal_size_usd, executed_size_usd, shares_bought, status, order_not_found_count')
             .in('status', ['PENDING', 'PARTIAL'])
             .not('order_id', 'is', null)
             .order('created_at', { ascending: true })
@@ -79,8 +82,49 @@ export async function POST(request: Request) {
 
                 for (const order of orders) {
                     try {
-                        const clobOrder = await client.getOrder(order.order_id) as any;
-                        if (!clobOrder) continue;
+                        let clobOrder: any;
+                        try {
+                            clobOrder = await client.getOrder(order.order_id);
+                        } catch (clobErr: any) {
+                            clobOrder = null;
+                        }
+
+                        if (!clobOrder) {
+                            const currentCount = (order.order_not_found_count ?? 0) + 1;
+                            await supabase
+                                .from('lt_orders')
+                                .update({
+                                    order_not_found_count: currentCount,
+                                    updated_at: now.toISOString(),
+                                })
+                                .eq('lt_order_id', order.lt_order_id);
+
+                            if (currentCount >= LOST_ORDER_THRESHOLD) {
+                                const toUnlock = Number(order.signal_size_usd) || 0;
+                                if (toUnlock > 0.01) {
+                                    await unlockCapital(supabase, order.strategy_id, toUnlock);
+                                }
+                                await supabase
+                                    .from('lt_orders')
+                                    .update({
+                                        status: 'LOST',
+                                        outcome: 'CANCELLED',
+                                        updated_at: now.toISOString(),
+                                    })
+                                    .eq('lt_order_id', order.lt_order_id);
+                                emitOrderEvent('OrderLost', {
+                                    lt_order_id: order.lt_order_id,
+                                    strategy_id: order.strategy_id,
+                                    order_id: order.order_id,
+                                    status: 'LOST',
+                                    signal_size_usd: toUnlock,
+                                    timestamp: now.toISOString(),
+                                    order_not_found_count: currentCount,
+                                });
+                                console.log(`[lt/sync-order-status] LOST order ${order.order_id} (not found ${currentCount}x) — unlocked $${toUnlock.toFixed(2)}`);
+                            }
+                            continue;
+                        }
 
                         const sizeMatched = parseFloat(clobOrder.size_matched || '0') || 0;
                         const originalSize = parseFloat(clobOrder.original_size || clobOrder.size || '0') || 0;
@@ -130,6 +174,7 @@ export async function POST(request: Request) {
                                 status: newStatus,
                                 fully_filled_at: newStatus === 'FILLED' ? now.toISOString() : null,
                                 outcome: newStatus === 'CANCELLED' ? 'CANCELLED' : undefined,
+                                order_not_found_count: 0,
                                 updated_at: now.toISOString(),
                             })
                             .eq('lt_order_id', order.lt_order_id);
@@ -155,6 +200,19 @@ export async function POST(request: Request) {
                                 console.log(`[lt/sync-order-status] Unlocked $${unfilledToUnlock.toFixed(2)} for ${newStatus} order ${order.order_id}`);
                             }
                         }
+
+                        const eventType = newStatus === 'FILLED' ? 'OrderFilled' : newStatus === 'CANCELLED' ? 'OrderCancelled' : 'OrderPartialFill';
+                        emitOrderEvent(eventType, {
+                            lt_order_id: order.lt_order_id,
+                            strategy_id: order.strategy_id,
+                            order_id: order.order_id,
+                            status: newStatus,
+                            signal_size_usd: Number(order.signal_size_usd) || 0,
+                            executed_size_usd: executedSizeUsd,
+                            shares_bought: sizeMatched,
+                            fill_rate: +fillRate.toFixed(4),
+                            timestamp: now.toISOString(),
+                        });
 
                         updated++;
                         console.log(`[lt/sync-order-status] ${order.order_id}: ${order.status} → ${newStatus} (${sizeMatched}/${originalSize} filled)`);

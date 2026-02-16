@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "polycopy": {
+      "command": "npx",
+      "args": ["tsx", "src/index.ts"],
+      "cwd": "mcp-server",
+      "env": {
+        "POLYCOPY_API_URL": "https://polycopy.app",
+        "CRON_SECRET": "YOUR_CRON_SECRET_HERE"
+      }
+    }
+  }
+}

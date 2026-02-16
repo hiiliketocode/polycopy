@@ -28,6 +28,8 @@ import { lockCapitalForTrade, unlockCapital, type CapitalState } from './capital
 import { checkRisk, recordDailySpend, loadStrategyRiskState } from './risk-manager-v2';
 import { resolveTokenId } from './token-cache';
 import { getActualFillPrice } from '@/lib/polymarket/fill-price';
+import { fetchOrderBook, getVolumeForPrice } from '@/lib/polymarket/order-book';
+import { emitOrderEvent } from './event-bus';
 import type { LTLogger } from './lt-logger';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -392,6 +394,22 @@ export async function executeTrade(
         });
     }
 
+    // ── Step 7c: Pre-execution liquidity check (order book depth) ──
+    const book = await fetchOrderBook(tokenId);
+    if (book) {
+      const priceWithSlippage = finalPrice * (1 + slippagePct / 100);
+      const availableVolume = getVolumeForPrice(book, side, priceWithSlippage);
+      if (availableVolume < finalSize * 0.5) {
+        await unlockCapital(supabase, strategy.strategy_id, betSize);
+        await traceLogger.warn('ORDER_PREP', `Insufficient liquidity: need ~${finalSize} contracts at ${priceWithSlippage.toFixed(4)}, available ${availableVolume.toFixed(0)}`, {
+          required_size: finalSize,
+          available_volume: availableVolume,
+          price_with_slippage: priceWithSlippage,
+        });
+        return { success: false, error: `Insufficient order book liquidity (${availableVolume.toFixed(0)} available)`, stage: 'ORDER_PREP', bet_size: betSize };
+      }
+    }
+
     // Default to GTC with 10-min expiration (GTD under the hood)
     const ORDER_EXPIRATION_MINUTES = 10;
     const expiration = Math.floor(Date.now() / 1000) + ORDER_EXPIRATION_MINUTES * 60;
@@ -537,6 +555,15 @@ export async function executeTrade(
         // Do NOT record daily spend for pending orders — only count when filled
         // (the sync cron will record spend when the order fills)
 
+        emitOrderEvent('OrderPlaced', {
+            lt_order_id: ltOrderId,
+            strategy_id: strategy.strategy_id,
+            order_id: orderId,
+            status: 'PENDING',
+            signal_size_usd: betSize,
+            timestamp: now,
+        });
+
         await traceLogger.info('ORDER_RESULT', `Order live on book as PENDING — will be tracked by sync cron`, {
             order_id: orderId,
             lt_order_id: ltOrderId,
@@ -582,6 +609,7 @@ export async function executeTrade(
 
     // Insert lt_orders
     const ltOrderId = randomUUID();
+    const eventType = fillRate >= 1 ? 'OrderFilled' : 'OrderPartialFill';
     const { error: ltInsertError } = await supabase
         .from('lt_orders')
         .insert({
@@ -632,6 +660,18 @@ export async function executeTrade(
             shares_bought: sharesBought,
         };
     }
+
+    emitOrderEvent(eventType, {
+        lt_order_id: ltOrderId,
+        strategy_id: strategy.strategy_id,
+        order_id: orderId,
+        status: fillRate >= 1 ? 'FILLED' : 'PARTIAL',
+        signal_size_usd: betSize,
+        executed_size_usd: executedSizeUsd,
+        shares_bought: sharesBought,
+        fill_rate: +fillRate.toFixed(4),
+        timestamp: now,
+    });
 
     // Record daily spend
     await recordDailySpend(supabase, strategy.strategy_id, executedSizeUsd);
