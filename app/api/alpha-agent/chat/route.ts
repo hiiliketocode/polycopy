@@ -255,69 +255,86 @@ export async function POST(request: Request) {
     steps.push(step('strategist', `Response generated in ${(llmDuration / 1000).toFixed(1)}s`, `${tokensUsed} tokens used`));
 
     // ================================================================
-    // EXECUTOR AGENT: Parse response and execute actions
     // ================================================================
-    let reply: string;
-    let actionResult: ActionResult | null = null;
+    // TOOL-USE LOOP: Agent can chain multiple queries (max 4 iterations)
+    // ================================================================
+    let reply: string = '';
+    let allActionResults: ActionResult[] = [];
+    const MAX_TOOL_ITERATIONS = 4;
 
     try {
-      const parsed = JSON.parse(responseText);
-      reply = parsed.reply || responseText;
+      let currentResponse = responseText;
 
-      if (parsed.action && parsed.action.action_type && parsed.action.action_type !== 'none') {
+      for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+        let parsed;
+        try { parsed = JSON.parse(currentResponse); } catch { reply = currentResponse; break; }
+
+        // Capture the reply text (may be updated on later iterations)
+        if (parsed.reply) reply = parsed.reply;
+
+        // Check if there's an action to execute
+        if (!parsed.action || !parsed.action.action_type || parsed.action.action_type === 'none') {
+          if (iteration === 0) steps.push(step('executor', 'No action needed (conversation only)'));
+          break;
+        }
+
         const actionType = parsed.action.action_type;
-        const actionBot = parsed.action.bot_id || botId || 'unknown';
         const actionParams = parsed.action.parameters || {};
         const paramSummary = actionType === 'query_supabase'
           ? `table=${actionParams.table}, select=${actionParams.select || '*'}, filters=${JSON.stringify(actionParams.filters || {})}, order=${actionParams.order_by || 'none'}`
           : actionType === 'query_bigquery'
-          ? `SQL: ${(actionParams.sql || '').substring(0, 120)}...`
+          ? `SQL: ${(actionParams.sql || '').substring(0, 120)}`
           : actionType === 'search_markets'
           ? `query="${actionParams.query}"`
           : actionType === 'update_config'
           ? `changes=${JSON.stringify(actionParams.changes || {})}`
           : `${JSON.stringify(actionParams).substring(0, 100)}`;
-        steps.push(step('executor', `Executing: ${actionType}`, paramSummary));
+        steps.push(step('executor', `[${iteration + 1}/${MAX_TOOL_ITERATIONS}] ${actionType}`, paramSummary));
 
         const action = { ...parsed.action, bot_id: parsed.action.bot_id || botId || undefined };
-        actionResult = await executeChatAction(supabase, action);
+        const actionResult = await executeChatAction(supabase, action);
+        allActionResults.push(actionResult);
 
-        if (actionResult.success) {
-          steps.push(step('executor', `Action succeeded: ${actionResult.message}`));
-
-          // For data queries: do a follow-up LLM call to interpret the results
-          const dataActions = ['query_bigquery', 'query_supabase', 'search_markets', 'get_market_price'];
-          if (dataActions.includes(actionType) && actionResult.data) {
-            steps.push(step('strategist', 'Interpreting query results...'));
-            const interpretStart = Date.now();
-            const dataStr = JSON.stringify(actionResult.data, null, 1).substring(0, 8000);
-            const followUp = await chat.sendMessage(
-              `Here are the results of the ${actionType} you requested:\n\n${dataStr}\n\nNow analyze these results and respond to the admin's original question. Include specific numbers and insights from the data. Respond with JSON: {"reply": "your analysis of the data", "action": {"action_type": "none", "parameters": {}, "reasoning": "", "confirmation_required": false}}`
-            );
-            const followUpText = followUp.response.text();
-            const followUpTokens = followUp.response.usageMetadata?.totalTokenCount || 0;
-            steps.push(step('strategist', `Interpreted in ${((Date.now() - interpretStart) / 1000).toFixed(1)}s`, `${followUpTokens} tokens`));
-
-            try {
-              const followUpParsed = JSON.parse(followUpText);
-              reply = followUpParsed.reply || followUpText;
-            } catch {
-              reply = followUpText;
-            }
-            reply += `\n\n*Data source: ${actionResult.message}*`;
-          } else {
-            reply += `\n\n**Action taken:** ${actionResult.message}`;
-          }
-        } else {
+        if (!actionResult.success) {
           steps.push(step('executor', `Action failed: ${actionResult.message}`));
           reply += `\n\n**Action failed:** ${actionResult.message}`;
+          break;
         }
-      } else {
-        steps.push(step('executor', 'No action needed (conversation only)'));
+
+        steps.push(step('executor', `Result: ${actionResult.message}`));
+
+        // For data queries: feed results back and let agent decide if it needs another query
+        const dataActions = ['query_bigquery', 'query_supabase', 'search_markets', 'get_market_price'];
+        if (dataActions.includes(actionType) && actionResult.data) {
+          steps.push(step('strategist', `Analyzing results (iteration ${iteration + 1})...`));
+          const interpretStart = Date.now();
+          const dataStr = JSON.stringify(actionResult.data, null, 1).substring(0, 6000);
+
+          const followUpPrompt = iteration < MAX_TOOL_ITERATIONS - 1
+            ? `Results from ${actionType}:\n\n${dataStr}\n\nAnalyze these results. If you need MORE data to fully answer the question (e.g. need to query another table, or need different columns), include another action. If you have enough data, set action_type to "none" and provide your complete analysis.\n\nRespond with JSON: {"reply": "your analysis so far", "action": {"action_type": "none or another query", "parameters": {}, "reasoning": "", "confirmation_required": false}}`
+            : `Results from ${actionType}:\n\n${dataStr}\n\nThis is the final iteration. Provide your complete analysis with all the data gathered so far. Respond with JSON: {"reply": "your complete analysis", "action": {"action_type": "none", "parameters": {}, "reasoning": "", "confirmation_required": false}}`;
+
+          const followUp = await chat.sendMessage(followUpPrompt);
+          currentResponse = followUp.response.text();
+          const followUpTokens = followUp.response.usageMetadata?.totalTokenCount || 0;
+          steps.push(step('strategist', `Response in ${((Date.now() - interpretStart) / 1000).toFixed(1)}s`, `${followUpTokens} tokens`));
+          // Loop continues — will parse the new response and check for another action
+        } else {
+          // Non-data action (config change, memory, etc.) — just report and stop
+          reply += `\n\n**Action taken:** ${actionResult.message}`;
+          break;
+        }
       }
-    } catch {
+
+      // Add data source citations
+      const dataSources = allActionResults.filter(r => r.success && r.data).map(r => r.message);
+      if (dataSources.length > 0) {
+        reply += `\n\n*Data sources: ${dataSources.join(' | ')}*`;
+      }
+
+    } catch (parseErr) {
       reply = responseText;
-      steps.push(step('executor', 'Response parsed as plain text (no structured action)'));
+      steps.push(step('executor', 'Response parsed as plain text'));
     }
 
     const totalDuration = Date.now() - t0;
@@ -426,7 +443,12 @@ When the admin asks you to change something, do something, or you determine an a
 
 DOME & GAMMA: These are Polymarket's live market APIs. You access them via search_markets (keyword search) and get_market_price (by condition_id). When the admin asks about a specific market, price, or wants to search markets — use these actions.
 
-IMPORTANT: When you need data, USE these query actions proactively. Don't say "I would need to query..." — actually query it. Results are fed back for analysis.
+IMPORTANT RULES:
+1. When you need data, USE query actions. Don't say "I would need to query" — actually query it.
+2. You can CHAIN multiple queries. After each query result, you can request another query on a different table.
+3. For example: first query ft_wallets for top bots, then query ft_orders for their win rates. Up to 4 queries per turn.
+4. Results from each query are fed back to you automatically. Use them to build a complete answer.
+5. Never present incomplete analysis when another query would complete it.
 
 ## RESPONSE FORMAT
 You MUST respond with valid JSON:
