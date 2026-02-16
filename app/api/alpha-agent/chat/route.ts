@@ -343,7 +343,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       reply,
-      action_result: actionResult,
+      action_result: allActionResults,
       thinking_steps: steps,
       tokens_used: tokensUsed,
       duration_ms: totalDuration,
