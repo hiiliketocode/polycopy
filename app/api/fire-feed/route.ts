@@ -85,11 +85,13 @@ export async function GET() {
 
     console.log('[fire-feed] Starting — fetching tracked traders with stats...');
 
-    // ── 1. Get tracked wallets that have stats (ordered by recent activity) ──
+    // ── 1. Get tracked wallets with decent stats (WR >= 52%, active recently) ──
     const { data: globalRows, error: globalErr } = await supabase
       .from('trader_global_stats')
       .select('wallet_address, l_win_rate, d30_win_rate, d30_total_roi_pct, l_total_roi_pct, d30_avg_trade_size_usd, l_avg_trade_size_usd, l_avg_pos_size_usd, d30_count, l_count')
-      .order('d30_count', { ascending: false, nullsFirst: false })
+      .gte('d30_win_rate', 0.52)
+      .gte('d30_count', 10)
+      .order('d30_win_rate', { ascending: false, nullsFirst: false })
       .limit(MAX_TRADERS);
 
     if (globalErr) {
