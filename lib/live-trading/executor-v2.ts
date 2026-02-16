@@ -523,7 +523,8 @@ export async function executeTrade(
             updated_at: now,
         }, { onConflict: 'order_id' });
 
-        await supabase.from('lt_orders').insert({
+        // Upsert: may already have REJECTED row from prior retry — update to PENDING
+        await supabase.from('lt_orders').upsert({
             lt_order_id: ltOrderId,
             strategy_id: strategy.strategy_id,
             user_id: strategy.user_id,
@@ -552,7 +553,7 @@ export async function executeTrade(
             is_shadow: false,
             created_at: now,
             updated_at: now,
-        });
+        }, { onConflict: 'strategy_id,source_trade_id' });
 
         // Do NOT record daily spend for pending orders — only count when filled
         // (the sync cron will record spend when the order fills)
@@ -609,12 +610,12 @@ export async function executeTrade(
         updated_at: now,
     }, { onConflict: 'order_id' });
 
-    // Insert lt_orders
+    // Upsert lt_orders: may already have REJECTED row from prior retry — update to FILLED
     const ltOrderId = randomUUID();
     const eventType = fillRate >= 1 ? 'OrderFilled' : 'OrderPartialFill';
     const { error: ltInsertError } = await supabase
         .from('lt_orders')
-        .insert({
+        .upsert({
             lt_order_id: ltOrderId,
             strategy_id: strategy.strategy_id,
             user_id: strategy.user_id,
@@ -645,7 +646,7 @@ export async function executeTrade(
             risk_check_passed: true,
             is_force_test: false,
             is_shadow: false,
-        });
+        }, { onConflict: 'strategy_id,source_trade_id' });
 
     if (ltInsertError) {
         await traceLogger.error('ORDER_RESULT', `Failed to insert lt_orders: ${ltInsertError.message}`, {
@@ -714,7 +715,8 @@ async function recordRejectedOrder(
     rejectionReason: string,
     riskCheckFailed?: string,
 ): Promise<void> {
-    await supabase.from('lt_orders').insert({
+    // Upsert: may already have row from prior retry — update rejection details
+    await supabase.from('lt_orders').upsert({
         lt_order_id: randomUUID(),
         strategy_id: strategy.strategy_id,
         user_id: strategy.user_id,
@@ -737,7 +739,7 @@ async function recordRejectedOrder(
         rejection_reason: rejectionReason,
         is_force_test: false,
         is_shadow: false,
-    });
+    }, { onConflict: 'strategy_id,source_trade_id' });
     // Silently ignore errors — this is a diagnostic record
 }
 
