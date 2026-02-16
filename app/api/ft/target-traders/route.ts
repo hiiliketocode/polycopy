@@ -17,7 +17,6 @@ import { requireAdminOrCron } from '@/lib/ft-auth';
 import { parseExtendedFilters } from '@/lib/ft-sync/shared-logic';
 
 export const dynamic = 'force-dynamic';
-export const maxAge = 0;
 
 export async function GET(request: Request) {
   const authError = await requireAdminOrCron(request);
