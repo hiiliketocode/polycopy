@@ -1,8 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { verifyMessage } from 'ethers/lib/utils'
 import { Navigation } from '@/components/polycopy/navigation'
+import { createClient } from '@/lib/supabase/client'
+import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier'
 
 const TURNKEY_UI_ENABLED = process.env.NEXT_PUBLIC_TURNKEY_ENABLED === 'true'
 
@@ -43,6 +46,48 @@ type LinkStatus = {
 }
 
 export default function ConnectWalletTurnkeyPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const isV2 = searchParams.get('source') === 'v2'
+  const [premiumChecked, setPremiumChecked] = useState(false)
+  const [hasPremiumAccess, setHasPremiumAccess] = useState(false)
+
+  useEffect(() => {
+    // v2 allows all authenticated users to connect wallets
+    if (isV2) {
+      setPremiumChecked(true)
+      setHasPremiumAccess(true)
+      return
+    }
+
+    let cancelled = false
+    const checkPremium = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        if (!cancelled) router.replace('/settings')
+        return
+      }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_premium, is_admin')
+        .eq('id', user.id)
+        .single()
+      const tier = resolveFeatureTier(true, profile)
+      const isPremium = tierHasPremiumAccess(tier)
+      if (!cancelled) {
+        if (!isPremium) {
+          router.replace('/settings')
+          return
+        }
+        setHasPremiumAccess(true)
+        setPremiumChecked(true)
+      }
+    }
+    checkPremium()
+    return () => { cancelled = true }
+  }, [router, isV2])
+
   const [createLoading, setCreateLoading] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
   const [walletData, setWalletData] = useState<WalletCreateResponse | null>(null)
@@ -574,6 +619,15 @@ export default function ConnectWalletTurnkeyPage() {
       }
     }
   }, [autoCheckedAddress, handleAccountCheck, linkStatus])
+
+  if (!premiumChecked || !hasPremiumAccess) {
+    return (
+      <>
+        <Navigation />
+        <div className="max-w-xl mx-auto p-6 text-center text-slate-500">Loading...</div>
+      </>
+    )
+  }
 
   return (
     <>

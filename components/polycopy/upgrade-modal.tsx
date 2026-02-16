@@ -1,7 +1,8 @@
 "use client"
 
-import { Check, ArrowRight, Bot, Zap, Shield, LineChart, Sparkles } from "lucide-react"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { Crown, TrendingUp, Zap, Shield, LineChart, Sparkles } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { useUpgrade } from "@/hooks/useUpgrade"
 
 interface UpgradeModalProps {
@@ -14,110 +15,128 @@ export function UpgradeModal({ open, onOpenChange }: UpgradeModalProps) {
 
   const handleUpgrade = async () => {
     await upgrade()
+    // Modal will auto-close when user navigates to Stripe
   }
 
   const premiumFeatures = [
     {
-      icon: Zap,
-      label: "ZERO FEES ON ALL TRADES",
-      description: "No trading fees on any copy trade you execute",
+      icon: TrendingUp,
+      title: "Execute trades directly",
+      description: "Copy trades in seconds with pre-filled slippage",
+      note: "Requires existing Polymarket account"
     },
     {
-      icon: Bot,
-      label: "ALL COPY BOT STRATEGIES",
-      description: "Unlock every proprietary algorithm and ML strategy",
+      icon: Zap,
+      title: "Auto-close positions",
+      description: "Set trades to close when copied trader exits"
     },
     {
       icon: Shield,
-      label: "AUTO-CLOSE POSITIONS",
-      description: "Automatically exit when the trader you copied exits",
-    },
-    {
-      icon: Sparkles,
-      label: "AI / ML TRADE RECOMMENDATIONS",
-      description: "Machine learning powered trade signals on your feed",
+      title: "Advanced trade controls",
+      description: "Limit orders, custom slippage, and more"
     },
     {
       icon: LineChart,
-      label: "ADVANCED PORTFOLIO ANALYTICS",
-      description: "Deep performance insights and risk metrics",
+      title: "Portfolio tracking",
+      description: "Monitor your copy trading performance"
     },
+    {
+      icon: Sparkles,
+      title: "Early access",
+      description: "Get new features before everyone else"
+    }
   ]
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[520px] gap-0 border-0 bg-poly-cream p-0 overflow-hidden max-h-[90vh] overflow-y-auto">
-        <DialogTitle className="sr-only">Upgrade to Premium</DialogTitle>
-
-        {/* Header — yellow block */}
-        <div className="bg-poly-yellow px-8 pb-6 pt-8">
-          <p className="mb-1 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">
-            PREMIUM_ACCESS
-          </p>
-          <h2 className="mb-2 font-sans text-2xl font-black uppercase tracking-tight text-poly-black">
-            UPGRADE TO PREMIUM
-          </h2>
-          <p className="font-body text-sm leading-relaxed text-poly-black/70">
-            Unlock the full Polycopy arsenal. Zero fees, every bot, and AI-powered recommendations.
-          </p>
-        </div>
-
-        {/* Price block */}
-        <div className="border-b border-border bg-white px-8 py-6">
-          <div className="flex items-baseline gap-2">
-            <span className="font-sans text-5xl font-black text-poly-black">$20</span>
-            <span className="font-body text-sm text-muted-foreground">/ MONTH</span>
+      <DialogContent className="sm:max-w-[480px] p-0 gap-0 border-0 bg-gradient-to-b from-white to-slate-50 max-h-[90vh] overflow-y-auto">
+        <div className="p-5 pb-24 sm:pb-6">
+          {/* Header - Compact */}
+          <div className="text-center mb-3">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-yellow-400 to-amber-500 mb-2 shadow-lg">
+              <Crown className="h-6 w-6 text-white" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-900 mb-1">
+              Unlock All Features
+            </h2>
+            <p className="text-slate-600 text-sm">
+              The complete trading toolkit for serious Polymarket traders
+            </p>
           </div>
-          <p className="mt-1 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            BILLED MONTHLY &middot; CANCEL ANYTIME
-          </p>
-        </div>
 
-        {/* Features list */}
-        <div className="px-8 py-6">
-          <p className="mb-4 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            WHAT&rsquo;S INCLUDED
-          </p>
-          <div className="flex flex-col gap-4">
-            {premiumFeatures.map((feature) => {
-              const Icon = feature.icon
-              return (
-                <div key={feature.label} className="flex items-start gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center border border-border bg-white">
-                    <Icon className="h-4 w-4 text-poly-yellow" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-sans text-xs font-bold uppercase tracking-wide text-poly-black">
-                      {feature.label}
-                    </p>
-                    <p className="mt-0.5 font-body text-xs leading-relaxed text-muted-foreground">
-                      {feature.description}
-                    </p>
-                  </div>
+          {/* Pricing - Compact */}
+          <div className="relative bg-white rounded-xl p-3 mb-3 shadow-xl overflow-hidden">
+            {/* Gradient border effect */}
+            <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-yellow-400 via-amber-500 to-yellow-500 opacity-100" style={{ padding: '2px' }}>
+              <div className="h-full w-full bg-white rounded-xl"></div>
+            </div>
+            
+            {/* Content */}
+            <div className="relative z-10">
+              <div className="text-center">
+                <div className="flex items-baseline justify-center gap-2 mb-0.5">
+                  <span className="text-3xl sm:text-4xl font-bold text-slate-900">$20</span>
+                  <span className="text-base text-slate-600 font-medium">/month</span>
                 </div>
-              )
-            })}
+                <p className="text-xs text-slate-600">
+                  Billed monthly • Cancel anytime
+                </p>
+              </div>
+            </div>
           </div>
-        </div>
 
-        {/* CTA */}
-        <div className="border-t border-border bg-white px-8 py-6 pb-24 sm:pb-6">
-          <button
+          {/* Primary CTA Button - Above the fold */}
+          <Button
             onClick={handleUpgrade}
             disabled={loading}
-            className="flex w-full items-center justify-center gap-2 bg-poly-black py-4 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full h-12 mb-3 bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-500 hover:from-yellow-500 hover:via-amber-600 hover:to-yellow-600 text-slate-900 font-bold text-base shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed rounded-xl"
           >
             {loading ? (
-              "PROCESSING..."
+              "Loading..."
             ) : (
               <>
-                UPGRADE NOW <ArrowRight className="h-3.5 w-3.5" />
+                <Crown className="h-5 w-5 mr-2" />
+                Upgrade Now
               </>
             )}
-          </button>
-          <p className="mt-3 text-center font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
-            SECURE PAYMENT VIA STRIPE
-          </p>
+          </Button>
+
+          {/* Trust indicators */}
+          <div className="mb-4 text-center">
+            <p className="text-xs text-slate-500">🔒 Secure payment via Stripe</p>
+          </div>
+
+          {/* Features List - Collapsible section */}
+          <div className="bg-white rounded-xl p-3 shadow-sm">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              What's included:
+            </p>
+            <div className="space-y-2">
+              {premiumFeatures.map((feature, index) => {
+                const Icon = feature.icon
+                return (
+                  <div key={index} className="flex items-start gap-2">
+                    <div className="flex-shrink-0 w-6 h-6 rounded-lg bg-gradient-to-br from-yellow-100 to-amber-100 flex items-center justify-center">
+                      <Icon className="h-3 w-3 text-amber-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 leading-tight">
+                        {feature.title}
+                      </p>
+                      <p className="text-xs text-slate-600 mt-0.5 leading-snug">
+                        {feature.description}
+                      </p>
+                      {feature.note && (
+                        <p className="text-xs text-amber-700 mt-0.5 italic">
+                          {feature.note}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

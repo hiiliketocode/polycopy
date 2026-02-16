@@ -1,6 +1,7 @@
 "use client"
 
-import { ArrowRight } from "lucide-react"
+import { Crown } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 
 type PremiumUpsellBannerProps = {
@@ -17,35 +18,42 @@ export function PremiumUpsellBanner({ message, placement = "inline" }: PremiumUp
 
   if (placement === "profile-top") {
     return (
-      <div className="border border-poly-yellow bg-poly-yellow/10 p-4">
+      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-l-4 border-amber-500 p-4 rounded-lg">
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="font-sans text-xs font-bold uppercase tracking-wide text-poly-black">{message}</p>
-            <p className="mt-0.5 font-body text-xs text-muted-foreground">
-              Upgrade to Premium for $20/month
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="bg-amber-500 rounded-full p-2">
+              <Crown className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900">{message}</p>
+              <p className="text-sm text-slate-600">Upgrade to Premium for $20/month</p>
+            </div>
           </div>
-          <button
+          <Button
             onClick={handleUpgrade}
-            className="inline-flex shrink-0 items-center gap-1.5 bg-poly-yellow px-4 py-2 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
+            className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-semibold"
           >
-            UPGRADE <ArrowRight className="h-3 w-3" />
-          </button>
+            Upgrade
+          </Button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="border border-poly-yellow bg-poly-yellow/5 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <p className="font-sans text-[11px] font-bold uppercase tracking-wide text-poly-black">{message}</p>
-        <button
+    <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-amber-200 rounded-lg p-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Crown className="h-4 w-4 text-amber-600 flex-shrink-0" />
+          <p className="text-sm text-amber-900">{message}</p>
+        </div>
+        <Button
           onClick={handleUpgrade}
-          className="inline-flex shrink-0 items-center gap-1 bg-poly-yellow px-3 py-1.5 font-sans text-[9px] font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
+          size="sm"
+          className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-black font-semibold"
         >
-          UPGRADE <ArrowRight className="h-2.5 w-2.5" />
-        </button>
+          Upgrade
+        </Button>
       </div>
     </div>
   )

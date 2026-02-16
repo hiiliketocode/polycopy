@@ -393,7 +393,7 @@ export default function V2SettingsPage() {
                     </button>
                   ) : (
                     <Link
-                      href="/portfolio/connect-wallet"
+                      href="/portfolio/connect-wallet?source=v2"
                       className="inline-flex items-center gap-1 bg-poly-black px-4 py-2 font-sans text-[10px] font-bold uppercase tracking-widest text-white transition-all hover:bg-poly-yellow hover:text-poly-black"
                     >
                       CONNECT <Wallet className="h-3 w-3" />
@@ -576,7 +576,7 @@ export default function V2SettingsPage() {
                 DONE
               </button>
               <Link
-                href="/portfolio/connect-wallet"
+                href="/portfolio/connect-wallet?source=v2"
                 className="flex flex-1 items-center justify-center bg-poly-black py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-white transition-all hover:bg-poly-yellow hover:text-poly-black"
               >
                 RECONNECT

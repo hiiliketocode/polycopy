@@ -540,10 +540,8 @@ export function TradeCard({
   const [polyScoreData, setPolyScoreData] = useState<PolyScoreResponse | null>(null)
   const [polyScoreLoading, setPolyScoreLoading] = useState(false)
   const [polyScoreError, setPolyScoreError] = useState<string | null>(null)
-  // Client-side indicator badge state (fetches when server props aren't available)
-  const [indicatorScore, setIndicatorScore] = useState<number | null>(polySignalScore ?? null)
-  const [indicatorRecommendation, setIndicatorRecommendation] = useState<string | null>(polySignalRecommendation ?? null)
-  const indicatorFetchedRef = useRef<string | null>(null)
+  const [polyScoreDrawerOpen, setPolyScoreDrawerOpen] = useState(false)
+  const [assessmentPanelOpen, setAssessmentPanelOpen] = useState(false)
   const [assessmentMessages, setAssessmentMessages] = useState<GeminiChatMessage[]>([])
   const [assessmentLoading, setAssessmentLoading] = useState(false)
   const [assessmentError, setAssessmentError] = useState<string | null>(null)
@@ -595,8 +593,7 @@ export function TradeCard({
   const [cancelStatus, setCancelStatus] = useState<CancelStatus | null>(null)
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showTradeDetails, setShowTradeDetails] = useState(false)
-  const [isInsightsDrawerOpen, setIsInsightsDrawerOpen] = useState(false)
-  const [insightsDrawerTab, setInsightsDrawerTab] = useState<"positions" | "indicators" | "insights" | "gemini">("positions")
+  const [isPositionDrawerOpen, setIsPositionDrawerOpen] = useState(false)
   const [positionDrawerTab, setPositionDrawerTab] = useState<"trader" | "user">("trader")
   const [livePrice, setLivePrice] = useState<number | null>(
     typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)
@@ -810,12 +807,11 @@ export function TradeCard({
   const StatusIcon = statusIconMap[statusBadgeVariant]
 
   const badgeBaseClass =
-    "h-7 px-2.5 font-sans text-[10px] font-bold uppercase tracking-wide border"
+    "h-7 px-2.5 text-[11px] font-semibold border shadow-[0_1px_0_rgba(15,23,42,0.06)]"
   const espnLink = espnUrl?.trim() ? espnUrl : undefined
   const showTraderPositionBadge = Boolean(traderPositionBadge?.trades?.length)
   const showUserPositionBadge = Boolean(userPositionBadge?.trades?.length)
   const hasAnyPositionBadge = showTraderPositionBadge || showUserPositionBadge
-  const totalPositionCount = (traderPositionBadge?.trades?.length ?? 0) + (userPositionBadge?.trades?.length ?? 0)
   const activePositionBadge =
     positionDrawerTab === "user" ? userPositionBadge : traderPositionBadge
   const traderHedgingInfo = useMemo(() => {
@@ -937,11 +933,11 @@ export function TradeCard({
 
   const statusBadgeClass = cn(
     badgeBaseClass,
-    statusBadgeVariant === "live" && "bg-profit-green/10 text-profit-green border-profit-green/30",
-    statusBadgeVariant === "ended" && "bg-loss-red/10 text-loss-red border-loss-red/30",
-    statusBadgeVariant === "resolved" && "bg-loss-red/10 text-loss-red border-loss-red/30",
-    statusBadgeVariant === "scheduled" && "bg-poly-yellow/10 text-poly-black border-poly-yellow/30",
-    statusBadgeVariant === "open" && "bg-accent text-muted-foreground border-border",
+    statusBadgeVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusBadgeVariant === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
+    statusBadgeVariant === "resolved" && "bg-rose-50 text-rose-700 border-rose-200",
+    statusBadgeVariant === "scheduled" && "bg-amber-50 text-amber-700 border-amber-200",
+    statusBadgeVariant === "open" && "bg-slate-50 text-slate-600 border-slate-200",
   )
 
   const showScoreBadge =
@@ -956,8 +952,8 @@ export function TradeCard({
   const combinedScoreBadgeClass = cn(
     badgeBaseClass,
     "relative h-auto min-h-[34px] flex-col gap-0 px-3 pt-1 pb-3 leading-none w-[200px] min-w-[200px]",
-    statusBadgeVariant === "live" && "bg-profit-green/10 text-profit-green border-profit-green/30",
-    statusBadgeVariant === "ended" && "bg-loss-red/10 text-loss-red border-loss-red/30",
+    statusBadgeVariant === "live" && "bg-emerald-50 text-emerald-700 border-emerald-200",
+    statusBadgeVariant === "ended" && "bg-rose-50 text-rose-700 border-rose-200",
   )
 
   // Show event time badge for non-live, non-resolved, non-ended markets
@@ -1307,26 +1303,15 @@ export function TradeCard({
     return "--"
   }
 
-  const handleInsightsDrawerToggle = (preferredTab?: "positions" | "indicators" | "insights" | "gemini") => {
-    if (isInsightsDrawerOpen && (!preferredTab || insightsDrawerTab === preferredTab)) {
-      setIsInsightsDrawerOpen(false)
+  const handlePositionBadgeClick = () => {
+    if (!hasAnyPositionBadge) return
+    if (isPositionDrawerOpen) {
+      setIsPositionDrawerOpen(false)
       return
     }
-    if (preferredTab) {
-      setInsightsDrawerTab(preferredTab)
-    } else if (!isInsightsDrawerOpen) {
-      // Default to positions if we have them, otherwise indicators
-      setInsightsDrawerTab(hasAnyPositionBadge ? "positions" : "indicators")
-    }
-    if (!isInsightsDrawerOpen && hasAnyPositionBadge) {
-      const preferredPositionTab = showUserPositionBadge ? "user" : "trader"
-      setPositionDrawerTab(preferredPositionTab)
-    }
-    setIsInsightsDrawerOpen(true)
-    // Auto-run Gemini if switching to that tab and haven't fetched yet
-    if (preferredTab === "gemini" && isAdmin && !assessmentMessages.length && !assessmentLoading) {
-      runAssessment()
-    }
+    const preferredTab = showUserPositionBadge ? "user" : "trader"
+    setPositionDrawerTab(preferredTab)
+    setIsPositionDrawerOpen(true)
   }
 
   const formatPositionTimestamp = (timestamp?: number | null) => {
@@ -1341,7 +1326,7 @@ export function TradeCard({
   }
 
   const renderPositionDrawer = () => {
-    if (!isInsightsDrawerOpen || !activePositionBadge) return null
+    if (!isPositionDrawerOpen || !activePositionBadge) return null
     const trades = activePositionBadge.trades ?? []
     if (trades.length === 0) return null
     const visibleTrades = trades
@@ -1394,20 +1379,20 @@ export function TradeCard({
     ].filter((option) => option.enabled)
 
     return (
-      <div className="rounded-none border border-border bg-accent px-3 py-2">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           {tabOptions.length > 1 ? (
-            <div className="flex items-center gap-1 rounded-none border border-border bg-card p-1">
+            <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1">
               {tabOptions.map((option) => (
                 <button
                   key={option.key}
                   type="button"
                   onClick={() => setPositionDrawerTab(option.key)}
                   className={cn(
-                    "rounded-none px-2.5 py-1 font-sans text-[10px] font-bold uppercase tracking-wide transition",
+                    "rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
                     positionDrawerTab === option.key
-                      ? "bg-poly-black text-white"
-                      : "text-muted-foreground hover:text-foreground"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:text-slate-700"
                   )}
                 >
                   {option.label}
@@ -1415,7 +1400,7 @@ export function TradeCard({
               ))}
             </div>
           ) : (
-            <span className="bg-poly-black px-3 py-1 font-sans text-[10px] font-bold uppercase tracking-wide text-white">
+            <span className="rounded-full bg-slate-900 px-3 py-1 text-[11px] font-semibold text-white">
               {tabOptions[0]?.label}
             </span>
           )}
@@ -1428,7 +1413,7 @@ export function TradeCard({
                       variant="secondary"
                       className={cn(
                         badgeBaseClass,
-                        "h-7 px-2.5 bg-poly-yellow/20 text-poly-black border-poly-yellow"
+                        "h-7 px-2.5 text-xs font-bold bg-yellow-100 text-yellow-900 border-2 border-yellow-400"
                       )}
                     >
                       <ArrowLeftRight className="h-3.5 w-3.5" />
@@ -1446,7 +1431,7 @@ export function TradeCard({
         <div className="mt-2 space-y-2">
           {visibleTrades.map((trade, index) => {
             const sideLabel = trade.side === "SELL" ? "Sell" : "Buy"
-            const sideClass = trade.side === "SELL" ? "text-loss-red" : "text-profit-green"
+            const sideClass = trade.side === "SELL" ? "text-rose-600" : "text-emerald-600"
             const quantityLabel = formatPositionQuantity(trade)
             const contractsLabel =
               Number.isFinite(trade.size ?? NaN) ? formatContracts(trade.size ?? 0) : "--"
@@ -1462,9 +1447,9 @@ export function TradeCard({
                 : "--"
             const outcomeBadgeClass = (() => {
               const normalized = trade.outcome?.trim().toLowerCase()
-              if (normalized === "yes") return "bg-profit-green/10 text-profit-green border-profit-green/30"
-              if (normalized === "no") return "bg-loss-red/10 text-loss-red border-loss-red/30"
-              return "bg-accent text-muted-foreground border-border"
+              if (normalized === "yes") return "bg-emerald-50 text-emerald-700 border-emerald-200"
+              if (normalized === "no") return "bg-red-50 text-red-700 border-red-200"
+              return "bg-slate-100 text-slate-600 border-slate-200"
             })()
             const primaryDetail = isUserTab
               ? amountLabel !== "--"
@@ -1484,42 +1469,42 @@ export function TradeCard({
                 className="flex items-start justify-between gap-3 text-xs"
               >
                 <div className="min-w-0">
-                  <p className="flex items-center gap-1 truncate text-foreground">
-                    <span className={cn("font-sans font-bold uppercase tracking-wide", sideClass)}>{sideLabel}</span>
+                  <p className="flex items-center gap-1 truncate text-slate-700">
+                    <span className={cn("font-semibold", sideClass)}>{sideLabel}</span>
                     <Badge
                       variant="secondary"
-                      className={`font-sans font-bold text-[10px] uppercase tracking-wide ${outcomeBadgeClass}`}
+                      className={`font-semibold text-xs ${outcomeBadgeClass}`}
                     >
                       {formatOutcomeLabel(trade.outcome)}
                     </Badge>
                   </p>
-                  <p className="font-body text-[11px] text-muted-foreground tabular-nums">
+                  <p className="text-[11px] text-slate-400">
                     {timestampLabel ?? "--"}
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="font-body text-muted-foreground tabular-nums">{primaryDetail}</p>
-                  <p className="font-body text-[11px] text-muted-foreground tabular-nums">{secondaryDetail}</p>
+                  <p className="text-slate-500">{primaryDetail}</p>
+                  <p className="text-[11px] text-slate-400">{secondaryDetail}</p>
                 </div>
               </div>
             )
           })}
         </div>
-        <div className="mt-2 flex items-end justify-between gap-3 border-t border-border pt-2">
-          <div className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+        <div className="mt-2 flex items-end justify-between gap-3 border-t border-slate-200 pt-2">
+          <div className="text-[11px] font-semibold text-slate-500">
             Total{hasSellTrades ? " (Buys - Sells)" : ""}
-            <div className="font-body text-sm font-semibold tabular-nums text-foreground">{totalAmountLabel}</div>
-            <div className="font-body text-[11px] font-medium tabular-nums text-muted-foreground normal-case tracking-normal">
+            <div className="text-sm font-semibold text-slate-700">{totalAmountLabel}</div>
+            <div className="text-[11px] font-medium text-slate-400">
               Ave Price {avgPriceLabel}
             </div>
             {showHedgingDetails ? (
-              <div className="text-[11px] font-medium text-muted-foreground">
+              <div className="text-[11px] font-medium text-slate-500">
                 {traderHedgingInfo.isEven || !traderHedgingInfo.longerOutcome ? (
                   "Evenly hedged across outcomes"
                 ) : (
                   <>
                     Longer on{" "}
-                    <span className="font-semibold text-foreground">
+                    <span className="font-semibold text-slate-700">
                       {formatOutcomeLabel(traderHedgingInfo.longerOutcome)}
                     </span>{" "}
                     by {hedgingDiffLabel} ({hedgingPercentLabel})
@@ -1643,9 +1628,9 @@ export function TradeCard({
   }, [isCopied])
 
   useEffect(() => {
-    // If on positions tab but no positions exist, switch to indicators
-    if (!hasAnyPositionBadge && isInsightsDrawerOpen && insightsDrawerTab === "positions") {
-      setInsightsDrawerTab("indicators")
+    if (!hasAnyPositionBadge && isPositionDrawerOpen) {
+      setIsPositionDrawerOpen(false)
+      return
     }
     if (
       positionDrawerTab === "user" &&
@@ -1663,8 +1648,7 @@ export function TradeCard({
     }
   }, [
     hasAnyPositionBadge,
-    isInsightsDrawerOpen,
-    insightsDrawerTab,
+    isPositionDrawerOpen,
     positionDrawerTab,
     showTraderPositionBadge,
     showUserPositionBadge,
@@ -1815,10 +1799,10 @@ export function TradeCard({
   const normalizedOutcome = position?.trim().toLowerCase()
   const outcomeBadgeClass =
     normalizedOutcome === "yes"
-      ? "bg-profit-green/10 text-profit-green border-profit-green/30"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
       : normalizedOutcome === "no"
-        ? "bg-loss-red/10 text-loss-red border-loss-red/30"
-        : "bg-accent text-foreground border-border"
+        ? "bg-red-50 text-red-700 border-red-200"
+        : "bg-slate-100 text-slate-700 border-slate-200"
 
   const defaultSlippagePercent = resolvedDefaultSlippage
   const minTradeUsd = 1
@@ -2292,11 +2276,10 @@ export function TradeCard({
   }
 
   const hasConnectedWallet = Boolean(walletAddress)
-  // v2: Any account with a connected wallet gets the quick-copy experience
-  const showQuickCopyExperience = hasConnectedWallet
-  // v2: Only accounts without a wallet see the manual (step 1 / step 2) experience
-  const allowManualExperience = !hasConnectedWallet
-  const showLinkWalletHint = !hasConnectedWallet
+  const isPremiumWithoutWallet = Boolean(isPremium) && !hasConnectedWallet
+  const allowManualExperience = !isPremium || (isPremiumWithoutWallet && manualTradingEnabled)
+  const showQuickCopyExperience = Boolean(isPremium) && hasConnectedWallet
+  const showLinkWalletHint = isPremiumWithoutWallet && manualTradingEnabled
   const isSellTrade = action === "Sell"
   const shouldShowInsightsSection =
     traderHedgingInfo.isHedging || isSellTrade || hasAnyPositionBadge
@@ -2394,7 +2377,7 @@ export function TradeCard({
       onToggleExpand()
       return
     }
-    if (!hasConnectedWallet && !manualTradingEnabled) {
+    if (isPremiumWithoutWallet && !manualTradingEnabled) {
       setShowWalletPrompt(true)
       return
     }
@@ -2449,10 +2432,10 @@ export function TradeCard({
       : null
   const manualPriceChangeColor =
     manualPriceChange === null
-      ? 'text-muted-foreground'
+      ? 'text-slate-400'
       : manualPriceChange >= 0
-        ? 'text-profit-green'
-        : 'text-loss-red'
+        ? 'text-emerald-600'
+        : 'text-red-600'
   const manualPriceChangeLabel =
     manualPriceChange === null
       ? '--'
@@ -2827,42 +2810,6 @@ export function TradeCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, conditionId, trader.address]) // Only depend on the essential data to avoid infinite loops
 
-  // Fetch indicator score client-side for the compact header badge when server data isn't available
-  useEffect(() => {
-    // If we already have server-side data, use that
-    if (polySignalScore != null && polySignalRecommendation) {
-      setIndicatorScore(polySignalScore)
-      setIndicatorRecommendation(polySignalRecommendation)
-      return
-    }
-    // Need wallet + price to fetch
-    if (!trader.address || !price || price <= 0) return
-    const tradeKey = `${conditionId ?? "none"}-${trader.address}`
-    if (indicatorFetchedRef.current === tradeKey) return
-    indicatorFetchedRef.current = tradeKey
-
-    const params = new URLSearchParams({
-      wallet: trader.address.toLowerCase(),
-      price: String(price),
-      size: String(size ?? 0),
-      title: market ?? '',
-      category: marketSubtype ?? '',
-    })
-    if (conditionId) params.set('conditionId', conditionId)
-    if (position) params.set('outcome', position)
-
-    fetch(`/api/polysignal?${params}`, { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((res) => {
-        if (res?.score != null && res?.recommendation) {
-          setIndicatorScore(res.score)
-          setIndicatorRecommendation(res.recommendation)
-        }
-      })
-      .catch(() => {/* silently ignore */})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trader.address, price, conditionId, polySignalScore, polySignalRecommendation])
-
   const buildAssessmentSnapshot = useCallback((): TradeAssessmentSnapshot => {
     const nowIso = new Date().toISOString()
     const livePriceValue = Number.isFinite(currentPrice) ? currentPrice : null
@@ -3066,18 +3013,18 @@ export function TradeCard({
   )
 
   useEffect(() => {
-    if (isAdmin && isInsightsDrawerOpen && insightsDrawerTab === "gemini" && assessmentMessages.length === 0 && !assessmentLoading) {
+    if (isAdmin && assessmentPanelOpen && assessmentMessages.length === 0 && !assessmentLoading) {
       runAssessment()
     }
-  }, [isInsightsDrawerOpen, insightsDrawerTab, assessmentLoading, assessmentMessages.length, isAdmin, runAssessment])
+  }, [assessmentPanelOpen, assessmentLoading, assessmentMessages.length, isAdmin, runAssessment])
 
   return (
     <div
       ref={cardRef}
       id={tradeAnchorId}
       className={cn(
-        "group relative border rounded-none overflow-hidden transition-all hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,0.08)]",
-        "bg-card border-border"
+        "group relative border rounded-xl overflow-hidden transition-all hover:shadow-lg",
+        "bg-white border-slate-200"
       )}
     >
       <div
@@ -3097,47 +3044,40 @@ export function TradeCard({
               wallet={trader.address}
               src={trader.avatar}
               size={40}
-              className="ring-2 ring-border transition-all"
+              className="ring-2 ring-slate-100 transition-all"
             />
             <div className="min-w-0">
-              <p className="font-sans font-bold text-foreground text-sm leading-tight">{trader.name}</p>
+              <p className="font-medium text-slate-900 text-sm leading-tight">{trader.name}</p>
             </div>
           </Link>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Flags — Hedging / Sold / Positions */}
-            {traderHedgingInfo.isHedging && (
-              <span className="h-6 px-2 inline-flex items-center font-sans text-[9px] font-bold uppercase tracking-wide bg-poly-yellow/20 text-poly-black border border-poly-yellow whitespace-nowrap">
-                Hedging
-              </span>
-            )}
-            {isSellTrade && (
-              <span className="h-6 px-2 inline-flex items-center font-sans text-[9px] font-bold uppercase tracking-wide bg-loss-red/10 text-loss-red border border-loss-red/40 whitespace-nowrap">
-                Sold
-              </span>
-            )}
-            {/* Indicator score — colored square with number */}
-            {indicatorScore != null && indicatorRecommendation && (
-              <button
-                type="button"
-                onClick={() => handleInsightsDrawerToggle("indicators")}
-                aria-label={`PolySignal score ${indicatorScore}`}
-                className={cn(
-                  "flex items-center justify-center w-8 h-8 font-sans text-xs font-bold text-white transition-opacity hover:opacity-80",
-                  indicatorRecommendation === 'STRONG_BUY' && "bg-profit-green",
-                  indicatorRecommendation === 'BUY' && "bg-profit-green",
-                  indicatorRecommendation === 'NEUTRAL' && "bg-neutral-grey",
-                  indicatorRecommendation === 'AVOID' && "bg-poly-yellow text-poly-black",
-                  indicatorRecommendation === 'TOXIC' && "bg-loss-red",
-                )}
-              >
-                {indicatorScore}
-              </button>
-            )}
-            <span className="font-sans text-[11px] text-muted-foreground font-medium tabular-nums whitespace-nowrap">{timestamp}</span>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className="text-[11px] text-slate-500 font-medium whitespace-nowrap">{timestamp}</span>
+            {isPremium && onToggleExpand && !localCopied && null}
           </div>
         </div>
 
-        <div className="mb-2 rounded-none bg-accent/70 -mx-5 px-5 md:-mx-6 md:px-6 py-3">
+        {/* PolySignal Badge - Admin only, FT-learnings + ML based (server data or fetch from /api/polysignal) */}
+        {isAdmin && (
+          <div className="mb-3">
+            <PolySignal
+              data={polyScoreData}
+              loading={polyScoreLoading}
+              entryPrice={price}
+              currentPrice={currentPrice}
+              walletAddress={trader.address}
+              tradeSize={size}
+              marketSubtype={marketSubtype}
+              marketTitle={market}
+              conditionId={conditionId}
+              outcome={position}
+              serverRecommendation={polySignalRecommendation}
+              serverScore={polySignalScore}
+              serverIndicators={polySignalIndicators}
+            />
+          </div>
+        )}
+
+        <div className="mb-2 rounded-lg bg-slate-50/70 px-4 py-3">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex items-start gap-2.5 md:items-center">
@@ -3145,10 +3085,10 @@ export function TradeCard({
                   marketName={market}
                   src={marketAvatar}
                   size={44}
-                  className="ring-2 ring-border"
+                  className="ring-2 ring-slate-100"
                 />
                 <div className="min-w-0">
-                  <h3 className="font-sans text-base md:text-lg font-semibold text-foreground leading-snug break-words">
+                  <h3 className="text-base md:text-lg font-medium text-slate-900 leading-snug break-words">
                     {market}
                     {/* External link icon for Premium users - at end of market name */}
                     {isPremium && polymarketUrl && (
@@ -3156,7 +3096,7 @@ export function TradeCard({
                         href={polymarketUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="ml-2 inline-flex text-muted-foreground hover:text-muted-foreground transition-colors"
+                        className="ml-2 inline-flex text-slate-400 hover:text-slate-600 transition-colors"
                         title="View on Polymarket"
                       >
                         <ExternalLink className="w-4 h-4" />
@@ -3175,8 +3115,8 @@ export function TradeCard({
                     className={cn(
                       badgeBaseClass,
                       hasEventTime
-                        ? "bg-card text-foreground border-border"
-                        : "bg-card text-muted-foreground border-border",
+                        ? "bg-white text-slate-700 border-slate-200"
+                        : "bg-white text-slate-400 border-slate-200",
                     )}
                   >
                     <a href={espnLink} target="_blank" rel="noopener noreferrer">
@@ -3194,8 +3134,8 @@ export function TradeCard({
                     className={cn(
                       badgeBaseClass,
                       hasEventTime
-                        ? "bg-card text-foreground border-border"
-                        : "bg-card text-muted-foreground border-border",
+                        ? "bg-white text-slate-700 border-slate-200"
+                        : "bg-white text-slate-400 border-slate-200",
                     )}
                   >
                     {isEventTimeLoading ? (
@@ -3235,7 +3175,7 @@ export function TradeCard({
                           <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
                           <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                         </span>
-                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-sans text-[8px] font-bold uppercase tracking-widest opacity-70">
+                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
                           {combinedScoreLabel}
                         </span>
                       </a>
@@ -3246,7 +3186,7 @@ export function TradeCard({
                         <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
                         <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                       </span>
-                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-sans text-[8px] font-bold uppercase tracking-widest opacity-70">
+                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-semibold tracking-[0.08em] opacity-70">
                         {combinedScoreLabel}
                       </span>
                     </Badge>
@@ -3260,7 +3200,7 @@ export function TradeCard({
                       variant="secondary"
                       className={cn(
                         badgeBaseClass,
-                        "bg-accent text-foreground border-border w-[200px] min-w-[200px] overflow-hidden",
+                        "bg-indigo-50 text-indigo-700 border-indigo-200 w-[200px] min-w-[200px] overflow-hidden",
                       )}
                     >
                       <a href={espnLink} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-1 w-full">
@@ -3273,7 +3213,7 @@ export function TradeCard({
                       variant="secondary"
                       className={cn(
                         badgeBaseClass,
-                        "bg-accent text-foreground border-border w-[200px] min-w-[200px] overflow-hidden justify-center",
+                        "bg-indigo-50 text-indigo-700 border-indigo-200 w-[200px] min-w-[200px] overflow-hidden justify-center",
                       )}
                     >
                       <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
@@ -3287,365 +3227,405 @@ export function TradeCard({
           </div>
         </div>
 
-        {/* Always-visible Insights Tabs */}
-        <div className="mb-3">
-          <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border pb-0">
-            {hasAnyPositionBadge && (
-              <button
-                type="button"
-                onClick={() => handleInsightsDrawerToggle("positions")}
-                className={cn(
-                  "px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
-                  isInsightsDrawerOpen && insightsDrawerTab === "positions"
-                    ? "text-foreground bg-card border-border -mb-px"
-                    : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
-                )}
-              >
-                Positions{totalPositionCount > 1 ? ` ${totalPositionCount}+` : ""}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => handleInsightsDrawerToggle("indicators")}
-              className={cn(
-                "px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
-                isInsightsDrawerOpen && insightsDrawerTab === "indicators"
-                  ? "text-foreground bg-card border-border -mb-px"
-                  : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
-              )}
-            >
-              Indicators
-              {indicatorScore != null && (
-                <span className="ml-1.5 font-body tabular-nums">{indicatorScore}</span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleInsightsDrawerToggle("insights")}
-              className={cn(
-                "px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
-                isInsightsDrawerOpen && insightsDrawerTab === "insights"
-                  ? "text-foreground bg-card border-border -mb-px"
-                  : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
-              )}
-            >
-              Trader Insights
-            </button>
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() => {
-                  handleInsightsDrawerToggle("gemini")
-                  if (!assessmentMessages.length && !assessmentLoading) {
-                    runAssessment()
-                  }
-                }}
-                className={cn(
-                  "px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0 flex items-center gap-1.5",
-                  isInsightsDrawerOpen && insightsDrawerTab === "gemini"
-                    ? "text-foreground bg-card border-border -mb-px"
-                    : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
-                )}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Gemini
-              </button>
-            )}
-          </div>
-
-          {/* Tab Content — collapsed by default, shown when a tab is active */}
-          {isInsightsDrawerOpen && (
+        {/* Existing Positions - Full Width */}
+        {hasAnyPositionBadge && (
+          <div className="mb-3">
             <div
-              className="border border-t-0 border-border bg-card"
-              onClick={(event) => event.stopPropagation()}
+              className="rounded-lg bg-slate-50/70 px-3 py-2 cursor-pointer"
+              onClick={handlePositionBadgeClick}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault()
+                  handlePositionBadgeClick()
+                }
+              }}
             >
-              <div className="p-3">
-                {/* Positions Tab */}
-                {insightsDrawerTab === "positions" && hasAnyPositionBadge && activePositionBadge && (
-                  renderPositionDrawer()
-                )}
-
-                {/* Indicators Tab (PolySignal) */}
-                {insightsDrawerTab === "indicators" && (
-                  <PolySignal
-                    data={polyScoreData}
-                    loading={polyScoreLoading}
-                    entryPrice={price}
-                    currentPrice={currentPrice}
-                    walletAddress={trader.address}
-                    tradeSize={size}
-                    marketSubtype={marketSubtype}
-                    marketTitle={market}
-                    conditionId={conditionId}
-                    outcome={position}
-                    serverRecommendation={polySignalRecommendation}
-                    serverScore={polySignalScore}
-                    serverIndicators={polySignalIndicators}
-                  />
-                )}
-
-                {/* Trader Insights Tab (PredictionStats) */}
-                {insightsDrawerTab === "insights" && (
-                  conditionId && trader.address ? (
-                    <PredictionStats
-                      walletAddress={trader.address}
-                      conditionId={conditionId}
-                      price={price}
-                      size={size}
-                      marketTitle={market}
-                      marketCategory={category}
-                      marketTags={marketTagsForInsights}
-                      marketSubtype={marketSubtype}
-                      betStructure={betStructure}
-                      isAdmin={isAdmin}
-                      fireReasons={fireReasons}
-                      fireWinRate={fireWinRate}
-                      fireRoi={fireRoi}
-                      fireConviction={fireConviction}
-                    />
-                  ) : (
-                    <p className="font-body text-sm text-muted-foreground py-4 text-center">No trader insights available for this trade.</p>
-                  )
-                )}
-
-                {/* Gemini Verdict Tab */}
-                {insightsDrawerTab === "gemini" && isAdmin && (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-sans text-xs font-bold uppercase tracking-wide text-foreground">Gemini Trade Verdict</p>
-                        <p className="font-body text-xs text-muted-foreground">AI read on this trade with live context.</p>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        {assessmentLoading && <Loader2 className="h-4 w-4 animate-spin text-poly-yellow" />}
-                        {assessmentResult?.confidence !== undefined && (
-                          <span className="font-body font-semibold tabular-nums">{Math.round(assessmentResult.confidence)}% conf.</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {assessmentError && (
-                      <div className="rounded-none border border-loss-red/30 bg-loss-red/10 px-3 py-2 font-body text-sm text-loss-red">
-                        {assessmentError}
-                      </div>
+              <div className="flex items-center gap-2">
+                {/* Badges Row - Always Single Row */}
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  {traderHedgingInfo.isHedging && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge
+                            variant="secondary"
+                            className="h-7 px-2.5 text-xs font-bold bg-yellow-100 text-yellow-900 border-2 border-yellow-400 whitespace-nowrap flex-shrink-0"
+                          >
+                            <ArrowLeftRight className="h-3.5 w-3.5 mr-1" />
+                            Trader Hedging
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[220px] text-xs">
+                          Trader has bought multiple outcomes in this market to reduce directional risk.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                  {isSellTrade && (
+                    <Badge
+                      variant="secondary"
+                      className="h-7 px-2.5 text-xs font-bold bg-rose-100 text-rose-900 border-2 border-rose-400 whitespace-nowrap flex-shrink-0"
+                    >
+                      Trader Sold
+                    </Badge>
+                  )}
+                  <Badge
+                    asChild
+                    variant="secondary"
+                    className={cn(
+                      "h-7 px-2.5 text-xs font-bold text-slate-700 border-2 border-slate-300 hover:bg-slate-100 cursor-pointer whitespace-nowrap flex-shrink-0",
+                      showUserPositionBadge && showTraderPositionBadge ? "bg-white" : "bg-slate-50"
                     )}
-
-                    <div className="rounded-none border border-border bg-accent p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary" className="font-sans text-[10px] font-bold uppercase tracking-wide">
-                          Verdict: {(assessmentResult?.recommendation ?? "pending").replace(/_/g, " ")}
-                        </Badge>
-                        <Badge variant="secondary" className="font-sans text-[10px] font-bold uppercase tracking-wide">
-                          Size: {assessmentResult?.betSize ?? "—"}
-                        </Badge>
-                        {assessmentResult?.timingCallout && (
-                          <span className="bg-card px-3 py-1 font-sans text-[10px] font-bold text-foreground border border-border">
-                            {assessmentResult.timingCallout}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        {assessmentResult?.headline ? (
-                          <p className="font-sans text-sm font-bold text-foreground">{assessmentResult.headline}</p>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            {assessmentLoading ? "Gemini is analyzing this trade…" : "Run Gemini to get a verdict."}
-                          </p>
-                        )}
-                        {assessmentResult?.rationale?.length ? (
-                          <ul className="list-disc space-y-1 pl-5 font-body text-sm text-foreground">
-                            {assessmentResult.rationale.slice(0, 4).map((item, idx) => (
-                              <li key={idx}>{item}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {assessmentResult?.liveInsights?.length ? (
-                          <div>
-                            <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Live Notes</p>
-                            <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-                              {assessmentResult.liveInsights.slice(0, 3).map((item, idx) => (
-                                <li key={idx}>{item}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                        {assessmentResult?.riskNotes?.length ? (
-                          <div>
-                            <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Risk</p>
-                            <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-                              {assessmentResult.riskNotes.slice(0, 3).map((item, idx) => (
-                                <li key={idx}>{item}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                        {!assessmentResult?.headline && assessmentResult?.rawText && (
-                          <pre className="mt-2 max-h-40 overflow-auto rounded-none bg-poly-black/90 p-3 text-[11px] text-white/70">
-                            {assessmentResult.rawText}
-                          </pre>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-none border border-border bg-card p-3">
-                      <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Conversation</p>
-                      <div className="max-h-64 overflow-y-auto space-y-3">
-                        {assessmentMessages.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">No messages yet. Gemini will drop a verdict when you ask.</p>
-                        ) : (
-                          assessmentMessages.map((message, idx) => {
-                            const isAssistant = message.role === "assistant"
-                            return (
-                              <div
-                                key={`${message.role}-${idx}-${message.content.slice(0, 8)}`}
-                                className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}
-                              >
-                                <div
-                                  className={cn(
-                                    "max-w-[78%] rounded-none border px-3 py-2 font-body text-sm whitespace-pre-wrap",
-                                    isAssistant
-                                      ? "bg-accent border-border text-foreground"
-                                      : "bg-poly-black border-poly-black/80 text-white"
-                                  )}
-                                >
-                                  <p
-                                    className={cn(
-                                      "font-sans text-[9px] font-bold uppercase tracking-widest mb-1",
-                                      isAssistant ? "text-muted-foreground" : "text-white/80"
-                                    )}
-                                  >
-                                    {isAssistant ? "Gemini" : "You"}
-                                  </p>
-                                  {message.content}
-                                </div>
-                              </div>
-                            )
-                          })
-                        )}
-                        {assessmentLoading && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader2 className="h-4 w-4 animate-spin text-poly-yellow" />
-                            <span>Gemini is thinking…</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-3 flex w-full items-center gap-2">
-                        <Input
-                          value={assessmentInput}
-                          onChange={(e) => setAssessmentInput(e.target.value)}
-                          placeholder="Ask Gemini about this trade..."
-                          disabled={assessmentLoading}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault()
-                              if (assessmentInput.trim()) {
-                                runAssessment(assessmentInput)
-                              }
-                            }
-                          }}
-                        />
-                        <Button
-                          onClick={() => assessmentInput.trim() && runAssessment(assessmentInput)}
-                          disabled={assessmentLoading || !assessmentInput.trim()}
-                          className="bg-poly-black text-white hover:bg-poly-black/90 font-sans font-bold uppercase tracking-wide"
-                        >
-                          {assessmentLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send"}
-                        </Button>
-                      </div>
-                      <p className="mt-2 text-[11px] text-muted-foreground">
-                        Gemini only sees the snapshot we send (price, size, live score, timing, fire stats). No external browsing.
-                      </p>
-                    </div>
-                  </div>
-                )}
+                  >
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handlePositionBadgeClick()
+                      }}
+                      aria-expanded={isPositionDrawerOpen}
+                      className="flex items-center gap-1"
+                    >
+                      <Star className="h-3.5 w-3.5 text-slate-600" />
+                      <span>{isSellTrade ? "Exiting Positions" : "Existing Positions"}</span>
+                      {(showUserPositionBadge || showTraderPositionBadge) && (
+                        <span className="ml-0.5 inline-flex items-center gap-0.5">
+                          {showUserPositionBadge && (
+                            <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[8px] font-semibold text-slate-500">
+                              You
+                            </span>
+                          )}
+                          {showTraderPositionBadge && (
+                            <span className="rounded-full bg-slate-100 px-1 py-0.5 text-[8px] font-semibold text-slate-500">
+                              Trader
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </button>
+                  </Badge>
+                </div>
+                {/* Chevron Button */}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handlePositionBadgeClick()
+                  }}
+                  aria-label={isPositionDrawerOpen ? "Hide existing positions" : "Show existing positions"}
+                  aria-expanded={isPositionDrawerOpen}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 flex-shrink-0"
+                >
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 transition-transform",
+                      isPositionDrawerOpen && "rotate-180"
+                    )}
+                  />
+                </button>
               </div>
             </div>
-          )}
-        </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-px bg-border mb-0">
-            <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Outcome</p>
+            {/* Position Drawer - Full Width */}
+            {isPositionDrawerOpen && activePositionBadge && (
+              <div
+                className="w-full mt-2"
+                onClick={(event) => {
+                  event.stopPropagation()
+                }}
+              >
+                {renderPositionDrawer()}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="border border-slate-200 rounded-lg px-4 py-3 mb-0 bg-slate-50/50">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 relative">
+            <div className="text-center">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Outcome</p>
               <div className="flex flex-wrap items-center justify-center max-w-full">
                 <Badge
                   variant="secondary"
-                  className={`font-sans font-bold text-xs uppercase tracking-wide ${outcomeBadgeClass} max-w-[140px] whitespace-normal break-words text-center leading-snug`}
+                  className={`font-semibold text-xs ${outcomeBadgeClass} max-w-[140px] whitespace-normal break-words text-center leading-snug`}
                 >
                   {formatOutcomeLabel(position)}
                 </Badge>
               </div>
             </div>
-            <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Invested</p>
-              <p className="font-body text-sm md:text-base font-semibold tabular-nums text-foreground">{formatCurrency(total)}</p>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Invested</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatCurrency(total)}</p>
             </div>
-            <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Contracts</p>
-              <p className="font-body text-sm md:text-base font-semibold tabular-nums text-foreground">{formatContracts(size)}</p>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Contracts</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatContracts(size)}</p>
             </div>
-            <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Entry</p>
-              <p className="font-body text-sm md:text-base font-semibold tabular-nums text-foreground">{formatPrice(price)}</p>
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Entry</p>
+              <p className="text-sm md:text-base font-semibold text-slate-900">{formatPrice(price)}</p>
             </div>
-            <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Current</p>
-              <p className="font-body text-sm md:text-base font-semibold tabular-nums">
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">Current</p>
+              <p className="text-sm md:text-base font-semibold">
                 <span
                   className={cn(
-                    "inline-flex items-center justify-center px-1.5 py-0.5 transition-colors duration-300",
-                    !hasCurrentPrice && "text-muted-foreground",
-                    priceFlash === "up" && "bg-profit-green/10 text-profit-green",
-                    priceFlash === "down" && "bg-loss-red/10 text-loss-red",
-                    priceFlash === "neutral" && "bg-accent text-foreground",
-                    priceFlash === null && hasCurrentPrice && "text-foreground"
+                    "inline-flex items-center justify-center rounded-md px-1.5 py-0.5 transition-colors duration-300",
+                    !hasCurrentPrice && "text-slate-400",
+                    priceFlash === "up" && "bg-emerald-50 text-emerald-700",
+                    priceFlash === "down" && "bg-red-50 text-red-700",
+                    priceFlash === "neutral" && "bg-slate-100 text-slate-700",
+                    priceFlash === null && hasCurrentPrice && "text-slate-900"
                   )}
                 >
                   {hasCurrentPrice ? formatPrice(currentPrice) : "--"}
                 </span>
               </p>
             </div>
-            <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">ROI</p>
-              <p className={`font-body text-sm md:text-base font-semibold tabular-nums ${
-                priceDirection === 'neutral' || !hasCurrentPrice ? 'text-muted-foreground' :
-                priceDirection === 'up' ? 'text-profit-green' :
-                'text-loss-red'
+            <div className="text-center md:border-l border-slate-200">
+              <p className="text-xs text-slate-500 mb-1 font-medium">ROI</p>
+              <p className={`text-sm md:text-base font-semibold ${
+                priceDirection === 'neutral' || !hasCurrentPrice ? 'text-slate-400' :
+                priceDirection === 'up' ? 'text-emerald-600' :
+                'text-red-600'
               }`}>
                 {!hasCurrentPrice ? '--' : `${priceChange > 0 ? '+' : ''}${priceChange.toFixed(1)}%`}
               </p>
             </div>
+          </div>
         </div>
 
+        {/* Prediction Stats - Below Trade Data */}
+        {/* Prediction Stats - Fetches directly from Supabase */}
+        {conditionId && trader.address && (
+          <PredictionStats 
+            walletAddress={trader.address}
+            conditionId={conditionId}
+            price={price}
+            size={size}
+            marketTitle={market}
+            marketCategory={category}
+            marketTags={marketTagsForInsights}
+            marketSubtype={marketSubtype} // Pass niche from feed
+            betStructure={betStructure} // Pass bet_structure from feed
+            isAdmin={isAdmin}
+            fireReasons={fireReasons}
+            fireWinRate={fireWinRate}
+            fireRoi={fireRoi}
+            fireConviction={fireConviction}
+          />
+        )}
+
+        {isAdmin && (
+          <div className="flex justify-end mt-3">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-slate-300 text-slate-800 hover:bg-slate-100"
+              onClick={() => {
+                setAssessmentPanelOpen((open) => !open)
+                if (!assessmentMessages.length && !assessmentLoading) {
+                  runAssessment()
+                }
+              }}
+            >
+              <Sparkles className="w-4 h-4 mr-2 text-amber-500" />
+              Gemini verdict
+            </Button>
+          </div>
+        )}
+
+        {isAdmin && assessmentPanelOpen && (
+          <div className="mt-4 border border-slate-200 rounded-xl bg-white shadow-sm">
+            <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Gemini Trade Verdict</p>
+                <p className="text-xs text-slate-600">Admin-only Gemini read on this trade with live context.</p>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                {assessmentLoading && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
+                {assessmentResult?.confidence !== undefined && (
+                  <span className="font-semibold">{Math.round(assessmentResult.confidence)}% conf.</span>
+                )}
+              </div>
+            </div>
+
+            {assessmentError && (
+              <div className="mx-4 mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {assessmentError}
+              </div>
+            )}
+
+            <div className="px-4 py-4 space-y-4">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary" className="text-xs font-semibold">
+                    Verdict: {(assessmentResult?.recommendation ?? "pending").replace(/_/g, " ")}
+                  </Badge>
+                  <Badge variant="secondary" className="text-xs font-semibold">
+                    Size: {assessmentResult?.betSize ?? "—"}
+                  </Badge>
+                  {assessmentResult?.timingCallout && (
+                    <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-slate-700 border border-slate-200">
+                      {assessmentResult.timingCallout}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2 space-y-2">
+                  {assessmentResult?.headline ? (
+                    <p className="text-sm font-semibold text-slate-900">{assessmentResult.headline}</p>
+                  ) : (
+                    <p className="text-sm text-slate-600">
+                      {assessmentLoading ? "Gemini is analyzing this trade…" : "Run Gemini to get a verdict."}
+                    </p>
+                  )}
+                  {assessmentResult?.rationale?.length ? (
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
+                      {assessmentResult.rationale.slice(0, 4).map((item, idx) => (
+                        <li key={idx}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {assessmentResult?.liveInsights?.length ? (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Live Notes
+                      </p>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
+                        {assessmentResult.liveInsights.slice(0, 3).map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {assessmentResult?.riskNotes?.length ? (
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                        Risk
+                      </p>
+                      <ul className="list-disc space-y-1 pl-5 text-sm text-slate-800">
+                        {assessmentResult.riskNotes.slice(0, 3).map((item, idx) => (
+                          <li key={idx}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {!assessmentResult?.headline && assessmentResult?.rawText && (
+                    <pre className="mt-2 max-h-40 overflow-auto rounded-lg bg-slate-900/90 p-3 text-[11px] text-slate-100">
+                      {assessmentResult.rawText}
+                    </pre>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                  Conversation
+                </p>
+                <div className="max-h-64 overflow-y-auto space-y-3">
+                  {assessmentMessages.length === 0 ? (
+                    <p className="text-sm text-slate-600">No messages yet. Gemini will drop a verdict when you ask.</p>
+                  ) : (
+                    assessmentMessages.map((message, idx) => {
+                      const isAssistant = message.role === "assistant"
+                      return (
+                        <div
+                          key={`${message.role}-${idx}-${message.content.slice(0, 8)}`}
+                          className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}
+                        >
+                          <div
+                            className={cn(
+                              "max-w-[78%] rounded-lg border px-3 py-2 text-sm shadow-sm whitespace-pre-wrap",
+                              isAssistant
+                                ? "bg-slate-50 border-slate-200 text-slate-800"
+                                : "bg-slate-900 border-slate-800 text-white"
+                            )}
+                          >
+                            <p
+                              className={cn(
+                                "text-[11px] font-semibold uppercase tracking-wide mb-1",
+                                isAssistant ? "text-slate-500" : "text-slate-200"
+                              )}
+                            >
+                              {isAssistant ? "Gemini" : "You"}
+                            </p>
+                            {message.content}
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
+                  {assessmentLoading && (
+                    <div className="flex items-center gap-2 text-sm text-slate-600">
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
+                      <span>Gemini is thinking…</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-3 flex w-full items-center gap-2">
+                  <Input
+                    value={assessmentInput}
+                    onChange={(e) => setAssessmentInput(e.target.value)}
+                    placeholder="Ask Gemini about this trade (timing, size, hedge, etc.)"
+                    disabled={assessmentLoading}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault()
+                        if (assessmentInput.trim()) {
+                          runAssessment(assessmentInput)
+                        }
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={() => assessmentInput.trim() && runAssessment(assessmentInput)}
+                    disabled={assessmentLoading || !assessmentInput.trim()}
+                    className="bg-slate-900 text-white hover:bg-slate-800"
+                  >
+                    {assessmentLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send"}
+                  </Button>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  Gemini only sees the snapshot we send (price, size, live score, timing, fire stats). No external browsing.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!hideActions && allowManualExperience && manualDrawerOpen && shouldShowCopyCta && (
-          <div className="p-4 mt-4 space-y-4 border border-border rounded-none bg-accent">
+          <div className="p-4 mt-4 space-y-4 border border-slate-200 rounded-xl bg-slate-50">
             <div className="flex items-center justify-between">
-              <h4 className="font-sans text-xs font-bold uppercase tracking-wide text-foreground">Manual Copy</h4>
+              <h4 className="text-sm font-semibold text-slate-900">Manual Copy</h4>
               <button
                 type="button"
                 onClick={closeManualDrawer}
-                className="p-1 rounded-none text-muted-foreground hover:text-muted-foreground hover:bg-accent"
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                 aria-label="Close manual copy drawer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="bg-card border border-border rounded-none p-2.5">
+            <div className="bg-white border border-slate-200 rounded-lg p-2.5">
               <div className="flex items-center justify-between">
-                <span className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">Current Price</span>
+                <span className="text-xs font-medium text-slate-600">Current Price</span>
                 <div className="text-right">
-                  <p className="font-body text-base font-semibold tabular-nums text-foreground">${manualDisplayPrice.toFixed(4)}</p>
-                  <p className={`font-body text-xs font-medium tabular-nums ${manualPriceChangeColor}`}>{manualPriceChangeLabel}</p>
+                  <p className="text-base font-semibold text-slate-900">${manualDisplayPrice.toFixed(4)}</p>
+                  <p className={`text-xs font-medium ${manualPriceChangeColor}`}>{manualPriceChangeLabel}</p>
                 </div>
               </div>
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="manual-copy-price" className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">
+              <label htmlFor="manual-copy-price" className="text-xs font-medium text-slate-700">
                 Price
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                 <input
                   id="manual-copy-price"
                   type="number"
@@ -3654,17 +3634,17 @@ export function TradeCard({
                   value={manualPriceInput}
                   onChange={(e) => setManualPriceInput(e.target.value)}
                   placeholder={manualDisplayPrice.toFixed(4)}
-                  className="w-full pl-7 pr-3 py-2.5 border border-border rounded-none font-body text-sm tabular-nums focus:ring-2 focus:ring-poly-yellow focus:border-poly-yellow outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="manual-copy-amount" className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">
+              <label htmlFor="manual-copy-amount" className="text-xs font-medium text-slate-700">
                 Amount (USD)
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                 <input
                   id="manual-copy-amount"
                   type="number"
@@ -3673,11 +3653,11 @@ export function TradeCard({
                   value={manualUsdAmount}
                   onChange={(e) => setManualUsdAmount(e.target.value)}
                   placeholder="0.00"
-                  className="w-full pl-7 pr-3 py-2.5 border border-border rounded-none font-body text-sm tabular-nums focus:ring-2 focus:ring-poly-yellow focus:border-poly-yellow outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  className="w-full pl-7 pr-3 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
               {manualAmountPositive && (
-                <p className="font-body text-xs text-muted-foreground tabular-nums">
+                <p className="text-xs text-slate-500">
                   ≈ {manualContractsEstimate.toLocaleString()} contracts
                 </p>
               )}
@@ -3689,12 +3669,12 @@ export function TradeCard({
                 disabled={!manualAmountValid || isCopyDisabled || isCopied}
                 variant="outline"
                 className={cn(
-                  'w-full max-w-[360px] font-sans font-bold uppercase tracking-wide text-sm',
+                  'w-full max-w-[360px] font-semibold text-sm',
                   isCopied
-                    ? 'bg-profit-green/10 border-profit-green/30 text-profit-green cursor-default'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 cursor-default'
                     : isCopyDisabled || !manualAmountValid
-                      ? 'bg-accent border-border text-muted-foreground cursor-not-allowed'
-                      : 'bg-poly-yellow border-transparent hover:bg-poly-yellow-hover text-poly-black'
+                      ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-[#FDB022] border-transparent hover:bg-[#E09A1A] text-slate-900'
                 )}
               >
                 {isMarketEnded ? (
@@ -3722,14 +3702,14 @@ export function TradeCard({
                     onClick={showCopyBuyCta ? handleCopyTradeClick : handleSellClick}
                     disabled={showCopyBuyCta ? isCopyDisabled : !canSellAsWell}
                     className={cn(
-                      "w-full rounded-none font-sans font-bold uppercase tracking-wide text-sm",
+                      "w-full rounded-full font-semibold shadow-sm text-sm",
                       showCopyBuyCta
                         ? isMarketEnded
-                          ? "bg-muted text-muted-foreground cursor-not-allowed"
-                          : "bg-poly-yellow hover:bg-poly-yellow-hover text-poly-black"
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                         : canSellAsWell
-                          ? "bg-loss-red hover:bg-loss-red/90 text-white"
-                          : "bg-muted text-muted-foreground cursor-not-allowed"
+                          ? "bg-rose-500 hover:bg-rose-600 text-white"
+                          : "bg-slate-200 text-slate-500 cursor-not-allowed"
                     )}
                     size="lg"
                   >
@@ -3749,13 +3729,13 @@ export function TradeCard({
                     onClick={handleCopyTradeClick}
                     disabled={isCopyDisabled}
                     className={cn(
-                      "rounded-none font-sans font-bold uppercase tracking-wide text-sm",
+                      "rounded-full font-semibold shadow-sm text-sm",
                       showSellAction ? "flex-1" : "w-full",
                       localCopied
-                        ? "bg-profit-green hover:bg-profit-green/90 text-white"
+                        ? "bg-emerald-500 hover:bg-emerald-600 text-white"
                         : isMarketEnded
-                          ? "bg-muted text-muted-foreground cursor-not-allowed"
-                          : "bg-poly-yellow hover:bg-poly-yellow-hover text-poly-black"
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                     )}
                     size="lg"
                   >
@@ -3777,10 +3757,10 @@ export function TradeCard({
                       variant="outline"
                       size="sm"
                       className={cn(
-                        "h-9 rounded-none px-4 font-sans text-[10px] font-bold uppercase tracking-wide",
+                        "h-9 rounded-full px-4 text-xs font-semibold",
                         canSellAction
-                          ? "border-loss-red/30 text-loss-red hover:bg-loss-red/10 hover:text-loss-red"
-                          : "border-border text-muted-foreground"
+                          ? "border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-600"
+                          : "border-slate-200 text-slate-400"
                       )}
                     >
                       Sell
@@ -3795,7 +3775,7 @@ export function TradeCard({
                     <div className="flex justify-center">
                       <Button
                         disabled
-                        className="w-full max-w-[360px] rounded-none bg-profit-green hover:bg-profit-green text-white font-sans font-bold uppercase tracking-wide text-sm"
+                        className="w-full max-w-[360px] rounded-full bg-emerald-500 hover:bg-emerald-500 text-white font-semibold shadow-sm text-sm"
                         size="lg"
                       >
                         <Check className="w-4 h-4 mr-2" />
@@ -3809,10 +3789,10 @@ export function TradeCard({
                         <Button
                           onClick={handleCopyTradeClick}
                           disabled={isCopyDisabled}
-                          className={`flex-1 rounded-none font-sans font-bold uppercase tracking-wide text-sm py-4 ${
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm py-4 ${
                             isMarketEnded
-                              ? "bg-muted text-muted-foreground cursor-not-allowed"
-                              : "bg-poly-yellow hover:bg-poly-yellow-hover text-poly-black"
+                              ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                              : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                           }`}
                           size="lg"
                         >
@@ -3820,7 +3800,7 @@ export function TradeCard({
                             "Market Resolved"
                           ) : (
                             <>
-                              <span className="inline-flex items-center justify-center w-5 h-5 bg-poly-black text-poly-yellow font-sans text-[10px] font-bold mr-2">
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-[#FDB022] text-xs font-bold mr-2">
                                 1
                               </span>
                               Copy trade
@@ -3832,10 +3812,10 @@ export function TradeCard({
                           onClick={handleMarkAsConfirmedClick}
                           disabled={isCopyDisabled}
                           variant="outline"
-                          className={`flex-1 rounded-none font-sans font-bold uppercase tracking-wide text-sm py-4 ${
+                          className={`flex-1 rounded-full font-semibold shadow-sm text-sm py-4 ${
                             isMarketEnded
-                              ? "border-border text-muted-foreground cursor-not-allowed"
-                              : "border-border text-foreground hover:bg-accent"
+                              ? "border-slate-200 text-slate-400 cursor-not-allowed"
+                              : "border-slate-300 text-slate-700 hover:bg-slate-50"
                           }`}
                           size="lg"
                         >
@@ -3843,7 +3823,7 @@ export function TradeCard({
                             "Market Resolved"
                           ) : (
                             <>
-                              <span className="inline-flex items-center justify-center w-5 h-5 bg-poly-black text-white font-sans text-[10px] font-bold mr-2">
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-900 text-white text-xs font-bold mr-2">
                                 2
                               </span>
                               Mark as copied
@@ -3858,24 +3838,26 @@ export function TradeCard({
                           <TooltipTrigger asChild>
                             <button
                               type="button"
-                              className="flex items-center gap-1.5 font-sans text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
                             >
                               <Info className="w-3.5 h-3.5" />
-                              <span className="font-medium uppercase tracking-wide">How to trade</span>
+                              <span className="font-medium">How to trade</span>
                             </button>
                           </TooltipTrigger>
                           <TooltipContent side="top" className="max-w-[280px] text-center">
                             <p className="mb-2">
-                              Without a connected wallet, you manually execute copy trades on Polymarket, then input the trade details on Polycopy.
+                              Free accounts manually execute copy trades on Polymarket, then input the trade details on Polycopy.
                             </p>
-                            <p className="text-muted-foreground">
-                              <strong className="text-white">Connect your wallet</strong> to trade directly from your Polycopy feed.{" "}
+                            <p className="text-slate-300">
+                              <strong className="text-white">Premium users</strong> can trade directly from their Polycopy feed.{" "}
                               <button
                                 type="button"
-                                onClick={() => onOpenConnectWallet?.()}
+                                onClick={() => {
+                                  window.location.href = '/profile?upgrade=true'
+                                }}
                                 className="underline hover:text-white transition-colors"
                               >
-                                Connect now
+                                Upgrade now
                               </button>
                             </p>
                           </TooltipContent>
@@ -3890,7 +3872,7 @@ export function TradeCard({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="font-sans text-[10px] font-bold uppercase tracking-wide text-foreground border-border hover:bg-accent"
+                      className="text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50"
                       onClick={() => onOpenConnectWallet?.()}
                     >
                       Link my wallet for quick trades
@@ -3903,10 +3885,10 @@ export function TradeCard({
                 <Button
                   onClick={handleCopyTradeClick}
                   disabled={isCopyDisabled}
-                  className={`w-full max-w-[360px] mx-auto font-sans font-bold uppercase tracking-wide text-sm ${
+                  className={`w-full max-w-[360px] mx-auto font-semibold shadow-sm text-sm ${
                     isMarketEnded
-                      ? "bg-muted text-muted-foreground cursor-not-allowed"
-                      : "bg-poly-yellow hover:bg-poly-yellow-hover text-poly-black"
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                   }`}
                   size="lg"
                 >
@@ -3919,13 +3901,13 @@ export function TradeCard({
       </div>
 
         {!hideActions && (allowQuickCopyExperience || showCopyBuyCta) && isExpanded && shouldShowCopyCta && (
-        <div className="bg-card px-6 pb-3 pt-0">
+        <div className="bg-white px-6 pb-3 pt-0">
           <div className="-mt-4 mb-2 flex justify-center">
-            <div className="flex h-8 w-8 items-center justify-center rounded-none border border-border bg-card text-muted-foreground">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
               <ArrowDown className="h-4 w-4" />
             </div>
           </div>
-          <div className="relative mt-0.5 overflow-hidden rounded-none border border-border bg-accent px-4 pb-4 pt-3">
+          <div className="relative mt-0.5 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
             {showFilledCelebration ? (
               <div key={celebrationKey} className="confetti-layer" aria-hidden="true">
                 {CONFETTI_PIECES.map((index) => (
@@ -3937,16 +3919,16 @@ export function TradeCard({
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">Status</p>
-                    <p className="flex items-center gap-2 font-sans text-lg font-bold text-foreground">
-                      {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-poly-yellow" />}
+                    <p className="text-xs font-semibold tracking-wide text-slate-400">Status</p>
+                    <p className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+                      {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-amber-500" />}
                       {statusLabel}
                     </p>
                     {!isFinalStatus && (
                       <div className="mt-1">
                         <p
                           className={`text-xs ${
-                            statusPhase === 'timed_out' ? 'text-poly-yellow' : 'text-muted-foreground'
+                            statusPhase === 'timed_out' ? 'text-amber-600' : 'text-slate-500'
                           }`}
                         >
                           {statusPhase === 'timed_out'
@@ -3957,17 +3939,17 @@ export function TradeCard({
                     )}
                     {statusPhase === 'timed_out' && (
                       <div className="mt-3 space-y-2">
-                        <p className="font-body text-xs text-poly-yellow">
+                        <p className="text-xs text-amber-600">
                           We couldn’t fill this order at your price. Try increasing slippage (tap Advanced) or using a smaller amount.
                         </p>
-                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500">
                           <span>Why didn&apos;t it match?</span>
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
                                   type="button"
-                                  className="inline-flex h-4 w-4 items-center justify-center rounded-none border border-border bg-card text-[10px] font-semibold text-muted-foreground"
+                                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-semibold text-slate-500"
                                   aria-label="Why orders fail to match"
                                 >
                                   ?
@@ -3996,10 +3978,10 @@ export function TradeCard({
                         type="button"
                         onClick={handleCancelOrder}
                         disabled={isCancelingOrder}
-                        className={`inline-flex items-center justify-center rounded-none border px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-wide transition ${
+                        className={`inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${
                           isCancelingOrder
-                            ? 'border-border bg-accent text-muted-foreground cursor-not-allowed'
-                            : 'border-loss-red/30 bg-card text-loss-red hover:bg-loss-red/10'
+                            ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'border-rose-200 bg-white text-rose-700 hover:bg-rose-50'
                         }`}
                       >
                         {isCancelingOrder ? 'Canceling…' : 'Cancel'}
@@ -4009,7 +3991,7 @@ export function TradeCard({
                       <button
                         type="button"
                         onClick={resetConfirmation}
-                        className="inline-flex items-center justify-center rounded-none border border-border bg-card text-muted-foreground hover:text-foreground h-8 w-8"
+                        className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 h-8 w-8"
                         aria-label="Close order confirmation"
                       >
                         <X className="h-4 w-4" />
@@ -4019,10 +4001,10 @@ export function TradeCard({
                 </div>
                 {confirmationError && (
                   <div
-                    className={`rounded-none border px-3 py-2 text-xs ${
+                    className={`rounded-lg border px-3 py-2 text-xs ${
                       confirmationError.success === false
-                        ? "border-poly-yellow/30 bg-poly-yellow/10 text-poly-black"
-                        : "border-loss-red/30 bg-loss-red/10 text-loss-red"
+                        ? "border-amber-200 bg-amber-50 text-amber-900"
+                        : "border-rose-200 bg-rose-50 text-rose-700"
                     }`}
                   >
                     <p className="font-semibold">
@@ -4042,39 +4024,39 @@ export function TradeCard({
                 <div className="space-y-2">
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                     <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
-                      <label className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">
+                      <label className="text-xs font-medium text-slate-700">
                         {filledAmountValue !== null ? "Filled USD" : "Estimated max USD"}
                       </label>
-                    <div className="flex h-14 items-center rounded-none border border-border bg-card px-4 font-body text-base font-semibold tabular-nums text-foreground">
+                    <div className="flex h-14 items-center rounded-lg border border-slate-200 bg-white px-4 text-base font-semibold text-slate-700">
                       {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
                     </div>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
-                      <span className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground text-center sm:text-left">
+                      <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
                         Filled / submitted
                       </span>
-                      <div className="flex h-14 items-center justify-center rounded-none border border-border bg-card font-body text-base font-semibold tabular-nums text-foreground text-center">
+                      <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
                         {statusContractsText}
                       </div>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
-                      <span className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground text-center sm:text-left">
+                      <span className="text-xs font-medium text-slate-700 text-center sm:text-left">
                         Average fill price
                       </span>
-                      <div className="flex h-14 items-center justify-center rounded-none border border-border bg-card font-body text-base font-semibold tabular-nums text-foreground text-center">
+                      <div className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center">
                         {formatPrice(fillPrice)}
                       </div>
                     </div>
                   </div>
                 </div>
                 {statusError && (
-                  <p className="font-body text-xs text-loss-red">Status error: {statusError}</p>
+                  <p className="text-xs text-rose-600">Status error: {statusError}</p>
                 )}
                 <div className="flex justify-end pt-2">
                   <button
                     type="button"
                     onClick={() => setShowTradeDetails((current) => !current)}
-                    className="inline-flex items-center gap-1 rounded-none border border-border bg-card px-2.5 py-1 font-sans text-[9px] font-bold uppercase tracking-wide text-muted-foreground hover:bg-accent"
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
                   >
                     Trade Details
                     {showTradeDetails ? (
@@ -4085,14 +4067,14 @@ export function TradeCard({
                   </button>
                 </div>
                 {showTradeDetails && (
-                  <div className="mt-3 rounded-none border border-border bg-accent p-3">
-                    <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Polymarket Response</p>
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold text-slate-400">Polymarket Response</p>
                   {tradeDetailsJson ? (
-                    <pre className="mt-2 max-h-56 overflow-auto rounded-none border border-border bg-card p-3 text-[11px] leading-relaxed text-muted-foreground">
+                    <pre className="mt-2 max-h-56 overflow-auto rounded-lg border border-slate-100 bg-white p-3 text-[11px] leading-relaxed text-slate-600">
                       {tradeDetailsJson}
                     </pre>
                   ) : (
-                    <p className="mt-2 text-xs text-muted-foreground">
+                    <p className="mt-2 text-xs text-slate-500">
                       Waiting for confirmation details...
                     </p>
                   )}
@@ -4111,17 +4093,17 @@ export function TradeCard({
                     <button
                       type="button"
                       onClick={onToggleExpand}
-                      className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+                      className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors"
                       aria-label="Collapse quick copy"
                     >
                       <ChevronUp className="w-4 h-4" />
                     </button>
-                    <h4 className="font-sans text-xs font-bold uppercase tracking-wide text-foreground">Copy</h4>
+                    <h4 className="text-sm font-semibold text-slate-900">Copy</h4>
                     <span className="w-[52px]" aria-hidden="true" />
                 </div>
 
                 {orderBookError && (
-                  <div className="font-body text-xs text-poly-yellow">{orderBookError}</div>
+                  <div className="text-xs text-amber-600">{orderBookError}</div>
                 )}
 
                 {/* Amount Input */}
@@ -4129,13 +4111,13 @@ export function TradeCard({
                     <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                       <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
                         <div className="flex items-center justify-between gap-2">
-                  <label htmlFor="amount" className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">
+                  <label htmlFor="amount" className="text-xs font-medium text-slate-700">
                     {amountMode === "usd" ? `USD (min $${minUsdLabel})` : "Contracts"}
                   </label>
                         </div>
                   <div className="relative">
                     {amountMode === "usd" && (
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                     )}
                     <input
                       id="amount"
@@ -4151,7 +4133,7 @@ export function TradeCard({
                       onWheel={(e) => e.currentTarget.blur()}
                       placeholder={amountMode === "usd" ? "0.00" : "0"}
                       disabled={isSubmitting}
-                            className={`w-full h-14 border border-border rounded-none font-body text-base font-semibold tabular-nums text-foreground focus:ring-2 focus:ring-poly-yellow focus:border-poly-yellow outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${amountMode === "usd" ? "pl-7 pr-3" : "pl-3 pr-3"}`}
+                            className={`w-full h-14 border border-slate-300 rounded-lg text-base font-semibold text-slate-700 focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 outline-none transition-all disabled:opacity-50 disabled:cursor-not-allowed [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${amountMode === "usd" ? "pl-7 pr-3" : "pl-3 pr-3"}`}
                     />
           </div>
           <style jsx>{`
@@ -4249,13 +4231,13 @@ export function TradeCard({
                       <button
                         type="button"
                         onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
-                        className="flex h-10 w-10 items-center justify-center rounded-none border border-border bg-card text-muted-foreground hover:text-foreground hover:border-border sm:h-12 sm:w-12 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:text-slate-700 hover:border-slate-300 sm:h-12 sm:w-12 disabled:opacity-50 disabled:cursor-not-allowed"
                         disabled={!amountInput.trim()}
                         aria-label={`Switch to ${amountMode === "usd" ? "contracts" : "USD"}`}
                       >
                         <ArrowLeftRight className="h-4 w-4" />
                       </button>
-                      <div className="flex h-14 w-full items-center justify-center rounded-none border border-border bg-card font-body text-base font-semibold tabular-nums text-foreground text-center sm:w-auto sm:min-w-[180px]">
+                      <div className="flex h-14 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-700 text-center sm:w-auto sm:min-w-[180px]">
                         {amountMode === "usd"
                           ? !hasAmountInput
                             ? "—"
@@ -4264,15 +4246,15 @@ export function TradeCard({
                             ? "—"
                             : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
                       </div>
-                      <div className="flex h-14 items-center font-body text-xs font-medium tabular-nums text-muted-foreground">
+                      <div className="flex h-14 items-center text-xs font-medium text-slate-500">
                         {sizePercentLabel} of original trade
                       </div>
                     </div>
                     {minUsdErrorMessage && (
-                      <p className="font-body text-xs text-loss-red">{minUsdErrorMessage}</p>
+                      <p className="text-xs text-rose-600">{minUsdErrorMessage}</p>
                     )}
                     {submitError && (
-                      <p className="font-body text-xs text-loss-red">{submitError}</p>
+                      <p className="text-xs text-rose-600">{submitError}</p>
                   )}
                 </div>
 
@@ -4288,10 +4270,10 @@ export function TradeCard({
                         !limitPrice ||
                         isSubmitting
                       }
-                      className={`w-full max-w-[360px] rounded-none font-sans font-bold uppercase tracking-wide ${
+                      className={`w-full max-w-[360px] rounded-full font-semibold ${
                         isMarketEnded
-                          ? "bg-muted text-muted-foreground cursor-not-allowed"
-                          : "bg-poly-yellow hover:bg-poly-yellow-hover text-poly-black"
+                          ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                          : "bg-[#FDB022] hover:bg-[#E09A1A] text-slate-900"
                       }`}
                       size="lg"
                     >
@@ -4299,10 +4281,10 @@ export function TradeCard({
                     </Button>
                   </div>
                   {isSubmitting && (
-                    <p className="mt-2 text-center text-xs text-muted-foreground">This may take a moment.</p>
+                    <p className="mt-2 text-center text-xs text-slate-500">This may take a moment.</p>
                   )}
                 {canUseAutoClose && (
-                  <div className="mt-4 flex items-start space-x-3 p-2.5 bg-card rounded-none border border-border">
+                  <div className="mt-4 flex items-start space-x-3 p-2.5 bg-white rounded-lg border border-slate-200">
                     <Checkbox
                       id="auto-close"
                       checked={autoClose}
@@ -4312,7 +4294,7 @@ export function TradeCard({
                     <div className="flex-1">
                       <label
                         htmlFor="auto-close"
-                        className="font-body text-sm font-medium text-foreground cursor-pointer leading-tight"
+                        className="text-sm font-medium text-slate-900 cursor-pointer leading-tight"
                       >
                         Auto-close when trader closes
                       </label>
@@ -4322,12 +4304,12 @@ export function TradeCard({
                   <div className="mt-2 flex items-center justify-between gap-3">
                     {!showAdvanced && (
                       <TooltipProvider>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
                               >
                                 Slippage ({resolvedSlippage}%)
                                 <HelpCircle className="h-3.5 w-3.5" />
@@ -4343,7 +4325,7 @@ export function TradeCard({
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                                className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700"
                               >
                                 {orderType === "GTC" ? "Good 'Til Canceled (GTC)" : "Fill and Kill (FAK)"}
                                 <HelpCircle className="h-3.5 w-3.5" />
@@ -4363,21 +4345,21 @@ export function TradeCard({
                     <button
                       type="button"
                       onClick={() => setShowAdvanced((prev) => !prev)}
-                      className="inline-flex items-center gap-1 font-sans text-[10px] font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-slate-800"
                     >
                     Advanced
                       <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
                     </button>
                   </div>
                   {showAdvanced && (
-                    <div className="mt-3 rounded-none border border-border bg-card p-3 space-y-3">
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 space-y-3">
                       <div className="space-y-1.5">
                         <TooltipProvider>
                           <div className="flex items-center gap-1.5">
-                            <Label className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">Slippage Tolerance</Label>
+                            <Label className="text-xs font-medium text-slate-900">Slippage Tolerance</Label>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <button type="button" className="text-muted-foreground hover:text-muted-foreground">
+                                <button type="button" className="text-slate-400 hover:text-slate-500">
                                   <HelpCircle className="h-3 w-3" />
                                 </button>
                               </TooltipTrigger>
@@ -4402,8 +4384,8 @@ export function TradeCard({
                               }}
                               className={
                                 slippagePreset === value
-                                  ? "bg-poly-black text-white hover:bg-poly-black/90 font-sans font-bold h-8 text-[10px] uppercase tracking-wide"
-                                  : "border-border text-foreground hover:bg-accent font-sans font-medium h-8 text-[10px]"
+                                  ? "bg-slate-900 text-white hover:bg-slate-800 font-semibold h-8 text-xs"
+                                  : "border-slate-300 text-slate-700 hover:bg-slate-50 font-medium h-8 text-xs"
                               }
                             >
                               {value}%
@@ -4418,7 +4400,7 @@ export function TradeCard({
                                 handleSlippagePresetChange("custom")
                               }}
                             onWheel={(e) => e.currentTarget.blur()}
-                            className="w-20 h-8 text-xs border-border [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                            className="w-20 h-8 text-xs border-slate-300 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           />
                 </div>
               </div>
@@ -4426,10 +4408,10 @@ export function TradeCard({
                       <div className="space-y-1.5">
                         <TooltipProvider>
                           <div className="flex items-center gap-1.5">
-                            <Label className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">Order Behavior</Label>
+                            <Label className="text-xs font-medium text-slate-900">Order Behavior</Label>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <button type="button" className="text-muted-foreground hover:text-muted-foreground">
+                                <button type="button" className="text-slate-400 hover:text-slate-500">
                                   <HelpCircle className="h-3 w-3" />
                                 </button>
                               </TooltipTrigger>
@@ -4444,13 +4426,13 @@ export function TradeCard({
                         <RadioGroup value={orderType} onValueChange={(value) => setOrderType(value as 'FAK' | 'GTC')} className="space-y-1.5">
                           <div className="flex items-center space-x-2">
                             <RadioGroupItem value="FAK" id="quick-copy-fak" className="h-4 w-4" />
-                            <Label htmlFor="quick-copy-fak" className="font-body text-xs font-medium text-foreground cursor-pointer">
+                            <Label htmlFor="quick-copy-fak" className="text-xs font-medium text-slate-700 cursor-pointer">
                               Fill and Kill (FAK)
                             </Label>
                           </div>
                           <div className="flex items-center space-x-2">
                             <RadioGroupItem value="GTC" id="quick-copy-gtc" className="h-4 w-4" />
-                            <Label htmlFor="quick-copy-gtc" className="font-body text-xs font-medium text-foreground cursor-pointer">
+                            <Label htmlFor="quick-copy-gtc" className="text-xs font-medium text-slate-700 cursor-pointer">
                               Good 'Til Canceled (GTC)
                             </Label>
                           </div>
@@ -4459,13 +4441,13 @@ export function TradeCard({
                     </div>
                   )}
                   {refreshStatus === 'refreshing' && (
-                    <p className="text-xs text-muted-foreground mt-2">Refreshing order status…</p>
+                    <p className="text-xs text-slate-600 mt-2">Refreshing order status…</p>
                   )}
                   {refreshStatus === 'done' && (
-                    <p className="font-body text-xs text-profit-green mt-2">Order submitted to Polymarket. Latest status will appear in Orders shortly.</p>
+                    <p className="text-xs text-emerald-600 mt-2">Order submitted to Polymarket. Latest status will appear in Orders shortly.</p>
                   )}
                   {refreshStatus === 'error' && (
-                    <p className="font-body text-xs text-loss-red mt-2">
+                    <p className="text-xs text-rose-600 mt-2">
                       Order pending at Polymarket, but status refresh failed. Check the Orders page for updates.
                     </p>
                   )}
@@ -4473,11 +4455,11 @@ export function TradeCard({
               </div>
           ) : (
             <div className="text-center py-6">
-              <div className="w-16 h-16 bg-profit-green/10 flex items-center justify-center mx-auto mb-4">
-                <Check className="w-8 h-8 text-profit-green" />
+              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-emerald-600" />
               </div>
-              <h4 className="font-sans text-lg font-bold text-foreground mb-2">Trade Executed Successfully!</h4>
-              <p className="font-body text-sm text-muted-foreground">
+              <h4 className="text-lg font-semibold text-slate-900 mb-2">Trade Executed Successfully!</h4>
+              <p className="text-sm text-slate-600">
                 Your copy trade of {formatCurrency(estimatedMaxCost ?? 0)} has been submitted to Polymarket
               </p>
             </div>
@@ -4487,10 +4469,10 @@ export function TradeCard({
             <div className="mt-3 flex justify-center">
               <Button
                 onClick={resetConfirmation}
-                className={`w-full max-w-[360px] mx-auto rounded-none font-sans font-bold uppercase tracking-wide ${
+                className={`w-full max-w-[360px] mx-auto rounded-full font-semibold ${
                   isFilledStatus
-                    ? "bg-poly-black text-white hover:bg-poly-black/90"
-                    : "bg-poly-yellow text-poly-black hover:bg-poly-yellow-hover"
+                    ? "bg-slate-900 text-white hover:bg-slate-800"
+                    : "bg-amber-500 text-slate-900 hover:bg-amber-400"
                 }`}
                 size="lg"
               >
@@ -4507,12 +4489,12 @@ export function TradeCard({
             <DialogHeader>
               <DialogTitle>Connect your wallet to trade</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-slate-600">
               You need to connect your Polymarket wallet to continue trading with quick copy.
             </p>
             <div className="mt-4 space-y-2">
               <Button
-                className="w-full bg-poly-black text-white hover:bg-poly-black/90"
+                className="w-full bg-slate-900 text-white hover:bg-slate-800"
                 onClick={() => {
                   setShowWalletPrompt(false)
                   onOpenConnectWallet?.()
@@ -4546,8 +4528,8 @@ export function TradeCard({
                   aria-pressed={isPinned}
                   aria-label={isPinned ? "Unpin trade" : "Pin trade"}
                   className={cn(
-                    "flex h-6 w-6 items-center justify-center rounded-none border border-border bg-card text-muted-foreground transition hover:text-muted-foreground",
-                    isPinned && "border-poly-yellow/30 bg-poly-yellow/10 text-poly-yellow hover:text-poly-yellow"
+                    "flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition hover:text-slate-600",
+                    isPinned && "border-amber-200 bg-amber-50 text-amber-500 hover:text-amber-600"
                   )}
                 >
                   <Pin className="h-3.5 w-3.5" />
@@ -4563,7 +4545,7 @@ export function TradeCard({
 }
 
 function getCancelStatusClass(variant: CancelStatus['variant']) {
-  if (variant === 'success') return 'text-profit-green'
-  if (variant === 'error') return 'text-loss-red'
-  return 'text-muted-foreground'
+  if (variant === 'success') return 'text-emerald-600'
+  if (variant === 'error') return 'text-rose-600'
+  return 'text-slate-500'
 }

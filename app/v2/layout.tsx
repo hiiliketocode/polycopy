@@ -16,6 +16,13 @@ export default function V2Layout({ children }: { children: React.ReactNode }) {
         body > #main-content ~ footer.bg-slate-900 {
           display: none !important;
         }
+        /* V2 pages use the industrial font stack */
+        [data-v2-layout] {
+          font-family: var(--font-dm-sans), "DM Sans", ui-sans-serif, system-ui, sans-serif;
+        }
+        [data-v2-layout] .font-sans {
+          font-family: var(--font-space-grotesk), "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+        }
       `}</style>
       {children}
     </div>
