@@ -118,21 +118,37 @@ async function executeSupabaseQuery(supabase: SupabaseClient, action: ChatAction
   try {
     const select = (action.parameters.select as string) || '*';
     const limit = Math.min(Number(action.parameters.limit) || 50, 200);
-    const filters = (action.parameters.filters || {}) as Record<string, unknown>;
+    const rawFilters = action.parameters.filters;
+    const filters = (rawFilters && typeof rawFilters === 'object' && !Array.isArray(rawFilters) ? rawFilters : {}) as Record<string, unknown>;
     const orderBy = action.parameters.order_by as string | undefined;
     const ascending = action.parameters.ascending as boolean | undefined;
 
+    console.log(`[query_supabase] table=${table}, select=${select}, filters=${JSON.stringify(filters)}, order=${orderBy}, limit=${limit}`);
+
     let query = supabase.from(table).select(select).limit(limit);
 
-    for (const [key, value] of Object.entries(filters)) {
+    for (const [key, rawValue] of Object.entries(filters)) {
+      let value = rawValue;
+      // Coerce string booleans
+      if (value === 'true') value = true;
+      if (value === 'false') value = false;
+      // Coerce numeric strings
+      if (typeof value === 'string' && /^-?\d+\.?\d*$/.test(value)) value = Number(value);
+
       if (typeof value === 'string' && value.startsWith('>=')) {
         query = query.gte(key, value.slice(2));
       } else if (typeof value === 'string' && value.startsWith('<=')) {
         query = query.lte(key, value.slice(2));
       } else if (typeof value === 'string' && value.startsWith('!=')) {
         query = query.neq(key, value.slice(2));
+      } else if (typeof value === 'string' && value.startsWith('>')) {
+        query = query.gt(key, value.slice(1));
+      } else if (typeof value === 'string' && value.startsWith('<')) {
+        query = query.lt(key, value.slice(1));
       } else if (Array.isArray(value)) {
         query = query.in(key, value);
+      } else if (value === null) {
+        query = query.is(key, null);
       } else {
         query = query.eq(key, value);
       }
@@ -143,13 +159,20 @@ async function executeSupabaseQuery(supabase: SupabaseClient, action: ChatAction
     }
 
     const { data, error } = await query;
-    if (error) return { success: false, action_type: 'query_supabase', message: `Supabase error: ${error.message}` };
+    if (error) {
+      console.error(`[query_supabase] Error: ${error.message}`, { table, select, filters, orderBy });
+      return { success: false, action_type: 'query_supabase', message: `Supabase error on ${table}: ${error.message}. Query: SELECT ${select} FROM ${table} WHERE ${JSON.stringify(filters)}` };
+    }
+
+    const queryDesc = Object.keys(filters).length > 0
+      ? `${table} WHERE ${Object.entries(filters).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')}`
+      : table;
 
     return {
       success: true,
       action_type: 'query_supabase',
-      message: `Supabase: ${(data || []).length} rows from ${table}`,
-      data: { rows: (data || []).slice(0, 50), row_count: (data || []).length, table },
+      message: `Supabase: ${(data || []).length} rows from ${queryDesc}${orderBy ? ` ORDER BY ${orderBy}` : ''} LIMIT ${limit}`,
+      data: { rows: (data || []).slice(0, 50), row_count: (data || []).length, table, query_params: { select, filters, orderBy, ascending, limit } },
     };
   } catch (err) {
     return { success: false, action_type: 'query_supabase', message: err instanceof Error ? err.message : String(err) };

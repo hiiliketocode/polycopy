@@ -266,7 +266,17 @@ export async function POST(request: Request) {
       if (parsed.action && parsed.action.action_type && parsed.action.action_type !== 'none') {
         const actionType = parsed.action.action_type;
         const actionBot = parsed.action.bot_id || botId || 'unknown';
-        steps.push(step('executor', `Executing action: ${actionType}`, `Target: ${actionBot}`));
+        const actionParams = parsed.action.parameters || {};
+        const paramSummary = actionType === 'query_supabase'
+          ? `table=${actionParams.table}, select=${actionParams.select || '*'}, filters=${JSON.stringify(actionParams.filters || {})}, order=${actionParams.order_by || 'none'}`
+          : actionType === 'query_bigquery'
+          ? `SQL: ${(actionParams.sql || '').substring(0, 120)}...`
+          : actionType === 'search_markets'
+          ? `query="${actionParams.query}"`
+          : actionType === 'update_config'
+          ? `changes=${JSON.stringify(actionParams.changes || {})}`
+          : `${JSON.stringify(actionParams).substring(0, 100)}`;
+        steps.push(step('executor', `Executing: ${actionType}`, paramSummary));
 
         const action = { ...parsed.action, bot_id: parsed.action.bot_id || botId || undefined };
         actionResult = await executeChatAction(supabase, action);
