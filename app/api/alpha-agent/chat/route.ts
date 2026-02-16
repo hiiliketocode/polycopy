@@ -247,14 +247,40 @@ export async function POST(request: Request) {
     }
 
     const llmStart = Date.now();
-    const result = await chat.sendMessage(lastParts);
-    const responseText = result.response.text();
-    const tokensUsed = result.response.usageMetadata?.totalTokenCount || 0;
-    const llmDuration = Date.now() - llmStart;
+    let responseText = '';
+    let tokensUsed = 0;
+    let llmDuration = 0;
+    try {
+      const result = await chat.sendMessage(lastParts);
+      responseText = result.response.text();
+      tokensUsed = result.response.usageMetadata?.totalTokenCount || 0;
+      llmDuration = Date.now() - llmStart;
+    } catch (llmErr) {
+      llmDuration = Date.now() - llmStart;
+      steps.push(step('strategist', `LLM error after ${(llmDuration / 1000).toFixed(1)}s`, llmErr instanceof Error ? llmErr.message : 'Unknown'));
+      return NextResponse.json({
+        success: true,
+        reply: `I encountered an error processing your request. Please try again.\n\nError: ${llmErr instanceof Error ? llmErr.message : 'Unknown LLM error'}`,
+        thinking_steps: steps,
+        tokens_used: 0,
+        duration_ms: Date.now() - t0,
+      });
+    }
 
     steps.push(step('strategist', `Response generated in ${(llmDuration / 1000).toFixed(1)}s`, `${tokensUsed} tokens used`));
 
     // ================================================================
+
+    // Robust JSON extraction helper
+    function extractJSON(text: string): Record<string, unknown> | null {
+      // Try direct parse first
+      try { return JSON.parse(text); } catch {}
+      // Try to find JSON object in the text
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) { try { return JSON.parse(match[0]); } catch {} }
+      return null;
+    }
+
     // ================================================================
     // TOOL-USE LOOP: Agent can chain multiple queries (max 4 iterations)
     // ================================================================
@@ -267,7 +293,7 @@ export async function POST(request: Request) {
 
       for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
         let parsed;
-        try { parsed = JSON.parse(currentResponse); } catch { reply = currentResponse; break; }
+        parsed = extractJSON(currentResponse); if (!parsed) { reply = currentResponse || "The agent returned a non-JSON response. Please try again."; steps.push(step("executor", "Non-JSON response from LLM", currentResponse?.substring(0, 100))); break; }
 
         // Capture the reply text (may be updated on later iterations)
         if (parsed.reply) reply = parsed.reply;
