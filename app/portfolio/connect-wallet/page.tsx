@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { verifyMessage } from 'ethers/lib/utils'
 import { Navigation } from '@/components/polycopy/navigation'
@@ -46,6 +46,21 @@ type LinkStatus = {
 }
 
 export default function ConnectWalletTurnkeyPage() {
+  return (
+    <Suspense
+      fallback={
+        <>
+          <Navigation />
+          <div className="max-w-xl mx-auto p-6 text-center text-slate-500">Loading...</div>
+        </>
+      }
+    >
+      <ConnectWalletInner />
+    </Suspense>
+  )
+}
+
+function ConnectWalletInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const isV2 = searchParams.get('source') === 'v2'

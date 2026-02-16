@@ -6,6 +6,7 @@ import { ResponsiveContainer, AreaChart, Area } from "recharts"
 import { TraderAvatar } from "@/components/ui/polycopy-avatar"
 
 export type CardTheme = "cream" | "dark" | "profit" | "fire"
+export type CardVariant = "trader" | "user"
 
 interface TraderCardProps {
   displayName: string
@@ -23,6 +24,7 @@ interface TraderCardProps {
   timePeriod: '1D' | '7D' | '30D' | '3M' | '6M' | 'ALL'
   timePeriodLabel: string
   theme?: CardTheme
+  variant?: CardVariant
   rank?: number | null
 }
 
