@@ -14,7 +14,10 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
-import { parseExtendedFilters } from '@/lib/ft-sync/shared-logic';
+import {
+  parseExtendedFilters,
+  type FTWallet,
+} from '@/lib/ft-sync/shared-logic';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +45,7 @@ export async function GET(request: Request) {
       const end = new Date(w.end_date);
       if (start > now || end < now) continue;
 
-      const ext = parseExtendedFilters(w as { detailed_description?: string });
+      const ext = parseExtendedFilters(w as FTWallet);
       if (ext.target_trader) {
         traders.add(ext.target_trader.toLowerCase().trim());
       }
