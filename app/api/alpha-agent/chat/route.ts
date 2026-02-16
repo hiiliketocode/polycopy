@@ -296,7 +296,7 @@ export async function POST(request: Request) {
         parsed = extractJSON(currentResponse); if (!parsed) { reply = currentResponse || "The agent returned a non-JSON response. Please try again."; steps.push(step("executor", "Non-JSON response from LLM", currentResponse?.substring(0, 100))); break; }
 
         // Capture the reply text (may be updated on later iterations)
-        if (parsed.reply) reply = parsed.reply;
+        if (parsed.reply && typeof parsed.reply === 'string') reply = parsed.reply;
 
         // Check if there's an action to execute
         if (!parsed.action || !parsed.action.action_type || parsed.action.action_type === 'none') {
