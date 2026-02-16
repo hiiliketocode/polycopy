@@ -11,7 +11,7 @@ import {
   querySkipReasons,
   queryLTExecutionQuality,
 } from '@/lib/alpha-agent/supabase-tool';
-import { executeChatAction, type ActionResult } from '@/lib/alpha-agent/chat-actions';
+import { executeChatAction, type ActionResult, type ChatAction } from '@/lib/alpha-agent/chat-actions';
 import { SCHEMA_REFERENCE } from '@/lib/alpha-agent/schema-reference';
 import { buildNotesContext } from '@/lib/alpha-agent/notes';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -298,18 +298,19 @@ export async function POST(request: Request) {
         // Capture the reply text (may be updated on later iterations)
         if (parsed.reply && typeof parsed.reply === 'string') reply = parsed.reply;
 
-        // Check if there's an action to execute
-        if (!parsed.action || !parsed.action.action_type || parsed.action.action_type === 'none') {
+        // Check if there's an action to execute (parsed.action is unknown from extractJSON)
+        const action = parsed.action as { action_type?: string; parameters?: Record<string, unknown>; bot_id?: string; reasoning?: string; confirmation_required?: boolean } | undefined;
+        if (!action || !action.action_type || action.action_type === 'none') {
           if (iteration === 0) steps.push(step('executor', 'No action needed (conversation only)'));
           break;
         }
 
-        const actionType = parsed.action.action_type;
-        const actionParams = parsed.action.parameters || {};
+        const actionType = action.action_type;
+        const actionParams = action.parameters || {};
         const paramSummary = actionType === 'query_supabase'
           ? `table=${actionParams.table}, select=${actionParams.select || '*'}, filters=${JSON.stringify(actionParams.filters || {})}, order=${actionParams.order_by || 'none'}`
           : actionType === 'query_bigquery'
-          ? `SQL: ${(actionParams.sql || '').substring(0, 120)}`
+          ? `SQL: ${String(actionParams.sql ?? '').substring(0, 120)}`
           : actionType === 'search_markets'
           ? `query="${actionParams.query}"`
           : actionType === 'update_config'
@@ -317,8 +318,14 @@ export async function POST(request: Request) {
           : `${JSON.stringify(actionParams).substring(0, 100)}`;
         steps.push(step('executor', `[${iteration + 1}/${MAX_TOOL_ITERATIONS}] ${actionType}`, paramSummary));
 
-        const action = { ...parsed.action, bot_id: parsed.action.bot_id || botId || undefined };
-        const actionResult = await executeChatAction(supabase, action);
+        const actionPayload: ChatAction = {
+          action_type: actionType as ChatAction['action_type'],
+          bot_id: action.bot_id || botId || undefined,
+          parameters: action.parameters || {},
+          reasoning: action.reasoning ?? '',
+          confirmation_required: action.confirmation_required ?? false,
+        };
+        const actionResult = await executeChatAction(supabase, actionPayload);
         allActionResults.push(actionResult);
 
         if (!actionResult.success) {
