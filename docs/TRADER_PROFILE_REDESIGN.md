@@ -260,6 +260,8 @@ User visits /trader/[wallet]
 
 **Non-leaderboard fallback:** If the leaderboard API returns empty for a wallet (very rare — we've verified it works for wallets ranked as low as #349,336), the server computes aggregate P&L from the positions and closed-positions responses instead. Open positions, closed positions, trade history, and profile data are always available for any wallet regardless of leaderboard presence.
 
+**Pagination vs. aggregate stats:** The summary numbers at the top of a trader profile (total P&L, volume, rank per time period) always reflect the trader's complete history — the leaderboard API returns these as pre-computed totals in a single call. Pagination only applies to the scrollable detail lists below the summary (individual trade rows, position cards). A trader with 5,000 trades will show their full all-time P&L immediately; the trade history list will load the first 50 rows and fetch more as the user scrolls.
+
 ---
 
 ## 5. Will It Provide Full History Performance Data?
@@ -505,7 +507,7 @@ Update `app/trader/[wallet]/page.tsx` and `app/v2/trader/[wallet]/page.tsx` to:
 | API response format changes | Low | Type-safe parsing with runtime validation, alerting on parse failures |
 | Missing data for very new wallets | Low | The leaderboard API returns empty arrays gracefully; UI handles empty state |
 | Leaderboard API doesn't include all wallets | Low | Already verified: `user=` parameter returns data for wallets not on the public leaderboard (tested with rank #2,127 and rank #349,336 wallets). If the leaderboard ever returns empty for a wallet, fallback: sum `cashPnl` from `/positions` + `realizedPnl` from `/closed-positions` to compute aggregate P&L. Profile, trade history, and position data are always available regardless of leaderboard status. |
-| Large response for very active traders | Medium | Paginate initial load: fetch first 50 positions, first 50 closed positions, first 50 trades. Lazy-load more on scroll via separate paginated requests. The `/positions` endpoint supports limit up to 500, `/closed-positions` up to 50, and `/activity` up to 500 per page. |
+| Large response for very active traders | Medium | **Important distinction:** The aggregate P&L numbers (total P&L, volume, rank) always reflect the trader's full history — the leaderboard API returns complete all-time stats in a single call, regardless of how many trades they've made. Pagination only applies to the detailed lists below the summary (individual trade history rows, position cards). For those lists, fetch the first 50 items and lazy-load more on scroll. The `/positions` endpoint supports limit up to 500, `/closed-positions` up to 50, and `/activity` up to 500 per page. |
 
 ---
 
