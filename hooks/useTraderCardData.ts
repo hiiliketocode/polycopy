@@ -84,17 +84,17 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
           timePeriod === '30D' ? v3.performance?.month?.rank :
           allPerf?.rank
 
-        // Format member since date (first trade date or account created)
+        // Format member since date — prefer accountCreated (actual join date)
         let memberSince: string | undefined
-        if (filteredData.length > 0) {
-          const firstDate = new Date(filteredData[0].date)
-          memberSince = firstDate.toLocaleDateString('en-US', {
+        if (v3.profile?.accountCreated) {
+          const created = new Date(v3.profile.accountCreated)
+          memberSince = created.toLocaleDateString('en-US', {
             month: 'short',
             year: 'numeric',
           })
-        } else if (v3.profile?.accountCreated) {
-          const created = new Date(v3.profile.accountCreated)
-          memberSince = created.toLocaleDateString('en-US', {
+        } else if (dailyRows.length > 0) {
+          const firstDate = new Date(dailyRows[0].date)
+          memberSince = firstDate.toLocaleDateString('en-US', {
             month: 'short',
             year: 'numeric',
           })
