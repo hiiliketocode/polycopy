@@ -320,7 +320,6 @@ export default function PortfolioPage() {
   const [showAllTraders, setShowAllTraders] = useState(false)
 
   /* ── UI ── */
-  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState<ProfileTab>("trades")
   const [copiedAddress, setCopiedAddress] = useState(false)
@@ -429,10 +428,13 @@ export default function PortfolioPage() {
      ═══════════════════════════════════════════════════════ */
   const fetchStats = useCallback(async () => {
     if (!user) return
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30000)
     try {
       console.log("[v2/portfolio] Fetching portfolio stats for user:", user.id)
       const res = await fetch(`/api/portfolio/stats?userId=${user.id}`, {
         cache: "no-store",
+        signal: controller.signal,
       })
       console.log("[v2/portfolio] Stats response status:", res.status)
       if (res.ok) {
@@ -462,7 +464,13 @@ export default function PortfolioPage() {
         console.error("[v2/portfolio] Stats fetch failed:", res.status, await res.text())
       }
     } catch (err) {
-      console.error("[v2/portfolio] Error fetching portfolio stats:", err)
+      if ((err as Error)?.name !== "AbortError") {
+        console.error("[v2/portfolio] Error fetching portfolio stats:", err)
+      } else {
+        console.warn("[v2/portfolio] Stats fetch timed out after 30s")
+      }
+    } finally {
+      clearTimeout(timeout)
     }
   }, [user])
 
@@ -472,99 +480,155 @@ export default function PortfolioPage() {
   const fetchTrades = useCallback(async () => {
     if (!user) return
     setLoadingTrades(true)
-    try {
-      const allTrades: CopiedTrade[] = []
-      let page = 1
-      let hasMore = true
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30000)
 
-      while (hasMore && page <= 10) {
-        const res = await fetch(
-          `/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=50`,
-          { cache: "no-store" }
-        )
-        if (!res.ok) break
-        const data = await res.json()
-        const trades = data.trades || []
-        allTrades.push(
-          ...trades.map((t: any) => ({
-            id: t.id || t.copied_trade_id || t.order_id,
-            order_id: t.order_id,
-            copied_trade_id: t.copied_trade_id,
-            trader_wallet: t.trader_wallet,
-            trader_username: t.trader_username,
-            trader_profile_image_url: t.trader_profile_image_url,
-            market_id: t.market_id,
-            market_title: t.market_title || "Unknown Market",
-            market_slug: t.market_slug,
-            market_avatar_url: t.market_avatar_url,
-            outcome: t.outcome || "Unknown",
-            price_when_copied: Number(t.price_when_copied || 0),
-            entry_size: t.entry_size != null ? Number(t.entry_size) : undefined,
-            amount_invested: t.amount_invested != null ? Number(t.amount_invested) : undefined,
-            created_at: t.created_at || t.copied_at,
-            copied_at: t.copied_at,
-            current_price: t.current_price != null ? Number(t.current_price) : null,
-            market_resolved: Boolean(t.market_resolved),
-            market_resolved_at: t.market_resolved_at,
-            roi: t.roi != null ? Number(t.roi) : null,
-            user_closed_at: t.user_closed_at,
-            user_exit_price: t.user_exit_price != null ? Number(t.user_exit_price) : null,
-            resolved_outcome: t.resolved_outcome,
-            trade_method: t.trade_method,
-            side: t.side,
-            pnl_usd: t.pnl_usd != null ? Number(t.pnl_usd) : null,
-          }))
-        )
-        hasMore = data.hasMore === true
-        page++
+    const mapEnrichedTrade = (t: any): CopiedTrade => ({
+      id: t.id || t.copied_trade_id || t.order_id,
+      order_id: t.order_id,
+      copied_trade_id: t.copied_trade_id,
+      trader_wallet: t.trader_wallet,
+      trader_username: t.trader_username,
+      trader_profile_image_url: t.trader_profile_image_url,
+      market_id: t.market_id,
+      market_title: t.market_title || "Unknown Market",
+      market_slug: t.market_slug,
+      market_avatar_url: t.market_avatar_url,
+      outcome: t.outcome || "Unknown",
+      price_when_copied: Number(t.price_when_copied || 0),
+      entry_size: t.entry_size != null ? Number(t.entry_size) : undefined,
+      amount_invested: t.amount_invested != null ? Number(t.amount_invested) : undefined,
+      created_at: t.created_at || t.copied_at,
+      copied_at: t.copied_at,
+      current_price: t.current_price != null ? Number(t.current_price) : null,
+      market_resolved: Boolean(t.market_resolved),
+      market_resolved_at: t.market_resolved_at,
+      roi: t.roi != null ? Number(t.roi) : null,
+      user_closed_at: t.user_closed_at,
+      user_exit_price: t.user_exit_price != null ? Number(t.user_exit_price) : null,
+      resolved_outcome: t.resolved_outcome,
+      trade_method: t.trade_method,
+      side: t.side,
+      pnl_usd: t.pnl_usd != null ? Number(t.pnl_usd) : null,
+    })
+
+    const mapOrderTrade = (o: any): CopiedTrade => {
+      // Determine resolved status from multiple signals in the orders response
+      const closedActivities = new Set(["redeemed", "lost", "canceled", "expired", "failed"])
+      const isResolved =
+        Boolean(o.marketResolved) ||
+        o.marketIsOpen === false ||
+        o.positionState === "closed" ||
+        closedActivities.has(o.activity)
+
+      return {
+        id: o.orderId,
+        market_id: o.marketId,
+        market_title: o.marketTitle || "Unknown Market",
+        market_slug: o.marketSlug,
+        market_avatar_url: o.marketImageUrl,
+        outcome: o.outcome || "Unknown",
+        price_when_copied: Number(o.priceOrAvgPrice || 0),
+        entry_size: o.filledSize != null ? Number(o.filledSize) : undefined,
+        amount_invested:
+          o.filledSize && o.priceOrAvgPrice
+            ? Number(o.filledSize) * Number(o.priceOrAvgPrice)
+            : undefined,
+        created_at: o.createdAt,
+        current_price: o.currentPrice != null ? Number(o.currentPrice) : null,
+        market_resolved: isResolved,
+        roi: null,
+        user_closed_at: null,
+        pnl_usd: o.pnlUsd != null ? Number(o.pnlUsd) : null,
+        side: o.side,
+        trader_wallet: o.copiedTraderWallet || o.traderWallet,
+        trader_username: o.traderName,
+        trader_profile_image_url: o.traderAvatarUrl,
+      }
+    }
+
+    try {
+      // Fetch first page of enriched trades AND all orders in parallel for speed
+      const [firstPageResult, ordersResult] = await Promise.all([
+        fetch(
+          `/api/portfolio/trades?userId=${user.id}&page=1&pageSize=50`,
+          { cache: "no-store", signal: controller.signal }
+        ).then(async (res) => {
+          if (!res.ok) return { trades: [] as any[], hasMore: false }
+          const data = await res.json()
+          return { trades: data.trades || [], hasMore: data.hasMore === true }
+        }).catch(() => ({ trades: [] as any[], hasMore: false })),
+
+        fetch("/api/orders", { cache: "no-store", signal: controller.signal })
+          .then(async (res) => {
+            if (!res.ok) return []
+            const data = await res.json()
+            return data.orders || []
+          })
+          .catch(() => []),
+      ])
+
+      // Build initial trade list from both sources immediately
+      const tradeMap = new Map<string, CopiedTrade>()
+
+      // Orders from /api/orders (by trader_id - catches ALL positions)
+      for (const o of ordersResult) {
+        if (!o.orderId) continue
+        // Only include buy-side filled orders for the portfolio view
+        const side = String(o.side ?? "").toLowerCase()
+        const filled = Number(o.filledSize ?? 0)
+        if (side === "sell" || filled <= 0) continue
+        const trade = mapOrderTrade(o)
+        tradeMap.set(trade.id, trade)
       }
 
-      // Also fetch quick trades from /api/orders
-      try {
-        const ordersRes = await fetch("/api/orders", { cache: "no-store" })
-        if (ordersRes.ok) {
-          const ordersData = await ordersRes.json()
-          const quickTrades = ordersData.orders || []
-          const existingIds = new Set(allTrades.map((t) => t.id))
-          for (const o of quickTrades) {
-            if (!existingIds.has(o.orderId)) {
-              allTrades.push({
-                id: o.orderId,
-                market_id: o.marketId,
-                market_title: o.marketTitle || "Unknown Market",
-                market_slug: o.marketSlug,
-                market_avatar_url: o.marketImageUrl,
-                outcome: o.outcome || "Unknown",
-                price_when_copied: Number(o.priceOrAvgPrice || 0),
-                entry_size: o.filledSize != null ? Number(o.filledSize) : undefined,
-                amount_invested: o.filledSize && o.priceOrAvgPrice ? Number(o.filledSize) * Number(o.priceOrAvgPrice) : undefined,
-                created_at: o.createdAt,
-                current_price: o.currentPrice != null ? Number(o.currentPrice) : null,
-                market_resolved: Boolean(o.marketResolved),
-                roi: null,
-                user_closed_at: null,
-                pnl_usd: o.pnlUsd != null ? Number(o.pnlUsd) : null,
-                side: o.side,
-                trader_wallet: o.copiedTraderWallet || o.traderWallet,
-                trader_username: o.traderName,
-                trader_profile_image_url: o.traderAvatarUrl,
-              })
+      // Enriched trades overlay (has better metadata: trader names, avatars, pnl)
+      for (const t of firstPageResult.trades) {
+        const trade = mapEnrichedTrade(t)
+        tradeMap.set(trade.id, trade) // Enriched data overwrites basic order data
+      }
+
+      // Show data immediately from the first batch
+      const sortTrades = (trades: CopiedTrade[]) =>
+        trades.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+      setCopiedTrades(sortTrades(Array.from(tradeMap.values())))
+      setLoadingTrades(false) // Unblock trades section early
+
+      // Fetch remaining pages in background to get complete enriched data
+      if (firstPageResult.hasMore) {
+        let page = 2
+        let hasMore = true
+        while (hasMore && page <= 10) {
+          try {
+            const res = await fetch(
+              `/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=50`,
+              { cache: "no-store", signal: controller.signal }
+            )
+            if (!res.ok) break
+            const data = await res.json()
+            const trades = data.trades || []
+            for (const t of trades) {
+              const trade = mapEnrichedTrade(t)
+              tradeMap.set(trade.id, trade)
             }
+            hasMore = data.hasMore === true
+            page++
+          } catch {
+            break
           }
         }
-      } catch {
-        // Ignore quick trades fetch error
+        // Update with full dataset
+        setCopiedTrades(sortTrades(Array.from(tradeMap.values())))
       }
-
-      // Sort by date descending
-      allTrades.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      )
-
-      setCopiedTrades(allTrades)
     } catch (err) {
-      console.error("Error fetching trades:", err)
+      if ((err as Error)?.name !== "AbortError") {
+        console.error("Error fetching trades:", err)
+      } else {
+        console.warn("[v2/portfolio] Trades fetch timed out after 30s")
+      }
     } finally {
+      clearTimeout(timeout)
       setLoadingTrades(false)
     }
   }, [user])
@@ -635,28 +699,44 @@ export default function PortfolioPage() {
   }, [user])
 
   /* ═══════════════════════════════════════════════════════
-     Initial Load
+     Initial Load — Stats (independent, like v1)
+     ═══════════════════════════════════════════════════════ */
+  const [loadingStats, setLoadingStats] = useState(true)
+  const hasLoadedStats = useRef(false)
+
+  useEffect(() => {
+    if (!user || hasLoadedStats.current) return
+    hasLoadedStats.current = true
+
+    const load = async () => {
+      setLoadingStats(true)
+      try {
+        await fetchStats()
+      } finally {
+        setLoadingStats(false)
+      }
+    }
+    load()
+  }, [user, fetchStats])
+
+  /* ═══════════════════════════════════════════════════════
+     Initial Load — Trades (independent, like v1)
      ═══════════════════════════════════════════════════════ */
   useEffect(() => {
-    if (!user) return
-    if (hasLoadedTrades.current) return
+    if (!user || hasLoadedTrades.current) return
     hasLoadedTrades.current = true
-
-    const loadAll = async () => {
-      setLoading(true)
-      await Promise.all([fetchStats(), fetchTrades()])
-      setLoading(false)
-    }
-
-    loadAll()
-  }, [user, fetchStats, fetchTrades])
+    fetchTrades()
+  }, [user, fetchTrades])
 
   /* ═══════════════════════════════════════════════════════
      Refresh Handler
      ═══════════════════════════════════════════════════════ */
   const handleRefresh = async () => {
     setRefreshing(true)
-    await Promise.all([fetchStats(), fetchTrades()])
+    // Fire both independently - neither blocks the other
+    const statsPromise = fetchStats()
+    const tradesPromise = fetchTrades()
+    await Promise.allSettled([statsPromise, tradesPromise])
     setRefreshing(false)
   }
 
@@ -915,7 +995,7 @@ export default function PortfolioPage() {
      Render: Loading
      ═══════════════════════════════════════════════════════ */
 
-  if (!user || loading) {
+  if (!user) {
     return (
       <div className="min-h-screen bg-poly-cream">
         <TopNav />
@@ -984,9 +1064,12 @@ export default function PortfolioPage() {
                   {truncateAddress(profile.trading_wallet_address)}
                 </span>
               )}
-              <span className="font-body">
+              <Link
+                href="/v2/following"
+                className="font-body underline-offset-2 hover:underline"
+              >
                 {followingCount} Traders Following
-              </span>
+              </Link>
             </div>
           </div>
 
@@ -1015,69 +1098,81 @@ export default function PortfolioPage() {
             Stats Row
             ───────────────────────────────────────────── */}
         <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
-          {/* Total PnL */}
-          <div className="border border-border bg-poly-paper p-4 text-center">
-            <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Total_PnL
-            </p>
-            <p
-              className={cn(
-                "font-sans text-2xl font-bold tabular-nums md:text-3xl",
-                userStats.totalPnl >= 0 ? "text-profit-green" : "text-loss-red"
-              )}
-            >
-              {formatSignedCurrency(userStats.totalPnl)}
-            </p>
-            <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
-              Net Performance
-            </p>
-          </div>
+          {loadingStats && !stats && copiedTrades.length === 0 ? (
+            <>
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex h-28 items-center justify-center border border-border bg-poly-paper">
+                  <div className="h-8 w-24 animate-pulse bg-gray-200" />
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              {/* Total PnL */}
+              <div className="border border-border bg-poly-paper p-4 text-center">
+                <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Total_PnL
+                </p>
+                <p
+                  className={cn(
+                    "font-sans text-2xl font-bold tabular-nums md:text-3xl",
+                    userStats.totalPnl >= 0 ? "text-profit-green" : "text-loss-red"
+                  )}
+                >
+                  {formatSignedCurrency(userStats.totalPnl)}
+                </p>
+                <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Net Performance
+                </p>
+              </div>
 
-          {/* ROI */}
-          <div className="border border-border bg-poly-paper p-4 text-center">
-            <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              ROI_Percent
-            </p>
-            <p
-              className={cn(
-                "font-sans text-2xl font-bold tabular-nums md:text-3xl",
-                userStats.roi >= 0 ? "text-profit-green" : "text-loss-red"
-              )}
-            >
-              {formatPercent(userStats.roi, true)}
-            </p>
-            <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
-              Total Return
-            </p>
-          </div>
+              {/* ROI */}
+              <div className="border border-border bg-poly-paper p-4 text-center">
+                <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  ROI_Percent
+                </p>
+                <p
+                  className={cn(
+                    "font-sans text-2xl font-bold tabular-nums md:text-3xl",
+                    userStats.roi >= 0 ? "text-profit-green" : "text-loss-red"
+                  )}
+                >
+                  {formatPercent(userStats.roi, true)}
+                </p>
+                <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Total Return
+                </p>
+              </div>
 
-          {/* Volume */}
-          <div className="border border-border bg-poly-paper p-4 text-center">
-            <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Traded_Vol
-            </p>
-            <p className="font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
-              {Math.abs(userStats.totalVolume) >= 1000
-                ? `$${(userStats.totalVolume / 1000).toFixed(2)}K`
-                : `$${userStats.totalVolume.toFixed(2)}`}
-            </p>
-            <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
-              Total Exposure
-            </p>
-          </div>
+              {/* Volume */}
+              <div className="border border-border bg-poly-paper p-4 text-center">
+                <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Traded_Vol
+                </p>
+                <p className="font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
+                  {Math.abs(userStats.totalVolume) >= 1000
+                    ? `$${(userStats.totalVolume / 1000).toFixed(2)}K`
+                    : `$${userStats.totalVolume.toFixed(2)}`}
+                </p>
+                <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Total Exposure
+                </p>
+              </div>
 
-          {/* Win Rate */}
-          <div className="border border-border bg-poly-paper p-4 text-center">
-            <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Win_Rate
-            </p>
-            <p className="font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
-              {userStats.winRate.toFixed(1)}%
-            </p>
-            <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
-              Trade Success
-            </p>
-          </div>
+              {/* Win Rate */}
+              <div className="border border-border bg-poly-paper p-4 text-center">
+                <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Win_Rate
+                </p>
+                <p className="font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
+                  {userStats.winRate.toFixed(1)}%
+                </p>
+                <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Trade Success
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* ─────────────────────────────────────────────
@@ -1149,15 +1244,10 @@ export default function PortfolioPage() {
             )}
 
             {loadingTrades ? (
-              <div className="border border-border bg-poly-paper p-16 text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center">
-                  <Clock className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <h3 className="mb-2 font-sans text-lg font-bold uppercase tracking-wide text-poly-black">
-                  Trade History Terminal
-                </h3>
+              <div className="border border-border bg-poly-paper p-12 text-center">
+                <Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin text-muted-foreground" />
                 <p className="font-body text-sm text-muted-foreground">
-                  Aggregating historical ledger data...
+                  Loading trades…
                 </p>
               </div>
             ) : filteredTrades.length === 0 ? (
@@ -1180,11 +1270,22 @@ export default function PortfolioPage() {
                   const isSold = Boolean(trade.user_closed_at)
                   const entryPrice = trade.price_when_copied
                   const currentPrice = trade.current_price ?? entryPrice
-                  const roi = trade.roi
                   const invested = trade.amount_invested || (trade.entry_size && entryPrice ? trade.entry_size * entryPrice : null)
                   const isExpanded = expandedTradeId === trade.id
                   const isClosing = closingTradeId === trade.id
                   const hasWallet = Boolean(profile?.trading_wallet_address)
+
+                  // Always compute both ROI and PnL so every card shows them
+                  const computedPnl =
+                    trade.pnl_usd ??
+                    (trade.entry_size != null && entryPrice > 0 && currentPrice != null
+                      ? (currentPrice - entryPrice) * trade.entry_size
+                      : null)
+                  const computedRoi =
+                    trade.roi ??
+                    (entryPrice > 0 && currentPrice != null
+                      ? ((currentPrice - entryPrice) / entryPrice) * 100
+                      : null)
 
                   return (
                     <div
@@ -1261,34 +1362,34 @@ export default function PortfolioPage() {
 
                             {/* ROI / P&L on right */}
                             <div className="shrink-0 text-right">
-                              {roi != null && (
+                              {computedRoi != null && (
                                 <p
                                   className={cn(
                                     "font-sans text-sm font-bold tabular-nums",
-                                    roi >= 0 ? "text-profit-green" : "text-loss-red"
+                                    computedRoi >= 0 ? "text-profit-green" : "text-loss-red"
                                   )}
                                 >
-                                  {roi >= 0 ? "+" : ""}
-                                  {roi.toFixed(1)}%
+                                  {computedRoi >= 0 ? "+" : ""}
+                                  {computedRoi.toFixed(1)}%
                                 </p>
                               )}
-                              {trade.pnl_usd != null && (
+                              {computedPnl != null && (
                                 <p
                                   className={cn(
                                     "font-body text-xs tabular-nums",
-                                    trade.pnl_usd >= 0
+                                    computedPnl >= 0
                                       ? "text-profit-green"
                                       : "text-loss-red"
                                   )}
                                 >
-                                  {formatSignedCurrency(trade.pnl_usd)}
+                                  {formatSignedCurrency(computedPnl)}
                                 </p>
                               )}
                             </div>
                           </div>
 
-                          {/* Price & detail row */}
-                          <div className="mt-2 flex flex-wrap items-center gap-4 font-body text-xs text-muted-foreground">
+                          {/* Price & detail row + Sell button */}
+                          <div className="mt-2 flex items-center gap-4 font-body text-xs text-muted-foreground">
                             <span className="tabular-nums">
                               ${entryPrice.toFixed(2)}{" "}
                               <span className="text-muted-foreground/60">→</span>{" "}
@@ -1300,40 +1401,22 @@ export default function PortfolioPage() {
                               </span>
                             )}
                             <span>{formatRelativeTime(trade.created_at)}</span>
+                            {isOpen && hasWallet && trade.market_slug && (
+                              <button
+                                type="button"
+                                onClick={() => handleSellOnPolymarket(trade)}
+                                className="ml-auto inline-flex items-center gap-1 bg-loss-red px-2.5 py-1 font-sans text-[10px] font-bold uppercase tracking-widest text-white transition-colors hover:bg-loss-red/90"
+                              >
+                                Sell
+                                <ExternalLink className="h-3 w-3" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
 
                       {/* ── Action buttons row ── */}
                       <div className="flex items-center gap-2 border-t border-border/50 px-4 py-2.5">
-                        {isOpen && hasWallet && trade.market_slug && (
-                          <button
-                            type="button"
-                            onClick={() => handleSellOnPolymarket(trade)}
-                            className="inline-flex items-center gap-1.5 border border-loss-red/30 px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-loss-red transition-colors hover:bg-loss-red/10"
-                          >
-                            Sell
-                            <ExternalLink className="h-3 w-3" />
-                          </button>
-                        )}
-                        {isOpen && (
-                          <button
-                            type="button"
-                            onClick={() => handleMarkAsSold(trade)}
-                            disabled={isClosing}
-                            className={cn(
-                              "inline-flex items-center gap-1.5 border border-border px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black hover:border-poly-black",
-                              isClosing && "opacity-50 cursor-not-allowed"
-                            )}
-                          >
-                            {isClosing ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              <Check className="h-3 w-3" />
-                            )}
-                            Mark as Sold
-                          </button>
-                        )}
                         {isSold && (
                           <button
                             type="button"
@@ -1463,9 +1546,9 @@ export default function PortfolioPage() {
                             )}
                           </div>
 
-                          {/* View on Polymarket link */}
-                          {trade.market_slug && (
-                            <div className="mt-3 pt-3 border-t border-border/50">
+                          {/* Actions row: View on Polymarket + Mark as Sold */}
+                          <div className="mt-3 flex items-center gap-4 pt-3 border-t border-border/50">
+                            {trade.market_slug && (
                               <a
                                 href={`https://polymarket.com/market/${trade.market_slug}`}
                                 target="_blank"
@@ -1475,8 +1558,26 @@ export default function PortfolioPage() {
                                 View on Polymarket
                                 <ExternalLink className="h-3 w-3" />
                               </a>
-                            </div>
-                          )}
+                            )}
+                            {isOpen && (
+                              <button
+                                type="button"
+                                onClick={() => handleMarkAsSold(trade)}
+                                disabled={isClosing}
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black",
+                                  isClosing && "opacity-50 cursor-not-allowed"
+                                )}
+                              >
+                                {isClosing ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Check className="h-3 w-3" />
+                                )}
+                                Mark as Sold
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

@@ -233,16 +233,20 @@ export async function GET(request: Request) {
       return !updatedAt || now - updatedAt > PRICE_STALE_MS
     })
     
-    console.log(`[portfolio/trades] Checking ${uniqueMarketIds.length} markets, refreshing ${refreshTargets.length} stale markets`)
+    console.log(`[portfolio/trades] Checking ${uniqueMarketIds.length} markets, ${refreshTargets.length} stale (refreshing in background)`)
 
+    // Fire-and-forget: refresh stale prices in background so the response isn't blocked
     if (refreshTargets.length > 0) {
-      await Promise.all(
+      Promise.all(
         refreshTargets.map(async (marketId) => {
           try {
+            const controller = new AbortController()
+            const timeout = setTimeout(() => controller.abort(), 8000)
             const resp = await fetch(
               `${APP_BASE_URL}/api/polymarket/price?conditionId=${encodeURIComponent(marketId)}`,
-              { cache: 'no-store' }
+              { cache: 'no-store', signal: controller.signal }
             )
+            clearTimeout(timeout)
             if (!resp.ok) return
             const payload = await resp.json()
             const marketPayload = payload?.market ?? payload ?? null
@@ -292,14 +296,11 @@ export async function GET(request: Request) {
             await supabase
               .from('markets')
               .upsert(updatedMarket, { onConflict: 'condition_id' })
-
-            const existing = marketsMap.get(marketId) || {}
-            marketsMap.set(marketId, { ...existing, ...updatedMarket })
           } catch (err) {
-            console.warn(`[portfolio] failed to refresh market price for ${marketId}`, err)
+            console.warn(`[portfolio] background price refresh failed for ${marketId}`, err)
           }
         })
-      )
+      ).catch((err) => console.warn('[portfolio/trades] background price refresh batch failed', err))
     }
 
     const trades = (data || []).map((row: any) => {
