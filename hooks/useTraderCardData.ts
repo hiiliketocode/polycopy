@@ -68,6 +68,11 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
           stats.roi = totalVolume > 0 ? (stats.totalPnL / totalVolume) * 100 : 0
         }
 
+        // Use win rate from closed positions (authoritative) instead of daily rows
+        if (v3.winRate != null) {
+          stats.winRate = v3.winRate
+        }
+
         // Check if trader is in top 100 (from all-time rank)
         const allTimeRank = allPerf?.rank ?? 0
         const isTopHundred = allTimeRank > 0 && allTimeRank <= 100
