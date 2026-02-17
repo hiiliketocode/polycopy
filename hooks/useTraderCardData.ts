@@ -26,26 +26,6 @@ export interface TraderCardData {
   rank?: number | null
 }
 
-interface RealizedPnlResponse {
-  daily: DailyPnlRow[]
-  summaries: any[]
-  volume: number | null
-  rankings: Record<string, { rank: number | null; total: number | null; delta: number | null }>
-}
-
-interface TraderResponse {
-  wallet: string
-  displayName: string
-  pnl: number | null
-  roi: number | null
-  winRate: number | null
-  volume: number | null
-  followerCount: number
-  profileImage?: string | null
-  hasStats: boolean
-  source: string
-}
-
 export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod) {
   const [data, setData] = useState<TraderCardData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -57,44 +37,59 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
       setError(null)
 
       try {
-        // Fetch trader basic info and realized P&L data in parallel
-        const [traderResponse, realizedPnlResponse] = await Promise.all([
-          fetch(`/api/trader/${walletAddress}?timePeriod=all`),
-          fetch(`/api/trader/${walletAddress}/realized-pnl`),
-        ])
+        const res = await fetch(`/api/v3/trader/${walletAddress}/profile`)
+        if (!res.ok) throw new Error('Failed to fetch trader data')
+        const v3: any = await res.json()
 
-        if (!traderResponse.ok || !realizedPnlResponse.ok) {
-          throw new Error('Failed to fetch trader data')
-        }
+        // Build DailyPnlRow[] from v3 dailyPnl
+        const dailyRows: DailyPnlRow[] = (v3.dailyPnl ?? []).map((r: any) => ({
+          date: r.date,
+          realized_pnl: Number(r.realized_pnl ?? 0),
+          pnl_to_date: r.pnl_to_date != null ? Number(r.pnl_to_date) : null,
+        }))
 
-        const traderInfo: TraderResponse = await traderResponse.json()
-        const realizedPnl: RealizedPnlResponse = await realizedPnlResponse.json()
-
-        // Filter data by time period using the same logic as trader profile page
-        const filteredData = filterByTimePeriodTraderProfile(realizedPnl.daily, timePeriod)
+        // Filter data by time period
+        const filteredData = filterByTimePeriodTraderProfile(dailyRows, timePeriod)
 
         // Calculate stats for time period
-        const stats = calculatePeriodStats(filteredData, realizedPnl.volume)
+        const allPerf = v3.performance?.all
+        const totalVolume = allPerf?.volume ?? 0
+        const stats = calculatePeriodStats(filteredData, totalVolume)
 
-        // Check if trader is in top 100 (from rankings data)
-        const allTimeRank = realizedPnl.rankings?.ALL?.rank
-        const isTopHundred = allTimeRank !== null && allTimeRank !== undefined && allTimeRank <= 100
+        // Override totalPnL with leaderboard value (includes realized + unrealized)
+        const periodPerf =
+          timePeriod === '1D' ? v3.performance?.day :
+          timePeriod === '7D' ? v3.performance?.week :
+          timePeriod === '30D' ? v3.performance?.month :
+          allPerf
+        if (periodPerf?.pnl != null) {
+          stats.totalPnL = periodPerf.pnl
+          // Recalculate ROI with authoritative P&L
+          stats.roi = totalVolume > 0 ? (stats.totalPnL / totalVolume) * 100 : 0
+        }
+
+        // Check if trader is in top 100 (from all-time rank)
+        const allTimeRank = allPerf?.rank ?? 0
+        const isTopHundred = allTimeRank > 0 && allTimeRank <= 100
 
         // Get rank for the selected time period
-        const timePeriodKey = timePeriod === 'ALL' ? 'ALL' : 
-                              timePeriod === '1D' ? '1D' :
-                              timePeriod === '7D' ? '7D' :
-                              timePeriod === '30D' ? '30D' :
-                              timePeriod === '3M' ? '3M' :
-                              timePeriod === '6M' ? '6M' : 'ALL'
-        
-        const periodRank = realizedPnl.rankings?.[timePeriodKey]?.rank
+        const periodRank =
+          timePeriod === '1D' ? v3.performance?.day?.rank :
+          timePeriod === '7D' ? v3.performance?.week?.rank :
+          timePeriod === '30D' ? v3.performance?.month?.rank :
+          allPerf?.rank
 
-        // Format member since date (first trade date)
+        // Format member since date (first trade date or account created)
         let memberSince: string | undefined
         if (filteredData.length > 0) {
           const firstDate = new Date(filteredData[0].date)
           memberSince = firstDate.toLocaleDateString('en-US', {
+            month: 'short',
+            year: 'numeric',
+          })
+        } else if (v3.profile?.accountCreated) {
+          const created = new Date(v3.profile.accountCreated)
+          memberSince = created.toLocaleDateString('en-US', {
             month: 'short',
             year: 'numeric',
           })
@@ -107,13 +102,13 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
         const timePeriodLabel = getTimePeriodLabel(timePeriod)
 
         // Proxy S3 images through our API to avoid CORS issues
-        let proxiedProfileImage = traderInfo.profileImage
+        let proxiedProfileImage = v3.profile?.profileImage ?? null
         if (proxiedProfileImage && proxiedProfileImage.includes('polymarket-upload.s3.us-east-2.amazonaws.com')) {
           proxiedProfileImage = `/api/proxy-image?url=${encodeURIComponent(proxiedProfileImage)}`
         }
 
         setData({
-          displayName: traderInfo.displayName,
+          displayName: v3.profile?.displayName ?? walletAddress,
           walletAddress,
           profileImage: proxiedProfileImage,
           isTopHundred,
@@ -127,7 +122,7 @@ export function useTraderCardData(walletAddress: string, timePeriod: TimePeriod)
           dailyPnlData: chartData,
           timePeriod,
           timePeriodLabel,
-          rank: periodRank,
+          rank: periodRank ?? null,
         })
       } catch (err) {
         console.error('Error fetching trader card data:', err)

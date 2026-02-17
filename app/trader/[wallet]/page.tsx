@@ -141,6 +141,87 @@ const pnlWindowOptions = [
 
 type PnlWindowKey = typeof pnlWindowOptions[number]['key'];
 
+// V3 performance time-period options (from Polymarket leaderboard API)
+const perfPeriodOptions = [
+  { key: 'day', label: '1D' },
+  { key: 'week', label: '1W' },
+  { key: 'month', label: '1M' },
+  { key: 'all', label: 'All' },
+] as const;
+
+type PerfPeriodKey = typeof perfPeriodOptions[number]['key'];
+
+interface PerformancePeriod {
+  pnl: number;
+  volume: number;
+  rank: number;
+}
+
+interface V3PolymarketPosition {
+  conditionId: string;
+  title: string;
+  slug: string;
+  icon: string;
+  eventSlug: string;
+  outcome: string;
+  size: number;
+  avgPrice: number;
+  curPrice: number;
+  initialValue: number;
+  currentValue: number;
+  cashPnl: number;
+  percentPnl: number;
+  realizedPnl: number;
+  percentRealizedPnl: number;
+  totalBought: number;
+  endDate: string;
+  asset: string;
+  redeemable: boolean;
+  [key: string]: any;
+}
+
+interface V3ClosedPosition {
+  conditionId: string;
+  title: string;
+  slug: string;
+  icon: string;
+  eventSlug: string;
+  outcome: string;
+  avgPrice: number;
+  totalBought: number;
+  realizedPnl: number;
+  curPrice: number;
+  timestamp: number;
+  asset: string;
+  [key: string]: any;
+}
+
+interface V3ProfileResponse {
+  profile: {
+    wallet: string;
+    displayName: string;
+    pseudonym: string | null;
+    bio: string | null;
+    profileImage: string | null;
+    xUsername: string | null;
+    verifiedBadge: boolean;
+    accountCreated: string | null;
+  };
+  performance: {
+    day: PerformancePeriod | null;
+    week: PerformancePeriod | null;
+    month: PerformancePeriod | null;
+    all: PerformancePeriod | null;
+  };
+  positions: {
+    open: V3PolymarketPosition[];
+    closed: V3ClosedPosition[];
+  };
+  trades: any[];
+  followerCount: number;
+  hasStats: boolean;
+}
+
 const normalizeOutcome = (value: string) => value?.trim().toLowerCase();
 
 const findOutcomeIndex = (outcomes: string[] | null | undefined, target: string) => {
@@ -360,6 +441,15 @@ export default function TraderProfilePage({
     delta: number | null;
     previousRank: number | null;
   }>>({});
+
+  // V3 profile data
+  const [v3Profile, setV3Profile] = useState<V3ProfileResponse | null>(null);
+  const [openPositions, setOpenPositions] = useState<V3PolymarketPosition[]>([]);
+  const [closedPositions, setClosedPositions] = useState<V3ClosedPosition[]>([]);
+  const [perfPeriod, setPerfPeriod] = useState<PerfPeriodKey>('all');
+  const [loadingMoreTrades, setLoadingMoreTrades] = useState(false);
+  const [tradesOffset, setTradesOffset] = useState(100);
+  const [noMoreTrades, setNoMoreTrades] = useState(false);
   const [myTradeStats, setMyTradeStats] = useState<MyTradeStatsResponse | null>(null);
   const [myTradeStatsLoading, setMyTradeStatsLoading] = useState(false);
   const [myPnlWindow, setMyPnlWindow] = useState<'1D' | '7D' | '30D' | 'ALL'>('30D');
@@ -426,6 +516,55 @@ export default function TraderProfilePage({
     deduped.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
     return deduped;
   }, []);
+
+  // Load more trades from Polymarket activity API
+  const loadMoreTradesFromApi = useCallback(async () => {
+    if (!wallet || loadingMoreTrades || noMoreTrades) return;
+    setLoadingMoreTrades(true);
+    try {
+      const res = await fetch(
+        `https://data-api.polymarket.com/activity?user=${wallet}&type=TRADE&limit=100&offset=${tradesOffset}`,
+        { cache: 'no-store' }
+      );
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        setNoMoreTrades(true);
+        return;
+      }
+      const formatDate = (ms: number) =>
+        new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+      const formatted: Trade[] = data.map((activity: any) => {
+        let ts = activity.timestamp;
+        if (ts < 10000000000) ts = ts * 1000;
+        return {
+          timestamp: ts,
+          market: activity.title || 'Unknown Market',
+          side: activity.side || 'BUY',
+          outcome: activity.outcome || '',
+          size: parseFloat(activity.size || 0),
+          price: parseFloat(activity.price || 0),
+          formattedDate: formatDate(ts),
+          marketSlug: activity.slug || '',
+          conditionId: activity.conditionId || '',
+          eventSlug: activity.eventSlug || '',
+          tokenId: activity.asset || undefined,
+          status: 'Open' as const,
+          marketAvatarUrl: activity.icon || null,
+          source: 'api' as const,
+        };
+      });
+      setTrades((prev) => mergeTrades(prev, formatted));
+      setTradesOffset((prev) => prev + data.length);
+      if (data.length < 100) setNoMoreTrades(true);
+    } catch {
+      console.error('Error loading more trades');
+    } finally {
+      setLoadingMoreTrades(false);
+    }
+  }, [wallet, tradesOffset, loadingMoreTrades, noMoreTrades, mergeTrades]);
+
 
   const buildExpandedTradeKey = (trade: Trade, index: number) => {
     const parts = [
@@ -605,120 +744,106 @@ export default function TraderProfilePage({
     }
   };
 
-  // Fetch trader data
+  // Fetch trader data from V3 aggregated endpoint
   useEffect(() => {
     if (!wallet) return;
+
+    let cancelled = false;
 
     const loadTraderData = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        // Always fetch all-time stats from Polymarket leaderboard
-        const response = await fetch(`/api/trader/${wallet}?timePeriod=all`);
+        const response = await fetch(`/api/v3/trader/${wallet}/profile`);
 
         if (!response.ok) {
           throw new Error('Failed to fetch trader data');
         }
 
-        const data = await response.json();
-        setTraderData(data);
+        const data: V3ProfileResponse = await response.json();
+        if (cancelled) return;
+
+        setV3Profile(data);
+        setOpenPositions(data.positions?.open ?? []);
+        setClosedPositions(data.positions?.closed ?? []);
+
+        // Populate traderData for backward compatibility with existing UI
+        const allPerf = data.performance?.all;
+        setTraderData({
+          wallet: data.profile.wallet,
+          displayName: data.profile.displayName,
+          pnl: allPerf?.pnl ?? 0,
+          volume: allPerf?.volume ?? 0,
+          followerCount: data.followerCount,
+          profileImage: data.profile.profileImage,
+          roi: allPerf && allPerf.volume > 0 ? (allPerf.pnl / allPerf.volume) * 100 : 0,
+          winRate: data.winRate != null ? data.winRate / 100 : null,
+        });
+
+        // Transform activity trades into Trade[] format for the trades tab
+        const formatDate = (timestampMs: number) =>
+          new Date(timestampMs).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          });
+
+        if (Array.isArray(data.trades) && data.trades.length > 0) {
+          const formatted: Trade[] = data.trades.map((activity: any) => {
+            let timestampMs = activity.timestamp;
+            if (timestampMs < 10000000000) {
+              timestampMs = timestampMs * 1000;
+            }
+            return {
+              timestamp: timestampMs,
+              market: activity.title || 'Unknown Market',
+              side: activity.side || 'BUY',
+              outcome: activity.outcome || '',
+              size: parseFloat(activity.size || 0),
+              price: parseFloat(activity.price || 0),
+              formattedDate: formatDate(timestampMs),
+              marketSlug: activity.slug || '',
+              conditionId: activity.conditionId || '',
+              eventSlug: activity.eventSlug || '',
+              tokenId: activity.asset || undefined,
+              status: 'Open' as const,
+              marketAvatarUrl: activity.icon || null,
+              source: 'api' as const,
+            };
+          });
+
+          formatted.sort((a, b) => b.timestamp - a.timestamp);
+          setTrades((prev) => mergeTrades(prev, formatted));
+        }
+
+        setLoadingTrades(false);
+
+        // Populate daily P&L rows for the chart
+        if (Array.isArray(data.dailyPnl) && data.dailyPnl.length > 0) {
+          setRealizedPnlRows(data.dailyPnl.map((row: any) => ({
+            date: row.date,
+            realized_pnl: Number(row.realized_pnl ?? 0),
+            pnl_to_date: row.pnl_to_date != null ? Number(row.pnl_to_date) : null,
+          })));
+        }
+        setLoadingRealizedPnl(false);
       } catch (err: any) {
+        if (cancelled) return;
         console.error('Error fetching trader:', err);
         setError(err.message || 'Failed to load trader data');
+        setLoadingTrades(false);
+        setLoadingRealizedPnl(false);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     loadTraderData();
-  }, [wallet]);
-
-  // Fetch realized PnL daily series
-  useEffect(() => {
-    if (!wallet) return;
-
-    let cancelled = false;
-    const controller = new AbortController();
-
-    const loadRealizedPnl = async () => {
-      if (!cancelled) {
-        setLoadingRealizedPnl(true);
-        setRealizedPnlError(null);
-      }
-      try {
-        const response = await fetch(`/api/trader/${wallet}/realized-pnl`, {
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          throw new Error('Failed to fetch realized PnL');
-        }
-        const data = await response.json();
-        const daily = Array.isArray(data?.daily)
-          ? data.daily
-              .map((row: any) => ({
-                date: row?.date,
-                realized_pnl: Number(row?.realized_pnl ?? 0),
-                pnl_to_date:
-                  row?.pnl_to_date === null || row?.pnl_to_date === undefined
-                    ? null
-                    : Number(row.pnl_to_date),
-              }))
-              .filter((row: RealizedPnlRow) => {
-                // Include row if it has a valid date AND (valid realized_pnl OR valid pnl_to_date)
-                // This ensures we don't filter out rows that have cumulative data but zero daily change
-                return row.date && (
-                  Number.isFinite(row.realized_pnl) || 
-                  (row.pnl_to_date !== null && row.pnl_to_date !== undefined && Number.isFinite(row.pnl_to_date))
-                );
-              })
-              .sort((a: RealizedPnlRow, b: RealizedPnlRow) => new Date(a.date).getTime() - new Date(b.date).getTime())
-          : [];
-        
-        // Debug logging
-        if (process.env.NODE_ENV === 'development' && daily.length > 0) {
-          const latest = daily[daily.length - 1];
-          console.log('[Realized PnL] Fetched data:', {
-            totalRows: daily.length,
-            latestRow: {
-              date: latest.date,
-              realized_pnl: latest.realized_pnl,
-              pnl_to_date: latest.pnl_to_date
-            },
-            last5Rows: daily.slice(-5).map((r: RealizedPnlRow) => ({ date: r.date, realized: r.realized_pnl, cumulative: r.pnl_to_date }))
-          });
-        }
-        
-        if (!cancelled) {
-          setRealizedPnlRows(daily);
-          if (data?.rankings && typeof data.rankings === 'object') {
-            setRankingsByWindow(data.rankings);
-          } else {
-            setRankingsByWindow({});
-          }
-        }
-      } catch (err: any) {
-        if (controller.signal.aborted) return;
-        console.error('Error fetching realized PnL:', err);
-        if (!cancelled) {
-          setRealizedPnlRows([]);
-          setRealizedPnlError(err?.message || 'Failed to load realized PnL');
-          setRankingsByWindow({});
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingRealizedPnl(false);
-        }
-      }
-    };
-
-    loadRealizedPnl();
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [wallet]);
+    return () => { cancelled = true; };
+  }, [wallet, mergeTrades]);
 
   useEffect(() => {
     if (!wallet || !user) {
@@ -781,7 +906,7 @@ export default function TraderProfilePage({
     checkFollowStatus();
   }, [wallet, user]);
 
-  // Fetch trades from blockchain (complete history, no limits!)
+  // Fetch user's copy-trades (if logged in) and merge into trade list
   useEffect(() => {
     if (!wallet) return;
 
@@ -793,11 +918,6 @@ export default function TraderProfilePage({
         day: 'numeric',
         year: 'numeric'
       });
-
-    const mergeIntoState = (incoming: Trade[]) => {
-      if (incoming.length === 0) return;
-      setTrades((prev) => mergeTrades(prev, incoming));
-    };
 
     const extractTokenId = (rawTrade: any): string | undefined => {
       const candidates = [
@@ -862,150 +982,16 @@ export default function TraderProfilePage({
           };
         });
 
-        if (!cancelled) {
-          mergeIntoState(normalized);
+        if (!cancelled && normalized.length > 0) {
+          setTrades((prev) => mergeTrades(prev, normalized));
         }
       } catch (err) {
         console.error('Error fetching Polycopy trades for trader page:', err);
       }
     };
 
-    const fetchAllTrades = async () => {
-      setLoadingTrades(true);
-
-      await fetchPolycopyTrades();
-
-      try {
-        console.log('🔗 Fetching complete trade history from blockchain for:', wallet);
-        
-        // Try blockchain approach first (unlimited history)
-        const blockchainResponse = await fetch(`/api/polymarket/trades-blockchain/${wallet}`);
-        
-        if (blockchainResponse.ok) {
-          const blockchainData = await blockchainResponse.json();
-          
-          if (blockchainData.success && blockchainData.trades) {
-            console.log(`✅ Blockchain: Fetched ${blockchainData.trades.length} trades`);
-            
-            const formattedTrades: Trade[] = blockchainData.trades.map((trade: any) => {
-              // Ensure timestamp is in milliseconds
-              let timestampMs = trade.timestamp;
-              if (timestampMs < 10000000000) {
-                timestampMs = timestampMs * 1000;
-              }
-              
-              const tradeDate = new Date(timestampMs);
-              const formattedDate = tradeDate.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric'
-              });
-              
-              // Determine trade status based on market data
-              let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
-              if (trade.closed === true || trade.is_closed === true) {
-                status = 'Trader Closed';
-              } else if (trade.resolved === true || trade.is_resolved === true || trade.marketResolved === true) {
-                status = 'Bonded';
-              }
-              
-              return {
-                timestamp: timestampMs,
-                market: trade.title || trade.question || trade.market || trade.marketTitle || 'Unknown Market',
-                side: trade.side || 'BUY',
-                outcome: trade.outcome || '',
-                size: parseFloat(trade.size || 0),
-                price: parseFloat(trade.price || 0),
-                currentPrice: trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
-                formattedDate,
-                marketSlug: trade.marketSlug || trade.slug || '',
-                eventSlug: trade.eventSlug || trade.event_slug || '',
-                conditionId: trade.conditionId || trade.condition_id || '',
-                tokenId: extractTokenId(trade),
-                status: status,
-                marketAvatarUrl: trade.marketAvatarUrl ?? extractMarketAvatarUrl(trade) ?? null,
-                source: 'onchain',
-              };
-            });
-
-            formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
-            if (!cancelled) {
-              setTrades((prev) => mergeTrades(prev, formattedTrades));
-            }
-            if (!cancelled) setLoadingTrades(false);
-            return;
-          }
-        }
-        
-        // Fallback to data-api if blockchain fails
-        console.log('⚠️ Blockchain fetch failed, falling back to data-api (100 trades max)');
-        const fallbackResponse = await fetch(
-          `https://data-api.polymarket.com/trades?user=${wallet}&limit=100`,
-          { cache: 'no-store' }
-        );
-        
-        if (fallbackResponse.ok) {
-          const fallbackData = await fallbackResponse.json();
-          
-          const formattedTrades: Trade[] = fallbackData.map((trade: any) => {
-            let timestampMs = trade.timestamp;
-            if (timestampMs < 10000000000) {
-              timestampMs = timestampMs * 1000;
-            }
-            
-            const tradeDate = new Date(timestampMs);
-            const formattedDate = tradeDate.toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-              year: 'numeric'
-            });
-            
-            // Determine trade status based on market data
-            let status: 'Open' | 'Trader Closed' | 'Bonded' = 'Open';
-            if (trade.closed === true || trade.is_closed === true) {
-              status = 'Trader Closed';
-            } else if (trade.resolved === true || trade.is_resolved === true || trade.marketResolved === true) {
-              status = 'Bonded';
-            }
-            
-            return {
-              timestamp: timestampMs,
-              market: trade.title || trade.question || trade.market?.title || trade.marketTitle || 'Unknown Market',
-              side: trade.side || 'BUY',
-              outcome: trade.outcome || '',
-              size: parseFloat(trade.size || 0),
-              price: parseFloat(trade.price || 0),
-              currentPrice: trade.currentPrice || trade.closedPrice || trade.resolvedPrice || trade.exitPrice ? parseFloat(trade.currentPrice || trade.closedPrice || trade.resolvedPrice || trade.exitPrice) : undefined,
-              formattedDate,
-              marketSlug: trade.slug || trade.marketSlug || trade.market?.slug || '',
-              eventSlug: trade.eventSlug || trade.event_slug || '',
-              conditionId: trade.conditionId || trade.condition_id || '',
-              tokenId: extractTokenId(trade),
-              status: status,
-              marketAvatarUrl: extractMarketAvatarUrl(trade) ?? null,
-              source: 'api',
-            };
-          });
-
-          formattedTrades.sort((a, b) => b.timestamp - a.timestamp);
-          if (!cancelled) {
-            setTrades((prev) => mergeTrades(prev, formattedTrades));
-          }
-        }
-      } catch (err) {
-        console.error('❌ Error fetching trades:', err);
-        if (!cancelled) {
-          setTrades([]);
-        }
-      } finally {
-        if (!cancelled) setLoadingTrades(false);
-      }
-    };
-
-    fetchAllTrades();
-    return () => {
-      cancelled = true;
-    };
+    fetchPolycopyTrades();
+    return () => { cancelled = true; };
   }, [wallet, mergeTrades]);
 
   // Fetch live market data for trades (prices, scores, and resolution status)
@@ -1626,6 +1612,12 @@ export default function TraderProfilePage({
     [pnlWindow]
   );
 
+  // V3: Performance data for the selected period
+  const selectedPerf = useMemo<PerformancePeriod | null>(() => {
+    if (!v3Profile?.performance) return null;
+    return v3Profile.performance[perfPeriod] ?? null;
+  }, [v3Profile, perfPeriod]);
+
   const realizedWindowRows = useMemo(() => {
     if (realizedPnlRows.length === 0) return [];
     const option = pnlWindowOptions.find((entry) => entry.key === pnlWindow) ?? pnlWindowOptions[3];
@@ -1706,87 +1698,48 @@ export default function TraderProfilePage({
     return base;
   }, [realizedWindowRows]);
 
-  const realizedSummary = useMemo(() => {
-    // For "All Time" window, use pnl_to_date from latest row (cumulative PnL from Dome API)
-    // For time-limited windows, sum realized_pnl values
-    let totalPnl: number;
-    if (pnlWindow === 'ALL' && realizedWindowRows.length > 0) {
-      // Find the latest row with a valid pnl_to_date (in case the very last row doesn't have it)
-      let latestRow = realizedWindowRows[realizedWindowRows.length - 1];
-      
-      // If latest row doesn't have pnl_to_date, look backwards for the most recent one that does
-      if ((latestRow.pnl_to_date === null || latestRow.pnl_to_date === undefined || !Number.isFinite(latestRow.pnl_to_date)) && realizedWindowRows.length > 1) {
-        for (let i = realizedWindowRows.length - 2; i >= 0; i--) {
-          const row = realizedWindowRows[i];
-          if (row.pnl_to_date !== null && row.pnl_to_date !== undefined && Number.isFinite(row.pnl_to_date)) {
-            latestRow = row;
-            break;
-          }
-        }
-      }
-      
-      // Use pnl_to_date (cumulative) for All Time - this is the accurate total from Dome API
-      if (latestRow.pnl_to_date !== null && latestRow.pnl_to_date !== undefined && Number.isFinite(latestRow.pnl_to_date)) {
-        totalPnl = latestRow.pnl_to_date;
-      } else {
-        // Fall back to summing realized_pnl if pnl_to_date not available
-        totalPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
-      }
-      
-      // Debug logging for All Time window
-      if (process.env.NODE_ENV === 'development') {
-        console.log('[realizedSummary] All Time calculation:', {
-          windowRowsCount: realizedWindowRows.length,
-          latestRowDate: latestRow.date,
-          latestRowPnLToDate: latestRow.pnl_to_date,
-          latestRowRealizedPnl: latestRow.realized_pnl,
-          sumRealizedPnl: realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0),
-          finalTotalPnl: totalPnl,
-          allRowsLast5: realizedWindowRows.slice(-5).map(r => ({ date: r.date, realized: r.realized_pnl, cumulative: r.pnl_to_date }))
-        });
-      }
-    } else {
-      // For time-limited windows, sum realized_pnl
-      totalPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+  // Map pnlWindow to leaderboard performance period for authoritative P&L/Rank
+  const leaderboardPerfForWindow = useMemo<PerformancePeriod | null>(() => {
+    if (!v3Profile?.performance) return null;
+    switch (pnlWindow) {
+      case '1D': return v3Profile.performance.day;
+      case '7D': return v3Profile.performance.week;
+      case '30D': return v3Profile.performance.month;
+      case 'ALL': return v3Profile.performance.all;
+      default: return null; // 3M, 6M have no leaderboard match
     }
-    
-    const avgDaily = realizedWindowRows.length > 0 ? totalPnl / realizedWindowRows.length : 0;
+  }, [v3Profile, pnlWindow]);
+
+  const realizedSummary = useMemo(() => {
+    // Use leaderboard P&L as the authoritative Total P&L when available.
+    // The chart data (from closed positions) only shows realized P&L from closed positions,
+    // but the leaderboard includes both realized and unrealized P&L.
+    const chartPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+    const totalPnl = leaderboardPerfForWindow?.pnl ?? chartPnl;
+
+    const daysActive = realizedWindowRows.filter((row) => row.realized_pnl !== 0).length;
+    const avgDaily = daysActive > 0 ? totalPnl / daysActive : 0;
     const daysUp = realizedWindowRows.filter((row) => row.realized_pnl > 0).length;
     const daysDown = realizedWindowRows.filter((row) => row.realized_pnl < 0).length;
-    const daysActive = realizedWindowRows.filter((row) => row.realized_pnl !== 0).length;
+    const rank = leaderboardPerfForWindow?.rank ?? 0;
     
-    return { totalPnl, avgDaily, daysUp, daysDown, daysActive };
-  }, [realizedWindowRows, pnlWindow]);
+    return { totalPnl, avgDaily, daysUp, daysDown, daysActive, rank };
+  }, [realizedWindowRows, leaderboardPerfForWindow]);
 
   const rankInfo = useMemo(() => {
     return rankingsByWindow[pnlWindow] ?? { rank: null, total: null, delta: null, previousRank: null };
   }, [rankingsByWindow, pnlWindow]);
 
-  // Calculate all-time realized P&L for Key Stats "Winnings"
+  // Calculate all-time P&L for Key Stats "Winnings" — use leaderboard as authoritative source
   const allTimeRealizedPnl = useMemo(() => {
+    // Prefer leaderboard all-time P&L (includes both realized + unrealized)
+    if (v3Profile?.performance?.all?.pnl != null) {
+      return v3Profile.performance.all.pnl;
+    }
+    // Fallback to chart data sum
     if (realizedPnlRows.length === 0) return 0;
-    
-    // Find the latest row with a valid pnl_to_date (cumulative P&L)
-    let latestRow = realizedPnlRows[realizedPnlRows.length - 1];
-    
-    // If latest row doesn't have pnl_to_date, look backwards for the most recent one that does
-    if ((latestRow.pnl_to_date === null || latestRow.pnl_to_date === undefined || !Number.isFinite(latestRow.pnl_to_date)) && realizedPnlRows.length > 1) {
-      for (let i = realizedPnlRows.length - 2; i >= 0; i--) {
-        const row = realizedPnlRows[i];
-        if (row.pnl_to_date !== null && row.pnl_to_date !== undefined && Number.isFinite(row.pnl_to_date)) {
-          latestRow = row;
-          break;
-        }
-      }
-    }
-    
-    // Use pnl_to_date (cumulative) if available, otherwise sum all realized_pnl
-    if (latestRow.pnl_to_date !== null && latestRow.pnl_to_date !== undefined && Number.isFinite(latestRow.pnl_to_date)) {
-      return latestRow.pnl_to_date;
-    } else {
-      return realizedPnlRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
-    }
-  }, [realizedPnlRows]);
+    return realizedPnlRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
+  }, [v3Profile, realizedPnlRows]);
 
   const realizedRangeLabel = useMemo(() => {
     if (realizedWindowRows.length === 0) return pnlWindowLabel;
@@ -2191,8 +2144,15 @@ export default function TraderProfilePage({
             </Avatar>
 
             <div className="flex-1 min-w-0">
-              <h1 className="text-3xl font-semibold text-slate-900 mb-1">{traderData.displayName}</h1>
               <div className="flex items-center gap-2 mb-1">
+                <h1 className="text-3xl font-semibold text-slate-900">{traderData.displayName}</h1>
+                {v3Profile?.profile?.verifiedBadge && (
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-white flex-shrink-0" title="Verified">
+                    <Check className="h-3 w-3" />
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mb-1">
                 <p className="text-sm font-mono text-slate-500">
                   {wallet.slice(0, 6)}...{wallet.slice(-4)}
                 </p>
@@ -2228,6 +2188,22 @@ export default function TraderProfilePage({
                   <Share2 className="h-3.5 w-3.5" />
                   <span className="text-xs font-medium">Share</span>
                 </button>
+                {v3Profile?.profile?.xUsername && (
+                  <a
+                    href={`https://x.com/${v3Profile.profile.xUsername}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex h-7 items-center gap-1 px-2 rounded-md border border-slate-200 text-slate-500 text-xs hover:border-slate-300 hover:text-slate-700 transition-colors"
+                  >
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                    @{v3Profile.profile.xUsername}
+                  </a>
+                )}
+                {v3Profile?.profile?.accountCreated && (
+                  <span className="text-xs text-slate-400">
+                    Joined {new Date(v3Profile.profile.accountCreated).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -2292,295 +2268,234 @@ export default function TraderProfilePage({
                   user && !isOwnProfile ? 'lg:col-span-8' : 'lg:col-span-12'
                 }`}
               >
-                <div className="space-y-6">
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-2xl font-semibold text-slate-900">Realized P&amp;L</h3>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 text-xs font-semibold text-slate-500 cursor-help">
-                              ?
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>Shows profit or loss only from positions that are closed or resolved. Polymarket&#39;s profile P&amp;L is account-level and factors in cash balance plus net deposits/withdrawals, so totals can differ.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                <div className="space-y-5">
+                  {/* Header */}
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-2xl font-semibold text-slate-900">Realized P&L</h3>
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-xs text-slate-400 cursor-help" title="Realized P&L from trade activity">?</span>
+                  </div>
+
+                  {/* Time window selector */}
+                  <div className="flex flex-wrap gap-2">
+                    {pnlWindowOptions.map((opt) => (
+                      <button
+                        key={opt.key}
+                        onClick={() => setPnlWindow(opt.key)}
+                        className={cn(
+                          'rounded-full border px-4 py-1.5 text-xs font-semibold transition',
+                          pnlWindow === opt.key
+                            ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Stats grid — 3 + 3 layout matching old design */}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-medium text-slate-500">Total P&L</p>
+                      <p className={cn('mt-2 text-2xl font-bold leading-tight tabular-nums sm:text-3xl', realizedSummary.totalPnl >= 0 ? 'text-emerald-700' : 'text-red-600')}>
+                        {formatSignedCurrency(realizedSummary.totalPnl)}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">{pnlWindowOptions.find(o => o.key === pnlWindow)?.label}</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {pnlWindowOptions.map((option) => {
-                        const isActive = option.key === pnlWindow;
-                        return (
-                          <button
-                            key={option.key}
-                            onClick={() => setPnlWindow(option.key)}
-                            className={cn(
-                              'rounded-full border px-3 py-1.5 text-xs font-semibold transition',
-                              isActive
-                                ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                            )}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-medium text-slate-500">Average per day</p>
+                      <p className={cn('mt-2 text-2xl font-bold leading-tight tabular-nums sm:text-3xl', realizedSummary.avgDaily >= 0 ? 'text-emerald-700' : 'text-red-600')}>
+                        {formatSignedCurrency(realizedSummary.avgDaily)}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-slate-50/70 p-4 text-center shadow-sm">
+                      <p className="text-sm font-medium text-slate-500">P&L Rank</p>
+                      <p className="mt-2 text-3xl font-bold leading-tight tabular-nums text-slate-900 sm:text-4xl">
+                        {realizedSummary.rank > 0 ? `#${realizedSummary.rank.toLocaleString()}` : (rankInfo.rank ? `#${rankInfo.rank}` : '—')}
+                      </p>
+                      {rankInfo.delta != null && rankInfo.delta !== 0 && (
+                        <p className={cn('text-xs font-medium mt-1', rankInfo.delta < 0 ? 'text-emerald-600' : 'text-red-500')}>
+                          {rankInfo.delta < 0 ? '▲' : '▼'} {rankInfo.delta < 0 ? 'Up' : 'Down'} {Math.abs(rankInfo.delta).toLocaleString()} from #{(rankInfo.rank ?? 0) + rankInfo.delta}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-medium text-slate-500">Days Active</p>
+                      <p className="mt-2 text-2xl font-bold leading-tight tabular-nums text-slate-900">{realizedSummary.daysActive}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-medium text-slate-500">Days Up</p>
+                      <p className="mt-2 text-2xl font-bold leading-tight tabular-nums text-emerald-600">{realizedSummary.daysUp}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
+                      <p className="text-sm font-medium text-slate-500">Days Down</p>
+                      <p className="mt-2 text-2xl font-bold leading-tight tabular-nums text-red-600">{realizedSummary.daysDown}</p>
                     </div>
                   </div>
 
-                  {realizedPnlError && (
-                    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                      {realizedPnlError}
+                  {/* Chart header */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-semibold text-slate-900">P&L</span>
+                      <span className="text-xs text-slate-400">{realizedRangeLabel}</span>
+                    </div>
+                    <div className="flex rounded-full border border-slate-200 overflow-hidden">
+                      {(['daily', 'cumulative'] as const).map((view) => (
+                        <button
+                          key={view}
+                          onClick={() => setPnlView(view)}
+                          className={cn(
+                            'px-3.5 py-1.5 text-xs font-semibold transition',
+                            pnlView === view
+                              ? 'bg-slate-900 text-white'
+                              : 'bg-white text-slate-600 hover:bg-slate-50'
+                          )}
+                        >
+                          {view === 'daily' ? 'Daily Change' : 'Accumulated'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Chart */}
+                  {loadingRealizedPnl && realizedChartSeries.length === 0 ? (
+                    <div className="flex h-72 items-center justify-center gap-2 text-sm text-slate-500">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading P&L data...
+                    </div>
+                  ) : realizedChartSeries.length > 0 ? (
+                    <div className="h-72 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        {pnlView === 'daily' ? (
+                          <BarChart data={realizedChartSeries} barSize={dailyBarSize} barGap={dailyBarGap}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis
+                              dataKey="date"
+                              tickLine={false}
+                              axisLine={false}
+                              interval="preserveStartEnd"
+                              tickFormatter={(v) =>
+                                new Date(`${v}T00:00:00Z`).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  timeZone: 'UTC',
+                                })
+                              }
+                              tickMargin={10}
+                              minTickGap={40}
+                              tick={{ fontSize: 11, fill: '#94a3b8' }}
+                            />
+                            <YAxis
+                              tickLine={false}
+                              axisLine={false}
+                              width={60}
+                              tick={{ fontSize: 11, fill: '#94a3b8' }}
+                              tickFormatter={(value) => formatCompactCurrency(value)}
+                              domain={[
+                                (min: number) => Math.min(min, 0),
+                                (max: number) => Math.max(max, 0),
+                              ]}
+                              tickCount={6}
+                            />
+                            <RechartsTooltip
+                              contentStyle={{
+                                borderRadius: 8,
+                                borderColor: '#e2e8f0',
+                                background: '#fff',
+                                fontSize: 12,
+                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                              }}
+                              formatter={(v: any) => formatSignedCurrency(Number(v), 2)}
+                              labelFormatter={(l) =>
+                                new Date(`${l}T00:00:00Z`).toLocaleDateString('en-US', {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                  timeZone: 'UTC',
+                                })
+                              }
+                            />
+                            <ReferenceLine y={0} stroke="#cbd5e1" />
+                            <Bar dataKey="dailyPnl" name="Daily PnL" minPointSize={2} radius={[3, 3, 0, 0]} isAnimationActive animationDuration={600}>
+                              {realizedChartSeries.map((entry, i) => (
+                                <Cell key={`cell-${i}`} fill={entry.dailyPnl >= 0 ? '#059669' : '#dc2626'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        ) : (
+                          <AreaChart data={realizedChartSeries}>
+                            <defs>
+                              <linearGradient id="v1PnlGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#334155" stopOpacity={0.15} />
+                                <stop offset="100%" stopColor="#334155" stopOpacity={0.02} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                            <XAxis
+                              dataKey="date"
+                              tickLine={false}
+                              axisLine={false}
+                              interval="preserveStartEnd"
+                              tickFormatter={(v) =>
+                                new Date(`${v}T00:00:00Z`).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  timeZone: 'UTC',
+                                })
+                              }
+                              tickMargin={10}
+                              minTickGap={40}
+                              tick={{ fontSize: 11, fill: '#94a3b8' }}
+                            />
+                            <YAxis
+                              tickLine={false}
+                              axisLine={false}
+                              width={60}
+                              tick={{ fontSize: 11, fill: '#94a3b8' }}
+                              tickFormatter={(value) => formatCompactCurrency(value)}
+                            />
+                            <RechartsTooltip
+                              contentStyle={{
+                                borderRadius: 8,
+                                borderColor: '#e2e8f0',
+                                background: '#fff',
+                                fontSize: 12,
+                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                              }}
+                              formatter={(v: any) => formatSignedCurrency(Number(v), 2)}
+                              labelFormatter={(l) =>
+                                new Date(`${l}T00:00:00Z`).toLocaleDateString('en-US', {
+                                  weekday: 'short',
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                  timeZone: 'UTC',
+                                })
+                              }
+                            />
+                            <ReferenceLine y={0} stroke="#cbd5e1" />
+                            <Area
+                              type="monotone"
+                              dataKey="cumulativePnl"
+                              name="Cumulative PnL"
+                              stroke="#334155"
+                              strokeWidth={2}
+                              fill="url(#v1PnlGrad)"
+                              isAnimationActive
+                              animationDuration={600}
+                            />
+                          </AreaChart>
+                        )}
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <div className="flex h-72 items-center justify-center text-sm text-slate-500">
+                      No realized P&L data available
                     </div>
                   )}
-
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
-                        <p className="text-sm font-semibold text-slate-600">Total P&amp;L</p>
-                        <p
-                          className={cn(
-                            'mt-2 text-2xl font-semibold leading-tight sm:text-3xl',
-                            realizedSummary.totalPnl > 0
-                              ? 'text-emerald-700'
-                              : realizedSummary.totalPnl < 0
-                                ? 'text-red-600'
-                                : 'text-slate-900'
-                          )}
-                        >
-                          {formatSignedCurrency(realizedSummary.totalPnl)}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1">{pnlWindowLabel}</p>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-center shadow-sm">
-                        <p className="text-sm font-semibold text-slate-600">Average per day</p>
-                        <p
-                          className={cn(
-                            'mt-2 text-2xl font-semibold leading-tight sm:text-3xl',
-                            realizedSummary.avgDaily > 0
-                              ? 'text-emerald-700'
-                              : realizedSummary.avgDaily < 0
-                                ? 'text-red-600'
-                                : 'text-slate-900'
-                          )}
-                        >
-                          {formatAverageDaily(realizedSummary.avgDaily)}
-                        </p>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-900/15 bg-slate-50/70 p-4 text-center shadow-md">
-                        <p className="text-sm font-semibold text-slate-700">P&amp;L Rank</p>
-                        <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-3xl font-semibold leading-tight text-slate-900 sm:text-4xl">
-                          <span>{rankInfo.rank ? `#${rankInfo.rank}` : '--'}</span>
-                          {rankInfo.rank && rankInfo.delta !== null && rankInfo.delta !== undefined && rankInfo.delta !== 0 && (
-                            <span
-                              className={cn(
-                                'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold',
-                                rankInfo.delta > 0
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : 'bg-red-50 text-red-700'
-                              )}
-                            >
-                              {rankInfo.delta > 0 ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                              {rankInfo.delta > 0 ? 'Up' : 'Down'} {Math.abs(rankInfo.delta)} from #{rankInfo.rank + rankInfo.delta}
-                            </span>
-                          )}
-                        </div>
-                        {rankInfo.rank && rankInfo.delta === 0 && rankInfo.previousRank !== null && (
-                          <p className="text-xs text-slate-500">No change vs prior rank</p>
-                        )}
-                        {rankInfo.rank && rankInfo.delta === null && rankInfo.previousRank === null && (
-                          <p className="text-xs text-slate-500">No prior period rank</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-                      <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
-                        <p className="text-sm font-semibold text-slate-600">Days Active</p>
-                        <p className="mt-2 text-xl font-semibold leading-tight text-slate-900 sm:text-2xl">{realizedSummary.daysActive}</p>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
-                        <p className="text-sm font-semibold text-slate-600">Days Up</p>
-                        <p className="mt-2 text-xl font-semibold leading-tight text-emerald-700 sm:text-2xl">{realizedSummary.daysUp}</p>
-                      </div>
-
-                      <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-center shadow-sm">
-                        <p className="text-sm font-semibold text-slate-600">Days Down</p>
-                        <p className="mt-2 text-xl font-semibold leading-tight text-red-600 sm:text-2xl">{realizedSummary.daysDown}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/80 bg-white/80 p-4 shadow-sm sm:p-6">
-                    <div className="mb-4 flex flex-wrap items-center gap-3">
-                      <div className="text-sm font-semibold text-slate-900">P&amp;L</div>
-                      <div className="text-xs text-slate-500">{realizedRangeLabel}</div>
-                      <div className="ml-auto flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/70 p-1 shadow-sm">
-                          {(['daily', 'cumulative'] as const).map((mode) => (
-                            <button
-                              key={mode}
-                              onClick={() => setPnlView(mode)}
-                              className={cn(
-                                'rounded-full px-3 py-1.5 text-xs font-semibold transition',
-                                pnlView === mode
-                                  ? 'bg-slate-900 text-white'
-                                  : 'text-slate-600 hover:text-slate-900'
-                              )}
-                            >
-                              {mode === 'daily' ? 'Daily Change' : 'Accumulated'}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {loadingRealizedPnl && realizedChartSeries.length === 0 ? (
-                      <div className="flex items-center gap-2 text-sm text-slate-500">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Loading realized P&amp;L...
-                      </div>
-                    ) : realizedChartSeries.length > 0 ? (
-                      <div className="h-72 w-full animate-in fade-in duration-700 sm:h-80">
-                        <ResponsiveContainer width="100%" height="100%">
-                          {pnlView === 'daily' ? (
-                            <BarChart data={realizedChartSeries} barSize={dailyBarSize} barCategoryGap={dailyBarGap}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                              <XAxis
-                                dataKey="date"
-                                tickLine={false}
-                                axisLine={false}
-                                interval="preserveStartEnd"
-                                tickFormatter={(value) =>
-                                  new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    timeZone: 'UTC',
-                                  })
-                                }
-                                tickMargin={10}
-                                minTickGap={32}
-                                tick={{ fontSize: 11, fill: '#475569' }}
-                              />
-                              <YAxis
-                                tickLine={false}
-                                axisLine={false}
-                                width={64}
-                                tickMargin={10}
-                                tick={{ fontSize: 11, fill: '#475569' }}
-                                tickCount={6}
-                                domain={[
-                                  (min: number) => Math.min(min, 0),
-                                  (max: number) => Math.max(max, 0),
-                                ]}
-                                tickFormatter={(value) => formatCompactCurrency(value)}
-                              />
-                              <RechartsTooltip
-                                contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
-                                formatter={(value: any) => formatSignedCurrency(Number(value), 2)}
-                                labelFormatter={(label) =>
-                                  new Date(`${label}T00:00:00Z`).toLocaleDateString('en-US', {
-                                    weekday: 'short',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                    timeZone: 'UTC',
-                                  })
-                                }
-                              />
-                              <ReferenceLine y={0} stroke="#cbd5e1" />
-                              <Bar
-                                dataKey="dailyPnl"
-                                name="Daily PnL"
-                                minPointSize={2}
-                                radius={[6, 6, 6, 6]}
-                                isAnimationActive
-                                animationDuration={900}
-                              >
-                                {realizedChartSeries.map((entry, index) => (
-                                  <Cell
-                                    key={`cell-${index}`}
-                                    fill={entry.dailyPnl >= 0 ? '#10b981' : '#ef4444'}
-                                  />
-                                ))}
-                              </Bar>
-                            </BarChart>
-                          ) : (
-                            <AreaChart data={realizedChartSeries}>
-                              <defs>
-                                <linearGradient id="pnlCumulative" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor="#0f172a" stopOpacity={0.35} />
-                                  <stop offset="100%" stopColor="#0f172a" stopOpacity={0.05} />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                              <XAxis
-                                dataKey="date"
-                                tickLine={false}
-                                axisLine={false}
-                                interval="preserveStartEnd"
-                                tickFormatter={(value) =>
-                                  new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    timeZone: 'UTC',
-                                  })
-                                }
-                                tickMargin={10}
-                                minTickGap={32}
-                                tick={{ fontSize: 11, fill: '#475569' }}
-                              />
-                              <YAxis
-                                tickLine={false}
-                                axisLine={false}
-                                width={64}
-                                tickMargin={10}
-                                tick={{ fontSize: 11, fill: '#475569' }}
-                                tickCount={6}
-                                domain={[
-                                  (min: number) => Math.min(min, 0),
-                                  (max: number) => Math.max(max, 0),
-                                ]}
-                                tickFormatter={(value) => formatCompactCurrency(value)}
-                              />
-                              <RechartsTooltip
-                                contentStyle={{ borderRadius: 12, borderColor: '#e2e8f0' }}
-                                formatter={(value: any) => formatSignedCurrency(Number(value), 2)}
-                                labelFormatter={(label) =>
-                                  new Date(`${label}T00:00:00Z`).toLocaleDateString('en-US', {
-                                    weekday: 'short',
-                                    month: 'short',
-                                    day: 'numeric',
-                                    year: 'numeric',
-                                    timeZone: 'UTC',
-                                  })
-                                }
-                              />
-                              <ReferenceLine y={0} stroke="#cbd5e1" />
-                              <Area
-                                type="monotone"
-                                dataKey="cumulativePnl"
-                                name="Cumulative PnL"
-                                stroke="#0f172a"
-                                fill="url(#pnlCumulative)"
-                                strokeWidth={2.5}
-                                dot={false}
-                                isAnimationActive
-                                animationDuration={1000}
-                              />
-                            </AreaChart>
-                          )}
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-slate-500">No realized P&amp;L data available for this window.</p>
-                    )}
-                  </div>
                 </div>
               </Card>
 
@@ -2753,6 +2668,19 @@ export default function TraderProfilePage({
                   <p className="text-sm font-semibold text-slate-700">Performance (All Time)</p>
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">P&amp;L</p>
+                      <p className={cn(
+                        'text-lg font-semibold',
+                        effectivePnl > 0 ? 'text-emerald-600' : effectivePnl < 0 ? 'text-red-500' : 'text-slate-900'
+                      )}>
+                        {formatSignedCurrency(effectivePnl)}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
+                      <p className="text-xs text-slate-500">Volume</p>
+                      <p className="text-lg font-semibold text-slate-900">{formatCurrency(effectiveVolume)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
                       <p className="text-xs text-slate-500">ROI</p>
                       <p className={cn(
                         'text-lg font-semibold',
@@ -2762,76 +2690,33 @@ export default function TraderProfilePage({
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-                      <p className="text-xs text-slate-500">Winnings</p>
-                      <p className={cn(
-                        'text-lg font-semibold',
-                        allTimeRealizedPnl > 0 ? 'text-emerald-600' : allTimeRealizedPnl < 0 ? 'text-red-500' : 'text-slate-900'
-                      )}>
-                        {formatCompactCurrency(allTimeRealizedPnl)}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-                      <p className="text-xs text-slate-500">Volume</p>
-                      <p className="text-lg font-semibold text-slate-900">{formatCurrency(effectiveVolume)}</p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-                      <p className="text-xs text-slate-500">Win Rate</p>
+                      <p className="text-xs text-slate-500">Rank</p>
                       <p className="text-lg font-semibold text-slate-900">
-                        {effectiveWinRate !== null && Number.isFinite(effectiveWinRate) ? `${effectiveWinRate.toFixed(1)}%` : '—'}
+                        {v3Profile?.performance?.all?.rank ? `#${v3Profile.performance.all.rank.toLocaleString()}` : '—'}
                       </p>
                     </div>
                   </div>
                 </div>
 
                 <div className="rounded-xl bg-slate-50 p-5 text-center">
-                  <p className="text-sm font-semibold text-slate-700">Recent Trades</p>
+                  <p className="text-sm font-semibold text-slate-700">Recent Activity</p>
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-                      <p className="text-xs text-slate-500">Av Return</p>
-                      <p className={cn(
-                        'text-lg font-semibold',
-                        tradeStats.avgReturnUsd !== null && tradeStats.avgReturnUsd > 0
-                          ? 'text-emerald-600'
-                          : tradeStats.avgReturnUsd !== null && tradeStats.avgReturnUsd < 0
-                            ? 'text-red-600'
-                            : 'text-slate-900'
-                      )}>
-                        {tradeStats.avgReturnUsd !== null
-                          ? formatSignedCurrency(tradeStats.avgReturnUsd, 2)
-                          : '—'}
-                      </p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-                      <p className="text-xs text-slate-500">Average ROI</p>
-                      <p className={cn(
-                        'text-lg font-semibold',
-                        tradeStats.avgRoi !== null && tradeStats.avgRoi > 0
-                          ? 'text-emerald-600'
-                          : tradeStats.avgRoi !== null && tradeStats.avgRoi < 0
-                            ? 'text-red-600'
-                            : 'text-slate-900'
-                      )}>
-                        {tradeStats.avgRoi !== null
-                          ? `${tradeStats.avgRoi > 0 ? '+' : ''}${tradeStats.avgRoi.toFixed(1)}%`
-                          : '—'}
+                      <p className="text-xs text-slate-500">Av Trade Size</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {tradeStats.avgTradeSize !== null ? formatCurrency(tradeStats.avgTradeSize) : '—'}
                       </p>
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
                       <p className="text-xs text-slate-500">Open Positions</p>
-                      <p className="text-lg font-semibold text-slate-900">{tradeStats.openPositions}</p>
-                    </div>
-                    <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-                      <p className="text-xs text-slate-500">Average Trade Size</p>
-                      <p className="text-lg font-semibold text-slate-900">
-                        {tradeStats.avgTradeSize !== null ? formatCurrency(tradeStats.avgTradeSize) : '—'}
-                      </p>
+                      <p className="text-lg font-semibold text-slate-900">{openPositions.length}</p>
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
                       <p className="text-xs text-slate-500">Last Trade</p>
                       <p className="text-lg font-semibold text-slate-900">{lastTradeLabel}</p>
                     </div>
                     <div className="rounded-lg border border-slate-200 bg-white p-3 text-center">
-                      <p className="text-xs text-slate-500">Trades Last 24 Hours</p>
+                      <p className="text-xs text-slate-500">Trades (24h)</p>
                       <p className="text-lg font-semibold text-slate-900">
                         {tradeStats.tradesLast24hCapped ? `${tradeStats.tradesLast24h}+` : tradeStats.tradesLast24h}
                       </p>
@@ -2969,18 +2854,32 @@ export default function TraderProfilePage({
                   );
                 })}
                 
-                {/* Load More Button */}
-                {filteredTrades.length > tradesToShow && (
-                  <div className="flex justify-center pt-4">
+                {/* Load More Buttons */}
+                <div className="flex flex-col items-center gap-2 pt-4">
+                  {filteredTrades.length > tradesToShow && (
                     <Button
                       onClick={() => setTradesToShow(prev => prev + 15)}
                       variant="outline"
                       className="border-slate-300 text-slate-700 hover:bg-slate-50"
                     >
-                      Load More Trades ({filteredTrades.length - tradesToShow} remaining)
+                      Show More ({filteredTrades.length - tradesToShow} loaded)
                     </Button>
-                  </div>
-                )}
+                  )}
+                  {filteredTrades.length <= tradesToShow && !noMoreTrades && (
+                    <Button
+                      onClick={loadMoreTradesFromApi}
+                      variant="outline"
+                      disabled={loadingMoreTrades}
+                      className="border-slate-300 text-slate-700 hover:bg-slate-50"
+                    >
+                      {loadingMoreTrades ? (
+                        <><Loader2 className="h-4 w-4 animate-spin mr-2" />Loading...</>
+                      ) : (
+                        'Load Older Trades'
+                      )}
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
           </div>

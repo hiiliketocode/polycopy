@@ -331,141 +331,125 @@ export default function TraderProfilePage({
   }, [router])
 
   /* ═══════════════════════════════════════════════════════
-     Fetch Trader Profile
+     Fetch Trader Profile + Trades + Performance (V3 endpoint)
      ═══════════════════════════════════════════════════════ */
   useEffect(() => {
     if (!user) return
-    const fetchTrader = async () => {
+    let cancelled = false
+
+    const fetchAll = async () => {
       setLoading(true)
+      setLoadingTrades(true)
+      setLoadingRealizedPnl(true)
+
       try {
-        const res = await fetch(`/api/trader/${wallet}`)
+        // Single aggregated fetch replaces 3 separate endpoints
+        const res = await fetch(`/api/v3/trader/${wallet}/profile`)
         if (res.ok) {
           const data = await res.json()
-          if (data && data.wallet) {
-            setTrader(data)
+          if (cancelled) return
+
+          // 1. Populate trader profile
+          const allPerf = data.performance?.all
+          setTrader({
+            wallet: data.profile.wallet,
+            displayName: data.profile.displayName,
+            pnl: allPerf?.pnl ?? 0,
+            volume: allPerf?.volume ?? 0,
+            followerCount: data.followerCount ?? 0,
+            profileImage: data.profile.profileImage,
+            roi: allPerf && allPerf.volume > 0 ? (allPerf.pnl / allPerf.volume) * 100 : 0,
+            winRate: data.winRate != null ? data.winRate / 100 : null,
+            hasStats: data.hasStats,
+          })
+          setTraderVolume(allPerf?.volume ?? 0)
+
+          // 2. Populate trades from activity data
+          const rawTrades = Array.isArray(data.trades) ? data.trades : []
+          setTrades(rawTrades)
+
+          // Transform to TradeData for TradeCard component
+          const displayName = data.profile.displayName || "Trader"
+          const transformed: TradeData[] = rawTrades.slice(0, 50).map((t: any) => ({
+            id: t.transactionHash || `${t.conditionId}-${t.timestamp}`,
+            trader: {
+              name: displayName,
+              wallet: wallet,
+              avatar: data.profile.profileImage ?? undefined,
+              isPremium: false,
+            },
+            market: {
+              title: t.title || "Unknown Market",
+              token: (t.outcome || t.side || "YES").toUpperCase() === "YES" || (t.side || "").toUpperCase() === "BUY" ? "YES" : "NO",
+              condition_id: t.conditionId || "",
+            },
+            side: ((t.side || "BUY").toUpperCase() as "BUY" | "SELL"),
+            entry_price: Number(t.price || 0),
+            size_usd: Number(t.size || 0) * Number(t.price || 1),
+            conviction: 1.0,
+            timestamp: t.timestamp || new Date().toISOString(),
+            polyscore: undefined,
+          }))
+          setTradeCards(transformed)
+
+          // 3. Populate P&L summaries from performance periods
+          const perfMap: Record<string, { pnl: number; volume: number; rank: number } | null> = {
+            "1D": data.performance?.day ?? null,
+            "7D": data.performance?.week ?? null,
+            "30D": data.performance?.month ?? null,
+            "ALL": data.performance?.all ?? null,
+          }
+
+          const summaries: PnlSummary[] = Object.entries(perfMap)
+            .filter(([, perf]) => perf !== null)
+            .map(([label, perf]) => ({
+              label,
+              days: label === "ALL" ? null : label === "1D" ? 1 : label === "7D" ? 7 : 30,
+              pnl: perf!.pnl,
+              returnPct: perf!.volume > 0 ? (perf!.pnl / perf!.volume) * 100 : null,
+              cumulative: null,
+            }))
+          setPnlSummaries(summaries)
+
+          // 4. Populate rankings from performance periods
+          const rankings: Record<string, PnlRanking> = {}
+          for (const [label, perf] of Object.entries(perfMap)) {
+            if (perf) {
+              rankings[label] = { rank: perf.rank || null, total: null, delta: null, previousRank: null }
+            }
+          }
+          setPnlRankings(rankings)
+
+          // Populate daily P&L rows for the chart
+          if (Array.isArray(data.dailyPnl) && data.dailyPnl.length > 0) {
+            setRealizedPnlRows(data.dailyPnl.map((row: any) => ({
+              date: row.date,
+              realized_pnl: Number(row.realized_pnl ?? 0),
+              pnl_to_date: row.pnl_to_date != null ? Number(row.pnl_to_date) : null,
+            })))
           }
         }
 
-        // Check follow status
+        // Check follow status (still from Supabase)
         const { data: followData } = await supabase
           .from("follows")
           .select("*")
           .eq("user_id", user.id)
           .eq("trader_wallet", wallet)
           .maybeSingle()
-        setIsFollowing(!!followData)
+        if (!cancelled) setIsFollowing(!!followData)
       } catch (err) {
         console.error("Error fetching trader:", err)
       } finally {
-        setLoading(false)
-      }
-    }
-    fetchTrader()
-  }, [user, wallet])
-
-  /* ═══════════════════════════════════════════════════════
-     Fetch Trades
-     ═══════════════════════════════════════════════════════ */
-  useEffect(() => {
-    if (!user || !trader || hasLoadedTrades.current) return
-    hasLoadedTrades.current = true
-
-    const fetchTrades = async () => {
-      setLoadingTrades(true)
-      try {
-        // Fetch from blockchain trades API
-        const res = await fetch(`/api/polymarket/trades-blockchain/${wallet}?limit=100`)
-        let rawTrades: any[] = []
-        if (res.ok) {
-          const data = await res.json()
-          rawTrades = Array.isArray(data.trades) ? data.trades : Array.isArray(data) ? data : []
+        if (!cancelled) {
+          setLoading(false)
+          setLoadingTrades(false)
+          setLoadingRealizedPnl(false)
         }
-
-        // Fallback to data API if no results
-        if (rawTrades.length === 0) {
-          try {
-            const fallbackRes = await fetch(
-              `https://data-api.polymarket.com/activity?user=${wallet}&limit=100&offset=0`
-            )
-            if (fallbackRes.ok) {
-              const fallbackData = await fallbackRes.json()
-              rawTrades = Array.isArray(fallbackData) ? fallbackData : []
-            }
-          } catch {
-            // Ignore fallback error
-          }
-        }
-
-        setTrades(rawTrades)
-
-        // Transform to TradeData for TradeCard component
-        const transformed: TradeData[] = rawTrades.slice(0, 50).map((t: any) => ({
-          id: t.id || t.order_id || `${t.conditionId}-${t.timestamp}`,
-          trader: {
-            name: trader.displayName || "Trader",
-            wallet: wallet,
-            avatar: trader.profileImage ?? undefined,
-            isPremium: false,
-          },
-          market: {
-            title: t.market || t.title || t.question || "Unknown Market",
-            token: (t.outcome || t.side || "YES").toUpperCase() === "YES" || (t.side || "").toUpperCase() === "BUY" ? "YES" : "NO",
-            condition_id: t.conditionId || t.condition_id || t.market_id,
-          },
-          side: ((t.side || "BUY").toUpperCase() as "BUY" | "SELL"),
-          entry_price: Number(t.price || t.entry_price || 0),
-          size_usd: Number(t.size || t.amount || 0) * Number(t.price || 1),
-          conviction: 1.0,
-          timestamp: t.timestamp || t.created_at || new Date().toISOString(),
-          polyscore: undefined,
-        }))
-
-        setTradeCards(transformed)
-      } catch (err) {
-        console.error("Error fetching trades:", err)
-      } finally {
-        setLoadingTrades(false)
       }
     }
-    fetchTrades()
-  }, [user, trader, wallet])
-
-  /* ═══════════════════════════════════════════════════════
-     Fetch Realized P&L
-     ═══════════════════════════════════════════════════════ */
-  useEffect(() => {
-    if (!user || hasLoadedRealizedPnl.current) return
-    hasLoadedRealizedPnl.current = true
-
-    const load = async () => {
-      setLoadingRealizedPnl(true)
-      try {
-        const res = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: "no-store" })
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-
-        const daily = Array.isArray(data?.daily)
-          ? data.daily
-              .map((row: any) => ({
-                date: row?.date,
-                realized_pnl: Number(row?.realized_pnl ?? 0),
-                pnl_to_date: row?.pnl_to_date != null ? Number(row.pnl_to_date) : null,
-              }))
-              .filter((row: RealizedPnlRow) => row.date && Number.isFinite(row.realized_pnl))
-              .sort((a: RealizedPnlRow, b: RealizedPnlRow) => new Date(a.date).getTime() - new Date(b.date).getTime())
-          : []
-        setRealizedPnlRows(daily)
-
-        if (Array.isArray(data?.summaries)) setPnlSummaries(data.summaries)
-        if (data?.rankings) setPnlRankings(data.rankings)
-        if (data?.volume != null) setTraderVolume(Number(data.volume))
-      } catch (err) {
-        console.error("Error fetching realized PnL:", err)
-      } finally {
-        setLoadingRealizedPnl(false)
-      }
-    }
-    load()
+    fetchAll()
+    return () => { cancelled = true }
   }, [user, wallet])
 
   /* ═══════════════════════════════════════════════════════
@@ -568,8 +552,11 @@ export default function TraderProfilePage({
     const avgDaily = daysActive > 0 ? totalPnl / daysActive : 0
     const ranking = pnlRankings[pnlWindow] || pnlRankings["ALL"]
 
-    return { totalPnl, avgDaily, rank: ranking?.rank, daysActive, daysUp, daysDown }
-  }, [pnlSummaries, realizedWindowRows, pnlRankings, pnlWindow])
+    const volume = traderVolume ?? trader?.volume ?? 0
+    const roi = volume > 0 ? (totalPnl / volume) * 100 : 0
+
+    return { totalPnl, avgDaily, rank: ranking?.rank, daysActive, daysUp, daysDown, roi }
+  }, [pnlSummaries, realizedWindowRows, pnlRankings, pnlWindow, traderVolume, trader?.volume])
 
   // Category distribution from trades
   const categoryDistribution = useMemo(() => {
@@ -829,9 +816,9 @@ export default function TraderProfilePage({
               </div>
             ) : (
               <>
-                {tradeCards.slice(0, tradesToShow).map((trade) => (
+                {tradeCards.slice(0, tradesToShow).map((trade, idx) => (
                   <TradeCard
-                    key={trade.id}
+                    key={`${trade.id}-${idx}`}
                     trade={trade}
                     onCopy={() => console.log("Copy trade:", trade.id)}
                     isWalletConnected={Boolean(walletAddress)}
@@ -855,6 +842,47 @@ export default function TraderProfilePage({
             ═════════════════════════════════════════════ */}
         {activeTab === "performance" && (
           <div className="space-y-8">
+            {/* ── Core Alpha Metrics ── */}
+            <div className="border border-border bg-poly-paper p-6">
+              <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
+                Core Alpha Metrics
+              </h3>
+              <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+                <div>
+                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Total_P&L
+                  </p>
+                  <p className={cn("mt-1 font-sans text-2xl font-bold tabular-nums md:text-3xl", traderPnl >= 0 ? "text-profit-green" : "text-loss-red")}>
+                    {formatSignedCurrency(traderPnl)}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    ROI(All_Time)
+                  </p>
+                  <p className={cn("mt-1 font-sans text-2xl font-bold tabular-nums md:text-3xl", traderRoi >= 0 ? "text-profit-green" : "text-loss-red")}>
+                    {formatPercent(traderRoi, true)}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Cum_Volume
+                  </p>
+                  <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
+                    {formatCompactCurrency(traderVolDisplay)}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Win_Rate
+                  </p>
+                  <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
+                    {traderWinRate > 0 ? `${traderWinRate.toFixed(1)}%` : "—"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {/* Two‑column layout: P&L left, Copied Performance right */}
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
               {/* ── Realized P&L Section (2/3 width) ── */}
@@ -892,6 +920,24 @@ export default function TraderProfilePage({
                   </div>
                 </div>
 
+                {/* Time period selector */}
+                <div className="mb-4 flex items-center gap-1">
+                  {PNL_WINDOW_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.key}
+                      onClick={() => setPnlWindow(opt.key)}
+                      className={cn(
+                        "px-2.5 py-1 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                        pnlWindow === opt.key
+                          ? "bg-poly-black text-poly-cream"
+                          : "text-muted-foreground hover:text-poly-black"
+                      )}
+                    >
+                      {opt.shortLabel}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Stats grid */}
                 <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   <div className="border border-border p-3">
@@ -907,13 +953,13 @@ export default function TraderProfilePage({
                   </div>
                   <div className="border border-border p-3">
                     <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      Avg_Daily
+                      ROI
                     </p>
-                    <p className={cn("mt-1 font-sans text-xl font-bold tabular-nums", windowSummary.avgDaily >= 0 ? "text-profit-green" : "text-loss-red")}>
-                      {formatSignedCurrency(windowSummary.avgDaily)}
+                    <p className={cn("mt-1 font-sans text-xl font-bold tabular-nums", windowSummary.roi >= 0 ? "text-profit-green" : "text-loss-red")}>
+                      {windowSummary.roi !== 0 ? `${windowSummary.roi > 0 ? '+' : ''}${windowSummary.roi.toFixed(1)}%` : "—"}
                     </p>
                     <p className="font-body text-[9px] uppercase tracking-widest text-muted-foreground">
-                      Daily Exposure
+                      Return on Volume
                     </p>
                   </div>
                   <div className="border border-border p-3">
@@ -929,13 +975,13 @@ export default function TraderProfilePage({
                   </div>
                   <div className="border border-border p-3">
                     <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      Days_Active
+                      Win_Rate
                     </p>
                     <p className="mt-1 font-sans text-xl font-bold tabular-nums text-poly-black">
-                      {windowSummary.daysActive}
+                      {traderWinRate > 0 ? `${traderWinRate.toFixed(1)}%` : "—"}
                     </p>
                     <p className="font-body text-[9px] uppercase tracking-widest text-muted-foreground">
-                      Market Days
+                      Closed Positions
                     </p>
                   </div>
                   <div className="border border-border p-3">
@@ -960,24 +1006,6 @@ export default function TraderProfilePage({
                       Losses
                     </p>
                   </div>
-                </div>
-
-                {/* Window toggles */}
-                <div className="mb-4 flex items-center gap-1">
-                  {PNL_WINDOW_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.key}
-                      onClick={() => setPnlWindow(opt.key)}
-                      className={cn(
-                        "px-2.5 py-1 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
-                        pnlWindow === opt.key
-                          ? "bg-poly-black text-poly-cream"
-                          : "text-muted-foreground hover:text-poly-black"
-                      )}
-                    >
-                      {opt.shortLabel}
-                    </button>
-                  ))}
                 </div>
 
                 {/* Chart */}
@@ -1151,46 +1179,6 @@ export default function TraderProfilePage({
               </div>
             </div>
 
-            {/* ── Core Alpha Metrics ── */}
-            <div className="border border-border bg-poly-paper p-6">
-              <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
-                Core Alpha Metrics
-              </h3>
-              <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-                <div>
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    ROI(All_Time)
-                  </p>
-                  <p className={cn("mt-1 font-sans text-2xl font-bold tabular-nums md:text-3xl", traderRoi >= 0 ? "text-profit-green" : "text-loss-red")}>
-                    {formatPercent(traderRoi, true)}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Total_Winnings
-                  </p>
-                  <p className={cn("mt-1 font-sans text-2xl font-bold tabular-nums md:text-3xl", traderPnl >= 0 ? "text-profit-green" : "text-loss-red")}>
-                    {formatSignedCurrency(traderPnl)}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Cum_Volume
-                  </p>
-                  <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
-                    {formatCompactCurrency(traderVolDisplay)}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Win_Rate
-                  </p>
-                  <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
-                    {traderWinRate.toFixed(1)}%
-                  </p>
-                </div>
-              </div>
-            </div>
 
             {/* ── Active Categories + Size Distribution ── */}
             <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
