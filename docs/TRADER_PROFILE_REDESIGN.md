@@ -258,6 +258,8 @@ User visits /trader/[wallet]
 
 **One client request. All data. Cached.**
 
+**Non-leaderboard fallback:** If the leaderboard API returns empty for a wallet (very rare — we've verified it works for wallets ranked as low as #349,336), the server computes aggregate P&L from the positions and closed-positions responses instead. Open positions, closed positions, trade history, and profile data are always available for any wallet regardless of leaderboard presence.
+
 ---
 
 ## 5. Will It Provide Full History Performance Data?
@@ -424,6 +426,15 @@ By using Polymarket's own pre-calculated P&L, we are guaranteed to match what Po
 | Closed position detail | One aggregated daily number | Per-position P&L with market context |
 | New wallet first load | Requires backfill (seconds to minutes) | Instant |
 
+**Concrete example:** Wallet `0xcbb1a3174d9ac5a0f57f5b86808204b9382e7afb` (bratanbratishka) currently shows **"Trader Not Found"** on Polycopy. But the Polymarket API returns complete data for this wallet:
+
+- **Leaderboard:** rank #2,127 all-time, +$47,512 P&L, $509K volume
+- **Open positions:** Active BTC Up/Down trades with per-position P&L
+- **Closed positions:** Winning BTC trades with realized P&L (+$8,107, +$7,822, +$6,812 on individual positions)
+- **Trade history:** Individual fills with entry prices, sizes, timestamps, and on-chain transaction hashes
+
+Under the proposed architecture, this trader would have a fully populated profile page instead of an error screen.
+
 ### 7.5 Maintainability
 
 - **No pipeline to monitor** — no BigQuery jobs to debug, no Dome ingestion to check
@@ -493,7 +504,8 @@ Update `app/trader/[wallet]/page.tsx` and `app/v2/trader/[wallet]/page.tsx` to:
 | Polymarket API downtime | Low | Fallback to cached data, show "data may be stale" indicator |
 | API response format changes | Low | Type-safe parsing with runtime validation, alerting on parse failures |
 | Missing data for very new wallets | Low | The leaderboard API returns empty arrays gracefully; UI handles empty state |
-| Leaderboard API doesn't include all wallets | Low | Already verified: `user=` parameter returns data for wallets not on the public leaderboard |
+| Leaderboard API doesn't include all wallets | Low | Already verified: `user=` parameter returns data for wallets not on the public leaderboard (tested with rank #2,127 and rank #349,336 wallets). If the leaderboard ever returns empty for a wallet, fallback: sum `cashPnl` from `/positions` + `realizedPnl` from `/closed-positions` to compute aggregate P&L. Profile, trade history, and position data are always available regardless of leaderboard status. |
+| Large response for very active traders | Medium | Paginate initial load: fetch first 50 positions, first 50 closed positions, first 50 trades. Lazy-load more on scroll via separate paginated requests. The `/positions` endpoint supports limit up to 500, `/closed-positions` up to 50, and `/activity` up to 500 per page. |
 
 ---
 
