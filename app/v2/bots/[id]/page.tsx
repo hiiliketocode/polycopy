@@ -16,6 +16,12 @@ import { TopNav } from "@/components/polycopy-v2/top-nav"
 import { BottomNav } from "@/components/polycopy-v2/bottom-nav"
 import { V2Footer } from "@/components/polycopy-v2/footer"
 import { cn } from "@/lib/utils"
+import { getBotDescription } from "@/lib/bot-descriptions"
+import { CopyBotModal } from "@/components/polycopy-v2/copy-bot-modal"
+import { BotShareCardModal } from "@/components/polycopy-v2/bot-share-card-modal"
+import { useAuthState } from "@/lib/auth/useAuthState"
+import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from "@/lib/feature-tier"
+import { supabase } from "@/lib/supabase"
 
 /* ═══════════════════════════════════════════════════════
    Types
@@ -92,6 +98,8 @@ interface WalletData {
   min_edge?: number
   allocation_method?: string
   start_date?: { value: string }
+  min_bet?: number
+  max_bet?: number
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -229,13 +237,38 @@ export default function BotDetailPage() {
   const [recentTrades, setRecentTrades] = useState<FTOrder[]>([])
   const [dailyPnl, setDailyPnl] = useState<DailyPnl[]>([])
   const [categories, setCategories] = useState<CategoryPerf[]>([])
+  const [showCopyBotModal, setShowCopyBotModal] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
+
+  // User auth + premium state
+  const { user } = useAuthState({ requireAuth: false })
+  const [userTier, setUserTier] = useState<FeatureTier>('anon')
+  const [userWalletAddress, setUserWalletAddress] = useState<string | null>(null)
+  const hasPremiumAccess = tierHasPremiumAccess(userTier)
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    const fetchProfile = async () => {
+      const [profileRes, walletRes] = await Promise.all([
+        supabase.from('profiles').select('is_premium, is_admin').eq('id', user.id).single(),
+        supabase.from('turnkey_wallets').select('polymarket_account_address, eoa_address').eq('user_id', user.id).maybeSingle(),
+      ])
+      if (!cancelled && profileRes.data) {
+        setUserTier(resolveFeatureTier(true, profileRes.data))
+        setUserWalletAddress(walletRes.data?.polymarket_account_address || walletRes.data?.eoa_address || null)
+      }
+    }
+    fetchProfile()
+    return () => { cancelled = true }
+  }, [user])
 
   useEffect(() => {
     async function fetchBotData() {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`/api/ft/wallets/${encodeURIComponent(botId)}`, { cache: "no-store" })
+        const res = await fetch(`/api/v2/bots/${encodeURIComponent(botId)}`, { cache: "no-store" })
         const data = await res.json()
 
         if (data.success) {
@@ -356,50 +389,49 @@ export default function BotDetailPage() {
       {/* ── Header ── */}
       <div className="border-b border-border bg-card">
         <div className="mx-auto max-w-6xl px-4 py-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <button
-                onClick={() => router.push("/v2/bots")}
-                className="mb-3 flex items-center gap-1 font-sans text-xs text-muted-foreground transition-colors hover:text-foreground"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <div className="flex items-center gap-3">
-                <h1 className="font-sans text-3xl font-black uppercase tracking-tight text-poly-black md:text-4xl">
-                  {wallet.display_name}
-                </h1>
-              </div>
-              <div className="mt-1.5 flex items-center gap-3 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  RUNNING_{timeRunning(wallet.start_date)}
-                </span>
-                <span>·</span>
-                <span className={cn(
-                  "px-1.5 py-0.5",
-                  wallet.test_status === "ACTIVE"
-                    ? "bg-profit-green/15 text-profit-green"
-                    : "bg-muted text-muted-foreground"
-                )}>
-                  {wallet.test_status}
-                </span>
-              </div>
-            </div>
-            <div className="ml-6 flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => router.push("/v2/bots")}
+            className="mb-3 flex items-center gap-1 font-sans text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div className="flex items-center justify-between gap-4">
+            <h1 className="font-sans text-3xl font-black uppercase tracking-tight text-poly-black md:text-4xl">
+              {wallet.display_name}
+            </h1>
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                className="flex items-center gap-2 bg-poly-yellow px-5 py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-yellow/90"
+                onClick={() => setShowCopyBotModal(true)}
+                className="flex items-center gap-2 bg-poly-yellow px-6 py-3 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
               >
-                <Zap className="h-3.5 w-3.5" />
+                <Zap className="h-4 w-4" />
                 COPY_THIS_BOT
               </button>
               <button
                 type="button"
-                className="flex h-10 w-10 items-center justify-center border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                onClick={() => setShowShareModal(true)}
+                className="flex items-center gap-2 bg-poly-black px-6 py-3 font-sans text-sm font-bold uppercase tracking-wide text-poly-cream transition-colors hover:bg-poly-black/90"
               >
                 <Share2 className="h-4 w-4" />
+                Share
               </button>
             </div>
+          </div>
+          <div className="mt-1.5 flex items-center gap-3 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              RUNNING_{timeRunning(wallet.start_date)}
+            </span>
+            <span>·</span>
+            <span className={cn(
+              "px-1.5 py-0.5",
+              wallet.test_status === "ACTIVE"
+                ? "bg-profit-green/15 text-profit-green"
+                : "bg-muted text-muted-foreground"
+            )}>
+              {wallet.test_status}
+            </span>
           </div>
         </div>
       </div>
@@ -662,7 +694,7 @@ export default function BotDetailPage() {
                     DESCRIPTION
                   </p>
                   <p className="font-body text-sm leading-relaxed text-muted-foreground">
-                    {wallet.description || "No description available."}
+                    {getBotDescription(wallet.wallet_id, wallet.description)}
                   </p>
                 </div>
                 <div className="flex flex-col gap-4">
@@ -932,6 +964,45 @@ export default function BotDetailPage() {
 
       <V2Footer />
       <BottomNav />
+
+      {/* Modals */}
+      {wallet && (
+        <>
+          <CopyBotModal
+            open={showCopyBotModal}
+            onOpenChange={setShowCopyBotModal}
+            botId={wallet.wallet_id}
+            botName={wallet.display_name}
+            isPremium={hasPremiumAccess}
+            minBet={wallet.min_bet}
+            maxBet={wallet.max_bet}
+            walletAddress={userWalletAddress}
+            onSuccess={() => {}}
+          />
+          <BotShareCardModal
+            open={showShareModal}
+            onOpenChange={setShowShareModal}
+            bot={{
+              id: wallet.wallet_id,
+              name: wallet.display_name,
+              description: getBotDescription(wallet.wallet_id, wallet.description),
+              status: wallet.test_status,
+              startDate: wallet.start_date?.value,
+              totalPnl: stats?.total_pnl ?? 0,
+              roi: wallet.starting_balance > 0
+                ? ((wallet.current_balance - wallet.starting_balance) / wallet.starting_balance) * 100
+                : 0,
+              winRate: stats?.win_rate ?? 0,
+              totalTrades: stats?.total_trades ?? 0,
+              openPositions: openPositions.length,
+              dailyPnl: dailyPnl.map((d) => ({
+                date: d.date,
+                cumulative: d.cumulative_pnl,
+              })),
+            }}
+          />
+        </>
+      )}
     </div>
   )
 }

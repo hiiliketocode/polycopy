@@ -427,6 +427,7 @@ export async function POST(request: NextRequest) {
         last_validated_at: new Date().toISOString(),
         enc_kid: CURRENT_ENCRYPTION_KID,
         enc_version: CURRENT_ENCRYPTION_VERSION,
+        signature_type: sigType,
       })
       .select()
       .single()

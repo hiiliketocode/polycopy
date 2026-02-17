@@ -40,13 +40,13 @@ export function SEONav() {
         {/* Desktop right CTAs */}
         <div className="hidden items-center gap-3 md:flex">
           <Link
-            href="/login"
+            href="/v2/login"
             className="px-4 py-2 font-sans text-xs font-bold uppercase tracking-widest text-foreground transition-colors hover:text-poly-yellow"
           >
             SIGN IN
           </Link>
           <Link
-            href="/login?mode=signup"
+            href="/v2/login?mode=signup"
             className="bg-poly-yellow px-5 py-2 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
           >
             START FREE
@@ -86,13 +86,13 @@ export function SEONav() {
           </div>
           <div className="mt-6 flex flex-col gap-3">
             <Link
-              href="/login"
+              href="/v2/login"
               className="py-3 text-center font-sans text-xs font-bold uppercase tracking-widest text-foreground transition-colors hover:text-poly-yellow"
             >
               SIGN IN
             </Link>
             <Link
-              href="/login?mode=signup"
+              href="/v2/login?mode=signup"
               className="bg-poly-yellow py-3 text-center font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
             >
               START FREE

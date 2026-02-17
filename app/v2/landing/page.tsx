@@ -490,8 +490,8 @@ export default function LandingPage() {
                 <Bot className="h-3 w-3" />
                 ALGORITHMIC_STRATEGIES
               </div>
-              <h3 className="font-sans text-5xl font-black uppercase tracking-tighter">Proprietary Polycopy Bots</h3>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Top Performing ML Algorithms</p>
+              <h3 className="font-sans text-5xl font-black uppercase tracking-tighter">Proprietary Copy Trading Bots</h3>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Polycopy&#39;s Top Performing ML Algorithms</p>
             </div>
             <Link
               href="/v2/bots"
@@ -599,7 +599,7 @@ export default function LandingPage() {
 
           <div className="mt-16 text-center">
             <Link
-              href="/login"
+              href="/v2/login?mode=signup"
               className="inline-flex items-center gap-2 bg-[#FDB022] px-12 py-5 text-[13px] font-black uppercase tracking-[0.3em] text-black shadow-xl transition-all hover:bg-black hover:text-[#FDB022]"
             >
               Sign Up Free <ArrowRight className="ml-2 inline h-[18px] w-[18px]" />
@@ -650,7 +650,7 @@ export default function LandingPage() {
                 ))}
               </div>
               <Link
-                href="/login"
+                href="/v2/login?mode=signup"
                 className="mt-auto flex w-full items-center justify-center bg-black py-5 text-[12px] font-black uppercase tracking-[0.3em] text-white transition-all hover:bg-zinc-800"
               >
                 Start For Free
@@ -735,7 +735,7 @@ export default function LandingPage() {
 
           <div className="pt-12">
             <Link
-              href="/login"
+              href="/v2/login?mode=signup"
               className="inline-flex px-16 py-6 text-[14px] font-black uppercase tracking-[0.4em] text-black bg-white transition-all hover:bg-[#FDB022]"
             >
               Sign Up Now

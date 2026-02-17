@@ -379,7 +379,7 @@ function DiscoverPageContent() {
     setIsSearching(true)
     try {
       if (/^0x[a-fA-F0-9]{40}$/.test(query)) {
-        router.push(`/trader/${query}`)
+        router.push(`/v2/trader/${query}`)
       } else {
         alert("Please enter a valid wallet address (starts with 0x, 42 characters).")
       }
@@ -540,7 +540,7 @@ function DiscoverPageContent() {
                   <div
                     key={trader.wallet}
                     className="border border-border bg-card p-4 cursor-pointer transition hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,0.08)]"
-                    onClick={() => router.push(`/trader/${trader.wallet}?tab=trades`)}
+                    onClick={() => router.push(`/v2/trader/${trader.wallet}?tab=trades`)}
                   >
                     <div className="flex items-center gap-2.5 mb-1">
                       <TraderAvatar displayName={trader.displayName} wallet={trader.wallet} src={trader.profileImage} size={36} className="ring-2 ring-border" />
@@ -657,7 +657,7 @@ function DiscoverPageContent() {
                     className="grid grid-cols-[60px_1fr_100px_100px_120px_100px_120px] items-center border-b border-border px-4 py-2.5 transition hover:bg-accent/50"
                   >
                     <div className="text-center font-body text-sm font-semibold tabular-nums text-muted-foreground">{index + 1}</div>
-                    <Link href={`/trader/${trader.wallet}`} className="flex items-center gap-2.5 min-w-0">
+                    <Link href={`/v2/trader/${trader.wallet}`} className="flex items-center gap-2.5 min-w-0">
                       <TraderAvatar displayName={trader.displayName} wallet={trader.wallet} src={trader.profileImage} size={32} className="ring-1 ring-border" />
                       <p className="font-sans text-sm font-bold text-foreground truncate">{formatDisplayName(trader.displayName, trader.wallet)}</p>
                     </Link>
@@ -717,7 +717,7 @@ function DiscoverPageContent() {
                   mostConsistentEntries.map((entry, i) => (
                     <Link
                       key={entry.trader.wallet}
-                      href={`/trader/${entry.trader.wallet}`}
+                      href={`/v2/trader/${entry.trader.wallet}`}
                       className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent"
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -746,7 +746,7 @@ function DiscoverPageContent() {
                   sortedYesterdayWinners.map((trader, i) => (
                     <Link
                       key={trader.wallet}
-                      href={`/trader/${trader.wallet}`}
+                      href={`/v2/trader/${trader.wallet}`}
                       className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent"
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -781,7 +781,7 @@ function DiscoverPageContent() {
                   mostActiveTraders.map((trader, i) => (
                     <Link
                       key={trader.wallet}
-                      href={`/trader/${trader.wallet}`}
+                      href={`/v2/trader/${trader.wallet}`}
                       className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent"
                     >
                       <div className="flex items-center gap-3 min-w-0">

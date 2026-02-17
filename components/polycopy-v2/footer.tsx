@@ -100,6 +100,22 @@ export function V2Footer() {
               </li>
               <li>
                 <Link
+                  href="/polymarket-trading-bots"
+                  className="font-sans text-xs font-bold uppercase tracking-wider text-white/80 transition-colors hover:text-white"
+                >
+                  TRADING BOTS
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/high-signal-polymarket-trades"
+                  className="font-sans text-xs font-bold uppercase tracking-wider text-white/80 transition-colors hover:text-white"
+                >
+                  HIGH-SIGNAL TRADES
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/trading-setup"
                   className="font-sans text-xs font-bold uppercase tracking-wider text-white/80 transition-colors hover:text-white"
                 >

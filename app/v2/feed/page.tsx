@@ -12,18 +12,19 @@ import { TopNav } from '@/components/polycopy-v2/top-nav';
 import { BottomNav } from '@/components/polycopy-v2/bottom-nav';
 import { V2Footer } from '@/components/polycopy-v2/footer';
 import { Logo } from '@/components/polycopy-v2/logo';
-import { TradeCard } from '@/components/polycopy/trade-card';
-import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy/trade-execution-notifications';
-import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
-import { EmptyState } from '@/components/polycopy/empty-state';
+import { TradeCard } from '@/components/polycopy-v2/feed-trade-card';
+import { TradeExecutionNotifications, type TradeExecutionNotification } from '@/components/polycopy-v2/trade-execution-notifications';
+import { ConnectWalletModal } from '@/components/polycopy-v2/connect-wallet-modal';
+import { EmptyState } from '@/components/polycopy-v2/empty-state';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { RefreshCw, Activity, Filter, Check, Search, ChevronDown, ArrowUp, LayoutGrid, List, Flame } from 'lucide-react';
+import { RefreshCw, Activity, Filter, Check, Search, ChevronDown, ArrowUp, LayoutGrid, List, Flame, Lock, Crown } from 'lucide-react';
+import { useUpgrade } from '@/hooks/useUpgrade';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { getESPNScoresForTrades, getScoreDisplaySides, getFallbackEspnUrl } from '@/lib/espn/scores';
-import { useManualTradingMode } from '@/hooks/use-manual-trading-mode';
+import { useManualTradingMode } from '@/hooks/use-manual-trading-mode-v2';
 import type { PositionSummary } from '@/lib/orders/position';
 import type { OrderRow } from '@/lib/orders/types';
 import {
@@ -672,6 +673,7 @@ export default function FeedPage() {
   const { user, loading } = useAuthState({ requireAuth: true });
   
   const [userTier, setUserTier] = useState<FeatureTier>('anon');
+  const [tierLoading, setTierLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
@@ -754,6 +756,7 @@ export default function FeedPage() {
   const [topBots, setTopBots] = useState<{ id: string; name: string; strategy: string; roi: number }[]>([]);
   const hasPremiumAccess = tierHasPremiumAccess(userTier);
   const canExecuteTrades = hasPremiumAccess && Boolean(walletAddress);
+  const { upgrade } = useUpgrade();
   const showLowBalanceCallout =
     hasPremiumAccess &&
     Boolean(walletAddress) &&
@@ -1846,6 +1849,7 @@ export default function FeedPage() {
   useEffect(() => {
     if (!user) {
       setUserTier('anon');
+      setTierLoading(false);
       setIsPremium(false);
       setWalletAddress(null);
       setProfileImageUrl(null);
@@ -1877,6 +1881,7 @@ export default function FeedPage() {
             setUserTier(resolveFeatureTier(true, null));
             setIsPremium(false);
             setProfileImageUrl(null);
+            setTierLoading(false);
           }
           return;
         }
@@ -1890,6 +1895,7 @@ export default function FeedPage() {
             walletRes.data?.eoa_address || 
             null
           );
+          setTierLoading(false);
         }
       } catch (err) {
         console.error('Error fetching profile:', err);
@@ -1898,6 +1904,7 @@ export default function FeedPage() {
           setIsPremium(false);
           setWalletAddress(null);
           setProfileImageUrl(null);
+          setTierLoading(false);
         }
       }
     };
@@ -4321,7 +4328,7 @@ export default function FeedPage() {
         </header>
 
         {/* Live Fire Feed - horizontal scroller */}
-        {fireFeedTrades.length > 0 && (
+        {(fireFeedTrades.length > 0 || (!hasPremiumAccess && !tierLoading)) && (
           <section className="border-b border-black/5 bg-white py-4">
             <div className="mx-auto max-w-[1400px] px-4">
               <div className="mb-3 flex items-center gap-2">
@@ -4333,58 +4340,131 @@ export default function FeedPage() {
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-75"></span>
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-orange-500"></span>
                 </span>
+                {!hasPremiumAccess && !tierLoading && (
+                  <span className="ml-1 inline-flex items-center gap-1 border border-[#FDB022]/30 bg-[#FDB022]/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-[#FDB022]">
+                    <Crown className="h-2.5 w-2.5" /> Premium
+                  </span>
+                )}
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button className="ml-1 inline-flex h-4 w-4 items-center justify-center border border-black/10 text-[9px] font-bold text-zinc-400 hover:text-poly-black transition-colors" aria-label="What is the fire feed?">?</button>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[260px]">
-                      <p className="text-xs">The Fire Feed surfaces the highest-signal trades from across Polymarket's tracked traders, scored by our algorithm based on conviction, timing, and trader performance.</p>
+                      <p className="text-xs">The Fire Feed surfaces the highest-signal trades from across Polymarket&#39;s tracked traders, scored by our algorithm based on conviction, timing, and trader performance.</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                {fireFeedTrades.map((trade) => {
-                  const pnl = trade.trade.side === 'BUY'
-                    ? ((trade.trade.price - 0.5) * trade.trade.size).toFixed(2)
-                    : ((0.5 - trade.trade.price) * trade.trade.size).toFixed(2);
-                  const isPositive = parseFloat(pnl) >= 0;
-                  return (
-                    <div
-                      key={`signal-${trade.id}-${trade.trade.timestamp}`}
-                      className="group w-[260px] min-w-[260px] max-w-[260px] shrink-0 cursor-pointer border border-black/5 bg-white p-4 shadow-sm transition-all hover:border-black"
-                      onClick={() => {
-                        router.push(`/v2/trader/${trade.trader.wallet}?tab=trades`);
-                      }}
-                    >
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <span className="truncate max-w-[140px] text-[10px] font-black uppercase tracking-widest text-poly-black group-hover:text-[#FDB022] transition-colors">
-                          {trade.trader.displayName}
-                        </span>
-                        <span className="shrink-0 text-[9px] font-bold text-zinc-300 uppercase">
-                          {getRelativeTime(trade.trade.timestamp)}
-                        </span>
-                      </div>
-                      <p className="mb-4 truncate text-[11px] font-medium text-zinc-500 uppercase tracking-tight">
-                        {trade.market.title}
-                      </p>
-                      <div className="flex items-center justify-between pt-3 border-t border-black/5">
-                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-zinc-300 uppercase tracking-widest">PNL</span>
-                          <span className="text-sm font-black font-sans">${Math.abs(trade.trade.size * trade.trade.price).toFixed(0)}</span>
+
+              {hasPremiumAccess ? (
+                <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                  {fireFeedTrades.map((trade) => {
+                    const pnl = trade.trade.side === 'BUY'
+                      ? ((trade.trade.price - 0.5) * trade.trade.size).toFixed(2)
+                      : ((0.5 - trade.trade.price) * trade.trade.size).toFixed(2);
+                    const isPositive = parseFloat(pnl) >= 0;
+                    return (
+                      <div
+                        key={`signal-${trade.id}-${trade.trade.timestamp}`}
+                        className="group w-[260px] min-w-[260px] max-w-[260px] shrink-0 cursor-pointer border border-black/5 bg-white p-4 shadow-sm transition-all hover:border-black"
+                        onClick={() => {
+                          router.push(`/v2/trader/${trade.trader.wallet}?tab=trades`);
+                        }}
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="truncate max-w-[140px] text-[10px] font-black uppercase tracking-widest text-poly-black group-hover:text-[#FDB022] transition-colors">
+                            {trade.trader.displayName}
+                          </span>
+                          <span className="shrink-0 text-[9px] font-bold text-zinc-300 uppercase">
+                            {getRelativeTime(trade.trade.timestamp)}
+                          </span>
                         </div>
-                        <div className="text-right">
-                          <p className="text-[11px] font-black">${(trade.trade.price * 100).toFixed(0)}¢</p>
-                          <p className={cn("text-[9px] font-bold", isPositive ? "text-[#10B981]" : "text-[#EF4444]")}>
-                            {isPositive ? '+' : ''}{pnl}
-                          </p>
+                        <p className="mb-4 truncate text-[11px] font-medium text-zinc-500 uppercase tracking-tight">
+                          {trade.market.title}
+                        </p>
+                        <div className="flex items-center justify-between pt-3 border-t border-black/5">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] font-black text-zinc-300 uppercase tracking-widest">PNL</span>
+                            <span className="text-sm font-black font-sans">${Math.abs(trade.trade.size * trade.trade.price).toFixed(0)}</span>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px] font-black">${(trade.trade.price * 100).toFixed(0)}¢</p>
+                            <p className={cn("text-[9px] font-bold", isPositive ? "text-[#10B981]" : "text-[#EF4444]")}>
+                              {isPositive ? '+' : ''}{pnl}
+                            </p>
+                          </div>
                         </div>
                       </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="relative">
+                  {/* Realistic fake cards that give a preview of what premium unlocks */}
+                  <div className="flex gap-3 overflow-hidden pb-2 select-none" aria-hidden="true">
+                    {[
+                      { name: 'WHALE_0x7f', time: '2m ago', market: 'Will BTC hit $150K by June 2026?', size: '$4,200', price: '67¢', pnl: '+$714', positive: true },
+                      { name: 'SIGNAL_ALPHA', time: '5m ago', market: 'Fed rate cut in March meeting?', size: '$1,800', price: '42¢', pnl: '+$144', positive: true },
+                      { name: 'PM_TRADER_92', time: '8m ago', market: 'ETH to flip SOL market cap?', size: '$3,100', price: '71¢', pnl: '-$248', positive: false },
+                      { name: 'DEGEN_LABS', time: '12m ago', market: 'Trump VP announcement before July?', size: '$2,500', price: '55¢', pnl: '+$125', positive: true },
+                      { name: 'MACRO_BOT_3', time: '15m ago', market: 'US GDP growth above 3% Q1?', size: '$5,000', price: '38¢', pnl: '+$900', positive: true },
+                    ].map((card, i) => (
+                      <div
+                        key={`teaser-fire-${i}`}
+                        className="w-[260px] min-w-[260px] max-w-[260px] shrink-0 border border-black/5 bg-white p-4 shadow-sm"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="truncate max-w-[140px] text-[10px] font-black uppercase tracking-widest text-poly-black">
+                            {card.name}
+                          </span>
+                          <span className="shrink-0 text-[9px] font-bold text-zinc-300 uppercase">
+                            {card.time}
+                          </span>
+                        </div>
+                        <p className="mb-4 truncate text-[11px] font-medium text-zinc-500 uppercase tracking-tight">
+                          {card.market}
+                        </p>
+                        <div className="flex items-center justify-between pt-3 border-t border-black/5">
+                          <div className="flex flex-col">
+                            <span className="text-[9px] font-black text-zinc-300 uppercase tracking-widest">SIZE</span>
+                            <span className="text-sm font-black font-sans">{card.size}</span>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[11px] font-black">{card.price}</p>
+                            <p className={cn("text-[9px] font-bold", card.positive ? "text-[#10B981]" : "text-[#EF4444]")}>
+                              {card.pnl}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Blur overlay with CTA */}
+                  <div className="absolute inset-0 flex items-center justify-center backdrop-blur-[6px] bg-white/40">
+                    <div className="flex flex-col items-center gap-3 text-center">
+                      <div className="flex h-10 w-10 items-center justify-center border-2 border-[#FDB022] bg-[#FDB022]/10">
+                        <Lock className="h-5 w-5 text-[#FDB022]" />
+                      </div>
+                      <div>
+                        <p className="font-sans text-[11px] font-black uppercase tracking-[0.2em] text-poly-black">
+                          Premium Feature
+                        </p>
+                        <p className="mt-1 max-w-[280px] font-body text-xs text-zinc-500">
+                          The Fire Feed surfaces the highest-signal trades scored by our algorithm. Upgrade to unlock.
+                        </p>
+                      </div>
+                      <button
+                        onClick={upgrade}
+                        className="mt-1 inline-flex items-center gap-2 bg-[#FDB022] px-5 py-2 font-sans text-[10px] font-black uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-[#FDB022]"
+                      >
+                        <Crown className="h-3 w-3" />
+                        Upgrade to Premium
+                      </button>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -4468,10 +4548,10 @@ export default function FeedPage() {
               <h3 className="text-[11px] font-black uppercase tracking-[0.3em] px-1">Top_Performing_Bots</h3>
               <div className="bg-white border border-black/5 p-5 shadow-sm space-y-4">
                 {topBots.length > 0 ? topBots.map((bot) => (
-                  <div key={bot.id} className="flex items-center justify-between border-b border-black/5 last:border-0 pb-3 last:pb-0">
-                    <div><p className="text-[10px] font-black text-poly-black uppercase tracking-tight">{bot.name}</p><p className="text-[8px] font-bold text-zinc-400 uppercase">{bot.strategy}</p></div>
+                  <Link key={bot.id} href={`/v2/bots/${bot.id}`} className="flex items-center justify-between border-b border-black/5 last:border-0 pb-3 last:pb-0 group cursor-pointer">
+                    <div><p className="text-[10px] font-black text-poly-black uppercase tracking-tight group-hover:text-[#FDB022] transition-colors">{bot.name}</p><p className="text-[8px] font-bold text-zinc-400 uppercase">{bot.strategy}</p></div>
                     <p className={cn("text-[10px] font-black", bot.roi >= 0 ? "text-green-600" : "text-red-500")}>{bot.roi >= 0 ? '+' : ''}{bot.roi.toFixed(1)}%</p>
-                  </div>
+                  </Link>
                 )) : [1,2,3].map((i) => (
                   <div key={i} className="flex items-center justify-between pb-3 animate-pulse"><div className="space-y-1"><div className="h-3 w-20 bg-gray-200" /><div className="h-2 w-14 bg-gray-100" /></div><div className="h-3 w-10 bg-gray-200" /></div>
                 ))}

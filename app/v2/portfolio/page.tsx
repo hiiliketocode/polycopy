@@ -430,11 +430,19 @@ export default function PortfolioPage() {
   const fetchStats = useCallback(async () => {
     if (!user) return
     try {
+      console.log("[v2/portfolio] Fetching portfolio stats for user:", user.id)
       const res = await fetch(`/api/portfolio/stats?userId=${user.id}`, {
         cache: "no-store",
       })
+      console.log("[v2/portfolio] Stats response status:", res.status)
       if (res.ok) {
         const data = await res.json()
+        console.log("[v2/portfolio] Stats received:", {
+          totalPnl: data.totalPnl,
+          totalVolume: data.totalVolume,
+          totalTrades: data.totalTrades,
+          cached: data.cached,
+        })
         if (data.totalPnl !== undefined || data.totalTrades !== undefined) {
           setStats({
             totalPnl: Number(data.totalPnl ?? 0),
@@ -450,9 +458,11 @@ export default function PortfolioPage() {
             losingPositions: data.losingPositions != null ? Number(data.losingPositions) : undefined,
           })
         }
+      } else {
+        console.error("[v2/portfolio] Stats fetch failed:", res.status, await res.text())
       }
     } catch (err) {
-      console.error("Error fetching portfolio stats:", err)
+      console.error("[v2/portfolio] Error fetching portfolio stats:", err)
     }
   }, [user])
 
@@ -745,17 +755,49 @@ export default function PortfolioPage() {
      Derived Data
      ═══════════════════════════════════════════════════════ */
 
-  const userStats: PortfolioStats = stats || {
-    totalPnl: 0,
-    realizedPnl: 0,
-    unrealizedPnl: 0,
-    totalVolume: 0,
-    roi: 0,
-    winRate: 0,
-    totalTrades: 0,
-    openTrades: 0,
-    closedTrades: 0,
-  }
+  // Client-side fallback stats from copiedTrades (matches v1 logic)
+  const fallbackStats = useMemo((): PortfolioStats => {
+    if (copiedTrades.length === 0) {
+      return { totalPnl: 0, realizedPnl: 0, unrealizedPnl: 0, totalVolume: 0, roi: 0, winRate: 0, totalTrades: 0, openTrades: 0, closedTrades: 0 }
+    }
+
+    const invested = (trade: CopiedTrade) => {
+      if (trade.amount_invested != null) return trade.amount_invested
+      if (trade.entry_size && trade.price_when_copied) return trade.entry_size * trade.price_when_copied
+      return 0
+    }
+
+    const pnlValue = (trade: CopiedTrade) => {
+      if (trade.pnl_usd != null) return trade.pnl_usd
+      const entryPrice = trade.price_when_copied || null
+      const exitPrice = trade.user_exit_price ?? trade.current_price ?? null
+      const size = trade.entry_size ?? null
+      if (entryPrice !== null && exitPrice !== null && size !== null) return (exitPrice - entryPrice) * size
+      if (trade.roi != null) return invested(trade) * (trade.roi / 100)
+      return 0
+    }
+
+    const openTrades = copiedTrades.filter(t => !t.user_closed_at && !t.market_resolved)
+    const closedTrades = copiedTrades.filter(t => t.user_closed_at || t.market_resolved)
+    const realizedPnl = closedTrades.reduce((sum, t) => sum + pnlValue(t), 0)
+    const unrealizedPnl = openTrades.reduce((sum, t) => sum + pnlValue(t), 0)
+    const totalPnl = realizedPnl + unrealizedPnl
+    const totalVolume = copiedTrades.reduce((sum, t) => sum + invested(t), 0)
+    const roi = totalVolume > 0 ? (totalPnl / totalVolume) * 100 : 0
+    const winningTrades = closedTrades.filter(t => pnlValue(t) > 0).length
+    const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0
+
+    return {
+      totalPnl, realizedPnl, unrealizedPnl, totalVolume, roi,
+      winRate: Math.round(winRate),
+      totalTrades: copiedTrades.length,
+      openTrades: openTrades.length,
+      closedTrades: closedTrades.length,
+    }
+  }, [copiedTrades])
+
+  // Use API stats when available, fall back to client-side calculation from trades
+  const userStats: PortfolioStats = stats ?? fallbackStats
 
   // Filter P&L rows by window
   const sortedPnlRows = useMemo(
@@ -953,7 +995,7 @@ export default function PortfolioPage() {
             {profile?.trading_wallet_address && (
               <button
                 onClick={handleCopyAddress}
-                className="flex items-center gap-2 border border-poly-black px-4 py-2 font-sans text-xs font-bold uppercase tracking-wide text-poly-black transition-colors hover:bg-poly-black hover:text-poly-cream"
+                className="flex items-center gap-2 border border-poly-black px-6 py-3 font-sans text-sm font-bold uppercase tracking-wide text-poly-black transition-colors hover:bg-poly-black hover:text-poly-cream"
               >
                 <Copy className="h-4 w-4" />
                 {copiedAddress ? "Copied!" : "Copy Wallet"}
@@ -961,7 +1003,7 @@ export default function PortfolioPage() {
             )}
             <button
               onClick={() => setIsShareModalOpen(true)}
-              className="flex items-center gap-2 bg-poly-black px-4 py-2 font-sans text-xs font-bold uppercase tracking-wide text-poly-cream transition-colors hover:bg-poly-black/90"
+              className="flex items-center gap-2 bg-poly-black px-6 py-3 font-sans text-sm font-bold uppercase tracking-wide text-poly-cream transition-colors hover:bg-poly-black/90"
             >
               <Share2 className="h-4 w-4" />
               Share Profile
@@ -1788,7 +1830,7 @@ export default function PortfolioPage() {
                           >
                             <td className="py-2.5 pr-2">
                               <Link
-                                href={`/trader/${trader.trader_wallet}`}
+                                href={`/v2/trader/${trader.trader_wallet}`}
                                 className="font-body text-sm font-medium text-poly-black hover:underline"
                               >
                                 {trader.trader_name}

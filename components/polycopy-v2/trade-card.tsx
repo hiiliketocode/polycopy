@@ -13,8 +13,8 @@ import {
   Check,
   Clock,
   Activity,
-  BarChart3,
   Zap,
+  BarChart3,
 } from "lucide-react"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui-v2/avatar"
 import { cn } from "@/lib/utils"
@@ -730,7 +730,7 @@ export function TradeCard({
               </p>
               {trade.trader.isPremium && (
                 <span className="badge-premium" style={{ fontSize: "9px", padding: "1px 4px", gap: "2px" }}>
-                  <Star className="h-2.5 w-2.5" />
+                  <Zap className="h-2.5 w-2.5" />
                   PRO
                 </span>
               )}

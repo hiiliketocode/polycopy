@@ -157,7 +157,7 @@ export default function V2PreviewPage() {
               <div className="max-w-sm">
                 <BotCard
                   bot={mockBot}
-                  onActivate={() => alert("Activate Bot clicked!")}
+                  onCopyBot={() => alert("Copy Bot clicked!")}
                   isPremiumUser={false}
                 />
               </div>

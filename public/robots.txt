@@ -17,12 +17,18 @@ Disallow: /portfolio
 Disallow: /settings
 Disallow: /trade-execute
 
+# Disallow v2 preview/staging routes (will be removed at launch)
+Disallow: /v2/
+Disallow: /v2-preview
+
 # Allow specific important pages
 Allow: /discover
 Allow: /faq
 Allow: /terms
 Allow: /privacy
 Allow: /trader/
+Allow: /polymarket-trading-bots
+Allow: /high-signal-polymarket-trades
 
 # Sitemap location
 Sitemap: https://polycopy.app/sitemap.xml

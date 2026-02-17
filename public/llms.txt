@@ -35,6 +35,7 @@ The platform helps traders make better decisions through informed curation, not 
 - Manual trade copying to Polymarket
 - Browse 500K+ trader leaderboard
 - Filter traders by category, ROI, P&L, win rate, volume
+- Free tier includes access to one trading bot
 
 ### Premium Tier ($20/month)
 - One-click trade execution through Polycopy
@@ -42,6 +43,27 @@ The platform helps traders make better decisions through informed curation, not 
 - Connected wallet integration
 - Priority support
 - No manual navigation to Polymarket needed
+- ML-powered premium trading bots
+- Full high-signal trade feed (AI-scored)
+
+### Trading Bots
+Polycopy offers automated trading bots that follow predefined strategies:
+- **Steady Eddie**: Conservative strategy focused on high-probability, low-risk trades
+- **Balanced Play**: Moderate risk/reward balance across diverse markets
+- **Full Send**: Aggressive strategy targeting higher returns with more risk
+- **ML-Powered Bots** (Premium): Machine learning bots that analyze trader behavior patterns and market data for higher-conviction trades
+- Free tier includes access to one bot; premium unlocks the full lineup
+
+Bots execute automatically based on their strategy. Users can follow bots the same way they follow traders—see their trades in the feed, understand the reasoning, and copy if desired.
+
+### High-Signal Trade Scoring (PolySignal)
+Polycopy's AI scoring system evaluates every trade from 500K+ traders:
+- **Edge Analysis** (50% weight): Does the trade have a price advantage?
+- **Conviction** (25%): How much capital is the trader risking?
+- **Trader Skill** (15%): Historical performance (ROI, win rate, consistency)
+- **Market Context** (10%): Timing, liquidity, time to resolution
+- Scores range 0-100: Strong Buy (75+), Buy (60+), Neutral (45-59), Avoid (<45)
+- Only Buy and Strong Buy trades surface in the signal feed
 
 ### Platform Features
 - Real-time performance metrics for all traders
@@ -50,6 +72,7 @@ The platform helps traders make better decisions through informed curation, not 
 - Non-custodial security (you control your funds)
 - Live market price tracking
 - Performance tracking for copied trades
+- Bot performance dashboards with real-time stats
 
 ## Target Users
 
@@ -155,6 +178,8 @@ Reality: 100% non-custodial. You control your keys and funds at all times.
 - Best Polymarket Traders: https://polycopy.app/best-polymarket-traders
 - Polymarket vs Other Platforms: https://polycopy.app/polymarket-vs-other-platforms
 - Prediction Markets for Beginners: https://polycopy.app/prediction-markets-for-beginners
+- Polymarket Trading Bots: https://polycopy.app/polymarket-trading-bots
+- High-Signal Trades: https://polycopy.app/high-signal-polymarket-trades
 - Market Categories Hub: https://polycopy.app/polymarket-market-categories
 - Sports Markets: https://polycopy.app/sports-prediction-markets
 - Politics Markets: https://polycopy.app/politics-prediction-markets

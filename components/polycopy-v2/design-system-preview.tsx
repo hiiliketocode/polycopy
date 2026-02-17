@@ -1,4 +1,4 @@
-import { Lock, ChevronRight, Sparkles, Star, Signal, Users, Bot, User } from "lucide-react"
+import { Lock, ChevronRight, Sparkles, Zap, Signal, Users, Bot, User } from "lucide-react"
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -197,7 +197,7 @@ export function DesignSystemPreview() {
                   </div>
                 </div>
                 <span className="badge-premium">
-                  <Star className="h-3 w-3" />
+                  <Zap className="h-3 w-3" />
                   PREMIUM
                 </span>
               </div>
@@ -292,7 +292,7 @@ export function DesignSystemPreview() {
                     </span>
                   </div>
                 </div>
-                <Star className="h-5 w-5 fill-poly-yellow text-poly-yellow" />
+                <Zap className="h-5 w-5 fill-poly-yellow text-poly-yellow" />
               </div>
 
               <p className="text-body-sm mb-4 text-muted-foreground">
@@ -349,7 +349,7 @@ export function DesignSystemPreview() {
           <SectionTitle>Badges</SectionTitle>
           <div className="flex flex-wrap items-center gap-4">
             <span className="badge-premium">
-              <Star className="h-3 w-3" />
+              <Zap className="h-3 w-3" />
               Premium
             </span>
 

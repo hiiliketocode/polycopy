@@ -83,6 +83,7 @@ async function buildAuthedClient(
         api_secret_encrypted: string
         api_passphrase_encrypted: string
         enc_kid?: string | null
+        signature_type?: number | null
       }
     | null = null
 
@@ -95,7 +96,7 @@ async function buildAuthedClient(
   }
 
   const credentialResult = await fetchCredential(
-    'api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid',
+    'api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid, signature_type',
     true
   )
 
@@ -105,6 +106,7 @@ async function buildAuthedClient(
         api_secret_encrypted: string
         api_passphrase_encrypted: string
         enc_kid?: string | null
+        signature_type?: number | null
       }
     | null
 
@@ -115,7 +117,7 @@ async function buildAuthedClient(
 
   if (!credential && allowCredentialFallback) {
     const fallbackResult = await fetchCredential(
-      'api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid',
+      'api_key, api_secret_encrypted, api_passphrase_encrypted, enc_kid, signature_type',
       false
     )
     const fallbackData = fallbackResult.data as
@@ -124,6 +126,7 @@ async function buildAuthedClient(
           api_secret_encrypted: string
           api_passphrase_encrypted: string
           enc_kid?: string | null
+          signature_type?: number | null
         }
       | null
     if (!fallbackResult.error && fallbackData) {
@@ -182,7 +185,11 @@ async function buildAuthedClient(
   }
 
   const signer = await createTurnkeySigner(userId, supabaseAdmin, wallet)
-  const signatureType: SignatureType = 1
+  // Use per-credential signature type when stored, otherwise default to 1 (POLY_PROXY)
+  // for backward compatibility with existing users.
+  const signatureType: SignatureType = (credential.signature_type === 0 || credential.signature_type === 1 || credential.signature_type === 2)
+    ? credential.signature_type as SignatureType
+    : 1
   const client = await createClobClient(signer, signatureType, apiCreds, proxyAddress)
 
   return {

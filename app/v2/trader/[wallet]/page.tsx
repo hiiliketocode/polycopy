@@ -605,6 +605,29 @@ export default function TraderProfilePage({
       .slice(0, 5)
   }, [trades])
 
+  // Size distribution from trade data
+  const sizeDistribution = useMemo(() => {
+    const sizes = trades
+      .map((t: any) => Number(t.size || t.amount || 0) * Number(t.price || 1))
+      .filter((s) => s > 0)
+    if (sizes.length === 0) return []
+    const buckets = [
+      { label: "<$10", min: 0, max: 10, count: 0, color: "#9CA3AF" },
+      { label: "$10–50", min: 10, max: 50, count: 0, color: "#FDB022" },
+      { label: "$50–200", min: 50, max: 200, count: 0, color: "#0D9488" },
+      { label: "$200–1K", min: 200, max: 1000, count: 0, color: "#4F46E5" },
+      { label: "$1K+", min: 1000, max: Infinity, count: 0, color: "#EF4444" },
+    ]
+    sizes.forEach((s) => {
+      const bucket = buckets.find((b) => s >= b.min && s < b.max)
+      if (bucket) bucket.count++
+    })
+    const total = sizes.length
+    return buckets
+      .filter((b) => b.count > 0)
+      .map((b) => ({ ...b, percentage: (b.count / total) * 100 }))
+  }, [trades])
+
   // Rank badge text
   const rankBadge = useMemo(() => {
     const allRank = pnlRankings["ALL"]
@@ -717,18 +740,18 @@ export default function TraderProfilePage({
               onClick={handleFollowToggle}
               disabled={followLoading}
               className={cn(
-                "flex items-center gap-2 px-4 py-2 font-sans text-xs font-bold uppercase tracking-wide transition-colors",
+                "flex items-center gap-2 px-6 py-3 font-sans text-sm font-bold uppercase tracking-wide transition-colors",
                 isFollowing
                   ? "border border-poly-black bg-transparent text-poly-black hover:bg-poly-black/5"
                   : "bg-poly-black text-poly-cream hover:bg-poly-black/90"
               )}
             >
-              {isFollowing && <Check className="h-3.5 w-3.5" />}
+              {isFollowing && <Check className="h-4 w-4" />}
               {isFollowing ? "Following" : "Follow"}
             </button>
             <button
               onClick={() => setIsShareModalOpen(true)}
-              className="flex items-center gap-2 bg-poly-black px-4 py-2 font-sans text-xs font-bold uppercase tracking-wide text-poly-cream transition-colors hover:bg-poly-black/90"
+              className="flex items-center gap-2 bg-poly-black px-6 py-3 font-sans text-sm font-bold uppercase tracking-wide text-poly-cream transition-colors hover:bg-poly-black/90"
             >
               <Share2 className="h-4 w-4" />
               Share
@@ -1095,10 +1118,10 @@ export default function TraderProfilePage({
                   )}
                 </div>
 
-                {/* Best Duplications */}
+                {/* Best Copies */}
                 <div className="border border-border bg-poly-paper p-6">
                   <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
-                    Best Duplications
+                    Best Copies
                   </h3>
                   {topPerformingTrades.length === 0 ? (
                     <p className="py-4 text-center font-body text-xs text-muted-foreground">
@@ -1125,48 +1148,6 @@ export default function TraderProfilePage({
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-
-            {/* ── Bottom row: Size Distribution + Active Categories ── */}
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-              {/* Active Categories */}
-              <div className="border border-border bg-poly-paper p-6">
-                <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
-                  Active Categories
-                </h3>
-                {categoryDistribution.length === 0 ? (
-                  <p className="py-8 text-center font-body text-sm text-muted-foreground">
-                    No category data available
-                  </p>
-                ) : (
-                  <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start sm:justify-between">
-                    <DonutChart data={categoryDistribution} size={160} strokeWidth={28} />
-                    <div className="flex flex-col gap-2">
-                      {categoryDistribution.map((cat) => (
-                        <div key={cat.category} className="flex items-center gap-3">
-                          <div className="h-3 w-3 shrink-0" style={{ backgroundColor: cat.color }} />
-                          <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black">
-                            {cat.category}
-                          </span>
-                          <span className="font-body text-xs tabular-nums text-muted-foreground">
-                            {cat.percentage.toFixed(1)}%
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Placeholder for Size Distribution (requires position data) */}
-              <div className="border border-border bg-poly-paper p-6">
-                <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
-                  Size Distribution
-                </h3>
-                <p className="py-8 text-center font-body text-xs uppercase tracking-wide text-muted-foreground">
-                  Contracts_Per_Order_Snapshot
-                </p>
               </div>
             </div>
 
@@ -1208,6 +1189,72 @@ export default function TraderProfilePage({
                     {traderWinRate.toFixed(1)}%
                   </p>
                 </div>
+              </div>
+            </div>
+
+            {/* ── Active Categories + Size Distribution ── */}
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+              {/* Active Categories */}
+              <div className="border border-border bg-poly-paper p-6">
+                <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
+                  Active Categories
+                </h3>
+                {categoryDistribution.length === 0 ? (
+                  <p className="py-8 text-center font-body text-sm text-muted-foreground">
+                    No category data available
+                  </p>
+                ) : (
+                  <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start sm:justify-between">
+                    <DonutChart data={categoryDistribution} size={160} strokeWidth={28} />
+                    <div className="flex flex-col gap-2">
+                      {categoryDistribution.map((cat) => (
+                        <div key={cat.category} className="flex items-center gap-3">
+                          <div className="h-3 w-3 shrink-0" style={{ backgroundColor: cat.color }} />
+                          <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black">
+                            {cat.category}
+                          </span>
+                          <span className="font-body text-xs tabular-nums text-muted-foreground">
+                            {cat.percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Size Distribution */}
+              <div className="border border-border bg-poly-paper p-6">
+                <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
+                  Size Distribution
+                </h3>
+                {sizeDistribution.length === 0 ? (
+                  <p className="py-8 text-center font-body text-sm text-muted-foreground">
+                    No trade size data available
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {sizeDistribution.map((bucket) => (
+                      <div key={bucket.label} className="flex items-center gap-3">
+                        <span className="w-16 shrink-0 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black">
+                          {bucket.label}
+                        </span>
+                        <div className="relative h-5 flex-1 bg-border/30">
+                          <div
+                            className="absolute inset-y-0 left-0"
+                            style={{
+                              width: `${Math.max(bucket.percentage, 2)}%`,
+                              backgroundColor: bucket.color,
+                            }}
+                          />
+                        </div>
+                        <span className="w-12 shrink-0 text-right font-body text-xs tabular-nums text-muted-foreground">
+                          {bucket.percentage.toFixed(0)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

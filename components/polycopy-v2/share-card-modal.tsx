@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Copy, Download, Check, Loader2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toPng } from "html-to-image"
-import { TraderCard, type CardTheme, type CardVariant } from "@/components/polycopy/trader-card"
+import { TraderShareCard, type CardTheme, type CardVariant } from "@/components/polycopy-v2/trader-share-card"
 import { useTraderCardData } from "@/hooks/useTraderCardData"
 import type { TimePeriod } from "@/lib/time-period-utils"
 
@@ -25,10 +25,10 @@ interface ShareCardModalProps {
 type Theme = CardTheme
 
 const THEMES: Array<{ value: Theme; number: string; bg: string; border: string }> = [
-  { value: "cream", number: "1", bg: "#F5F1E8", border: "#E8DCC8" },
-  { value: "dark", number: "2", bg: "#1A202C", border: "#2D3748" },
-  { value: "profit", number: "3", bg: "#D1FAE5", border: "#A7F3D0" },
-  { value: "fire", number: "4", bg: "#FFE5D9", border: "#FFB199" },
+  { value: "cream", number: "1", bg: "#F9F8F1", border: "#E8E4DA" },
+  { value: "dark", number: "2", bg: "#0F0F0F", border: "#333333" },
+  { value: "profit", number: "3", bg: "#ECFDF5", border: "#A7F3D0" },
+  { value: "fire", number: "4", bg: "#FFF7ED", border: "#FFD6C4" },
 ]
 
 const TIME_PERIODS: Array<{ value: TimePeriod; label: string }> = [
@@ -95,10 +95,10 @@ export function ShareCardModal({
 
       const dataUrl = await toPng(cardRef, {
         quality: 1,
-        pixelRatio: 1,
+        pixelRatio: 2.5,
         cacheBust: true,
-        width: 900,
-        height: 1200,
+        width: 480,
+        height: 600,
       })
 
       const base64Data = dataUrl.split(",")[1]
@@ -196,7 +196,7 @@ export function ShareCardModal({
       return `${val >= 0 ? "+" : ""}$${val.toFixed(0)}`
     }
 
-    const traderUrl = `${window.location.origin}/trader/${walletAddress}`
+    const traderUrl = `${window.location.origin}/v2/trader/${walletAddress}`
     const shareText =
       variant === "trader"
         ? `Check out ${traderData.displayName}'s performance on @polycopy_app!\n\n${formatPnL(traderData.totalPnL)} P&L | ${traderData.roi >= 0 ? "+" : ""}${traderData.roi.toFixed(1)}% ROI\n\n${traderUrl}`
@@ -380,7 +380,7 @@ export function ShareCardModal({
                 position: "fixed",
                 left: "-9999px",
                 top: 0,
-                width: "900px",
+                width: "480px",
                 zIndex: -1,
                 opacity: 0,
                 pointerEvents: "none",
@@ -396,7 +396,7 @@ export function ShareCardModal({
                     cardRefs.current[theme] = el
                   }}
                 >
-                  <TraderCard {...traderData} theme={theme} variant={variant} />
+                  <TraderShareCard {...traderData} theme={theme} variant={variant} />
                 </div>
               ))}
             </div>,

@@ -1,6 +1,6 @@
 "use client"
 
-import { Zap, Settings } from "lucide-react"
+import { Zap, Settings, Lock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /* ───── Types ───── */
@@ -25,9 +25,11 @@ export interface BotData {
 
 interface BotCardProps {
   bot: BotData
-  onActivate?: () => void
+  onCopyBot?: () => void
   onAnalysis?: () => void
   isPremiumUser?: boolean
+  /** Whether the user has an active subscription for this bot */
+  isSubscribed?: boolean
   className?: string
 }
 
@@ -98,9 +100,10 @@ function formatTrades(n: number): string {
 
 export function BotCard({
   bot,
-  onActivate,
+  onCopyBot,
   onAnalysis,
   isPremiumUser = false,
+  isSubscribed = false,
   className,
 }: BotCardProps) {
   const risk = riskConfig[bot.risk_level]
@@ -129,13 +132,14 @@ export function BotCard({
           {/* Access badge */}
           <span
             className={cn(
-              "px-2 py-0.5 font-sans text-[9px] font-bold uppercase tracking-widest",
+              "inline-flex items-center gap-1 px-2 py-0.5 font-sans text-[9px] font-bold uppercase tracking-widest",
               bot.is_premium
                 ? "bg-poly-black text-white"
                 : "bg-poly-yellow text-poly-black"
             )}
           >
-            {bot.is_premium ? "PREMIUM_ACCESS" : "FREE_ACCESS"}
+            <Zap className="h-2.5 w-2.5" />
+            {bot.is_premium ? "PREMIUM" : "FREE"}
           </span>
         </div>
       </div>
@@ -195,6 +199,16 @@ export function BotCard({
         </div>
       </div>
 
+      {/* ── Active Badge (if subscribed) ── */}
+      {isSubscribed && (
+        <div className="mx-5 flex items-center gap-2 border-t border-border py-2">
+          <span className="h-2 w-2 rounded-full bg-profit-green" />
+          <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-profit-green">
+            ACTIVE — COPYING
+          </span>
+        </div>
+      )}
+
       {/* ── Actions ── */}
       <div className="mt-auto grid grid-cols-2 border-t border-border">
         <button
@@ -204,26 +218,36 @@ export function BotCard({
         >
           ANALYSIS
         </button>
-        <button
-          type="button"
-          onClick={onActivate}
-          className={cn(
-            "flex items-center justify-center gap-2 py-3 font-sans text-[10px] font-bold uppercase tracking-widest transition-colors",
-            bot.is_active
-              ? "bg-accent text-foreground hover:bg-accent/80"
-              : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"
-          )}
-        >
-          {bot.is_active ? (
-            <>
-              <Settings className="h-3.5 w-3.5" /> MANAGE
-            </>
-          ) : (
-            <>
-              <Zap className="h-3.5 w-3.5" /> COPY_BOT
-            </>
-          )}
-        </button>
+        {bot.is_premium && !isPremiumUser && !isSubscribed ? (
+          <button
+            type="button"
+            disabled
+            className="flex items-center justify-center gap-2 py-3 font-sans text-[10px] font-bold uppercase tracking-widest bg-muted text-muted-foreground cursor-not-allowed"
+          >
+            <Zap className="h-3.5 w-3.5" /> PREMIUM ONLY
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onCopyBot}
+            className={cn(
+              "flex items-center justify-center gap-2 py-3 font-sans text-[10px] font-bold uppercase tracking-widest transition-colors",
+              isSubscribed
+                ? "bg-accent text-foreground hover:bg-accent/80"
+                : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"
+            )}
+          >
+            {isSubscribed ? (
+              <>
+                <Settings className="h-3.5 w-3.5" /> MANAGE
+              </>
+            ) : (
+              <>
+                <Zap className="h-3.5 w-3.5" /> COPY_BOT
+              </>
+            )}
+          </button>
+        )}
       </div>
     </article>
   )

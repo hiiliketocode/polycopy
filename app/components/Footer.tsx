@@ -83,6 +83,22 @@ export default function Footer() {
               </li>
               <li>
                 <Link 
+                  href="/polymarket-trading-bots" 
+                  className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors"
+                >
+                  Trading Bots
+                </Link>
+              </li>
+              <li>
+                <Link 
+                  href="/high-signal-polymarket-trades" 
+                  className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors"
+                >
+                  High-Signal Trades
+                </Link>
+              </li>
+              <li>
+                <Link 
                   href="/trading-setup" 
                   className="text-sm text-slate-400 hover:text-[#FDB022] transition-colors"
                 >

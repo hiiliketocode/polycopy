@@ -7,7 +7,11 @@ import { BottomNav } from "@/components/polycopy-v2/bottom-nav"
 import { V2Footer } from "@/components/polycopy-v2/footer"
 import { TopNav } from "@/components/polycopy-v2/top-nav"
 import { BotCard } from "@/components/polycopy-v2/bot-card"
+import { CopyBotModal } from "@/components/polycopy-v2/copy-bot-modal"
 import { cn } from "@/lib/utils"
+import { useAuthState } from "@/lib/auth/useAuthState"
+import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from "@/lib/feature-tier"
+import { supabase } from "@/lib/supabase"
 import type { BotData } from "@/components/polycopy-v2/bot-card"
 
 /* ═══════════════════════════════════════════════════════
@@ -74,6 +78,9 @@ function deriveCategory(wallet: any): string {
   if (name.includes("crypto") || name.includes("btc") || name.includes("eth") || name.includes("sol") ||
     (Array.isArray(cats) && cats.some((c: string) => ["CRYPTO", "BTC", "ETH", "BITCOIN", "ETHEREUM"].includes(c.toUpperCase()))))
     return "CRYPTO"
+  if (name.includes("finance") || name.includes("macro") || name.includes("gdp") ||
+    (Array.isArray(cats) && cats.some((c: string) => ["FINANCE", "ECONOMICS", "MACRO"].includes(c.toUpperCase()))))
+    return "FINANCE"
   if (name.includes("arbitrage") || desc.includes("arbitrage"))
     return "ARBITRAGE"
 
@@ -103,9 +110,9 @@ function transformWalletToBot(wallet: any): BotData {
       sparkline_data: generateSparkline(wallet.wallet_id?.length || 1),
     },
     risk_level: riskLevel,
-    volume: formatVolume(
-      (wallet.avg_trade_size || 0) * (wallet.total_trades || 0)
-    ),
+    volume: wallet.avg_trade_size
+      ? formatVolume((wallet.avg_trade_size || 0) * (wallet.total_trades || 0))
+      : wallet.total_trades > 0 ? `${wallet.total_trades} trades` : "—",
     is_premium: !isFree,
     is_active: wallet.is_active || false,
     chartColor: deriveChartColor(riskLevel, !isFree),
@@ -121,10 +128,11 @@ const FILTERS = [
   { id: "CONSERVATIVE", label: "CONSERVATIVE" },
   { id: "MODERATE", label: "MODERATE" },
   { id: "AGGRESSIVE", label: "AGGRESSIVE" },
-  { id: "ML_POWERED", label: "ML POWERED" },
   { id: "SPORTS", label: "SPORTS" },
   { id: "CRYPTO", label: "CRYPTO" },
   { id: "POLITICS", label: "POLITICS" },
+  { id: "FINANCE", label: "FINANCE" },
+  { id: "LIVE", label: "LIVE" },
   { id: "FREE", label: "FREE" },
 ] as const
 
@@ -141,12 +149,68 @@ export default function BotsPage() {
   const [activeFilter, setActiveFilter] = useState<FilterId>("ALL")
   const [walletCategoryMap, setWalletCategoryMap] = useState<Record<string, string>>({})
 
-  // Fetch real data from /api/ft/wallets
+  // User auth + premium + subscriptions
+  const { user } = useAuthState({ requireAuth: false })
+  const [userTier, setUserTier] = useState<FeatureTier>('anon')
+  const [walletAddress, setWalletAddress] = useState<string | null>(null)
+  const [usdcBalance, setUsdcBalance] = useState<number | null>(null)
+  const [subscribedBotIds, setSubscribedBotIds] = useState<Set<string>>(new Set())
+  const hasPremiumAccess = tierHasPremiumAccess(userTier)
+
+  // Copy bot modal state
+  const [copyModalOpen, setCopyModalOpen] = useState(false)
+  const [copyTargetBot, setCopyTargetBot] = useState<BotData | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    const fetchUserData = async () => {
+      const [profileRes, walletRes] = await Promise.all([
+        supabase.from('profiles').select('is_premium, is_admin').eq('id', user.id).single(),
+        supabase.from('turnkey_wallets').select('polymarket_account_address, eoa_address').eq('user_id', user.id).maybeSingle(),
+      ])
+      if (cancelled) return
+      if (profileRes.data) {
+        setUserTier(resolveFeatureTier(true, profileRes.data))
+      }
+      const addr = walletRes.data?.polymarket_account_address || walletRes.data?.eoa_address || null
+      setWalletAddress(addr)
+
+      // Fetch subscriptions
+      try {
+        const subRes = await fetch('/api/v2/bots/my-subscriptions')
+        const subData = await subRes.json()
+        if (!cancelled && subData.success && subData.subscriptions) {
+          const activeIds = new Set<string>(
+            subData.subscriptions
+              .filter((s: any) => s.is_active)
+              .map((s: any) => s.ft_wallet_id)
+          )
+          setSubscribedBotIds(activeIds)
+        }
+      } catch {}
+
+      // Fetch USDC balance if wallet exists
+      if (addr) {
+        try {
+          const balRes = await fetch(`/api/turnkey/polymarket/usdc-balance?address=${addr}`)
+          const balData = await balRes.json()
+          if (!cancelled && balData.success) {
+            setUsdcBalance(balData.balance)
+          }
+        } catch {}
+      }
+    }
+    fetchUserData()
+    return () => { cancelled = true }
+  }, [user])
+
+  // Fetch bot data from public endpoint (no admin auth required)
   useEffect(() => {
     async function fetchBots() {
       setLoading(true)
       try {
-        const res = await fetch("/api/ft/wallets", { cache: "no-store" })
+        const res = await fetch("/api/ft/wallets/public", { cache: "no-store" })
         const data = await res.json()
 
         if (data.success && data.wallets?.length > 0) {
@@ -191,10 +255,12 @@ export default function BotsPage() {
           return bot.risk_level === "HIGH"
         case "FREE":
           return !bot.is_premium
-        case "ML_POWERED":
+        case "LIVE":
+          return bot.id.startsWith("FT_LIVE_")
         case "SPORTS":
         case "CRYPTO":
         case "POLITICS":
+        case "FINANCE":
           return walletCategoryMap[bot.id] === activeFilter
         default:
           return true
@@ -273,7 +339,12 @@ export default function BotsPage() {
               <BotCard
                 key={bot.id}
                 bot={bot}
-                onActivate={() => console.log("Activate:", bot.id)}
+                isPremiumUser={hasPremiumAccess}
+                isSubscribed={subscribedBotIds.has(bot.id)}
+                onCopyBot={() => {
+                  setCopyTargetBot(bot)
+                  setCopyModalOpen(true)
+                }}
                 onAnalysis={() => router.push(`/v2/bots/${bot.id}`)}
               />
             ))}
@@ -289,6 +360,22 @@ export default function BotsPage() {
 
       <V2Footer />
       <BottomNav />
+
+      {/* Copy Bot Modal */}
+      {copyTargetBot && (
+        <CopyBotModal
+          open={copyModalOpen}
+          onOpenChange={setCopyModalOpen}
+          botId={copyTargetBot.id}
+          botName={copyTargetBot.name}
+          isPremium={hasPremiumAccess}
+          walletAddress={walletAddress}
+          usdcBalance={usdcBalance}
+          onSuccess={() => {
+            setSubscribedBotIds((prev) => new Set([...prev, copyTargetBot.id]))
+          }}
+        />
+      )}
     </div>
   )
 }

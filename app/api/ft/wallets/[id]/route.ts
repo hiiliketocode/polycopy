@@ -17,8 +17,12 @@ interface RouteParams {
  * Admin only.
  */
 export async function GET(request: Request, { params }: RouteParams) {
-  const authError = await requireAdmin();
-  if (authError) return authError;
+  // Allow unauthenticated access when called from v2 public proxy
+  const isV2Public = request.headers.get('x-v2-public') === '1';
+  if (!isV2Public) {
+    const authError = await requireAdmin();
+    if (authError) return authError;
+  }
 
   try {
     const { id: walletId } = await params;
