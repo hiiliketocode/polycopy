@@ -218,6 +218,8 @@ interface V3ProfileResponse {
     closed: V3ClosedPosition[];
   };
   trades: any[];
+  dailyPnl: Array<{ date: string; realized_pnl: number; pnl_to_date: number }>;
+  winRate: number | null;
   followerCount: number;
   hasStats: boolean;
 }
