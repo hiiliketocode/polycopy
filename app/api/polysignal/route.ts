@@ -24,14 +24,23 @@ async function fetchAiWinProb(
   title: string
 ): Promise<number | null> {
   try {
-    const marketRes = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' })
+    const marketRes = await fetch(
+      `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
+      { cache: 'no-store' }
+    )
     if (!marketRes.ok) return null
-    const market = await marketRes.json()
-    const tokens = Array.isArray(market?.tokens) ? market.tokens : []
-    const tokenIdx = tokens.findIndex((t: any) => (t?.outcome || '').toLowerCase() === (outcome || 'yes').toLowerCase())
-    const currentPrice = tokenIdx >= 0 && tokens[tokenIdx]?.price != null
-      ? Number(tokens[tokenIdx].price)
-      : price
+    const marketData = await marketRes.json()
+    const gammaMarket = Array.isArray(marketData) && marketData.length > 0 ? marketData[0] : null
+    if (!gammaMarket) return null
+    let currentPrice = price
+    if (gammaMarket.outcomePrices && gammaMarket.outcomes) {
+      const outcomes = typeof gammaMarket.outcomes === 'string' ? JSON.parse(gammaMarket.outcomes) : gammaMarket.outcomes
+      const prices = typeof gammaMarket.outcomePrices === 'string' ? JSON.parse(gammaMarket.outcomePrices) : gammaMarket.outcomePrices
+      if (Array.isArray(outcomes) && Array.isArray(prices)) {
+        const idx = outcomes.findIndex((o: string) => o.toLowerCase() === (outcome || 'yes').toLowerCase())
+        if (idx >= 0 && prices[idx] != null) currentPrice = Number(prices[idx])
+      }
+    }
 
     const polyRes = await getPolyScore({
       original_trade: {

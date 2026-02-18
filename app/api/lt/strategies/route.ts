@@ -226,24 +226,26 @@ export async function GET(request: Request) {
                 });
             }
 
-            // 2. CLOB API fallback for missing markets
+            // 2. Gamma API fallback for missing markets
             const missingIds = conditionIds.filter(cid => !priceMap.has(cid));
             if (missingIds.length > 0) {
                 await Promise.all(missingIds.map(async (conditionId) => {
                     try {
                         const resp = await fetch(
-                            `https://clob.polymarket.com/markets/${conditionId}`,
+                            `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
                             { cache: 'no-store', signal: AbortSignal.timeout(3000) }
                         );
                         if (resp.ok) {
-                            const clobMarket = await resp.json();
-                            if (Array.isArray(clobMarket?.tokens)) {
-                                const obj: Record<string, number> = {};
-                                clobMarket.tokens.forEach((token: any) => {
-                                    const outcome = (token.outcome || 'YES').toUpperCase();
-                                    obj[outcome] = parseFloat(token.price || '0.5');
-                                });
-                                priceMap.set(conditionId, obj);
+                            const data = await resp.json();
+                            const gm = Array.isArray(data) && data.length > 0 ? data[0] : null;
+                            if (gm?.outcomePrices && gm?.outcomes) {
+                                const outcomes = typeof gm.outcomes === 'string' ? JSON.parse(gm.outcomes) : gm.outcomes;
+                                const prices = typeof gm.outcomePrices === 'string' ? JSON.parse(gm.outcomePrices) : gm.outcomePrices;
+                                if (Array.isArray(outcomes) && Array.isArray(prices)) {
+                                    const obj: Record<string, number> = {};
+                                    outcomes.forEach((o: string, i: number) => { obj[o.toUpperCase()] = Number(prices[i]) || 0.5; });
+                                    priceMap.set(conditionId, obj);
+                                }
                             }
                         }
                     } catch { /* ignore timeout/network errors */ }

@@ -144,42 +144,53 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: true, updated: 0 })
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
     const marketIds = [...new Set(openOrders.map((o) => o.market_id).filter(Boolean))] as string[]
 
-    // Fetch market prices in parallel
+    // Read cached prices from the markets table (populated by the price API as a side-effect)
     const priceMap = new Map<string, MarketPrice>()
-    await Promise.all(
-      marketIds.map(async (marketId) => {
-        try {
-          const res = await fetch(`${baseUrl}/api/polymarket/price?conditionId=${marketId}`)
-          if (!res.ok) return
-          const json = await res.json()
-          if (json?.success && json.market) {
-            const market: MarketPrice = {
-              outcomes: json.market.outcomes,
-              outcomePrices: json.market.outcomePrices,
-              closed: json.market.closed,
-              resolved: json.market.resolved,
-            }
 
-            if (market.resolved === undefined && market.closed === undefined) {
-              const gammaMarket = await fetchGammaMarket(marketId)
-              if (gammaMarket) {
-                market.resolved = gammaMarket.resolved ?? market.resolved
-                market.closed = gammaMarket.closed ?? market.closed
-                market.outcomes = market.outcomes ?? gammaMarket.outcomes
-                market.outcomePrices = market.outcomePrices ?? gammaMarket.outcomePrices
-              }
-            }
+    if (marketIds.length > 0) {
+      const { data: markets } = await supabase
+        .from('markets')
+        .select('condition_id, outcome_prices, outcomes, status')
+        .in('condition_id', marketIds.slice(0, 1000))
 
-            priceMap.set(marketId, market)
+      if (markets) {
+        for (const m of markets) {
+          if (!m.condition_id) continue
+          const outcomes = parseMaybeArray(m.outcomes)
+          let outcomePrices = parseMaybeArray(m.outcome_prices)
+
+          // outcome_prices can be stored as { outcomePrices: [...] } object
+          if (!outcomePrices && m.outcome_prices && typeof m.outcome_prices === 'object' && !Array.isArray(m.outcome_prices)) {
+            const obj = m.outcome_prices as Record<string, unknown>
+            outcomePrices = parseMaybeArray(obj.outcomePrices ?? obj.prices)
           }
-        } catch (err) {
-          console.warn('Failed to fetch market price for', marketId, err)
+
+          if (outcomes && outcomePrices) {
+            priceMap.set(m.condition_id, {
+              outcomes,
+              outcomePrices: outcomePrices.map(Number),
+              resolved: m.status === 'resolved',
+              closed: m.status === 'closed' || m.status === 'resolved',
+            })
+          }
         }
-      })
-    )
+      }
+
+      // Gamma API fallback for markets missing from the DB cache
+      const missingIds = marketIds.filter((id) => !priceMap.has(id))
+      if (missingIds.length > 0) {
+        await Promise.all(
+          missingIds.map(async (marketId) => {
+            const gammaMarket = await fetchGammaMarket(marketId)
+            if (gammaMarket && gammaMarket.outcomes && gammaMarket.outcomePrices) {
+              priceMap.set(marketId, gammaMarket)
+            }
+          })
+        )
+      }
+    }
 
     let updated = 0
     const now = new Date().toISOString()

@@ -84,33 +84,37 @@ export async function GET(request: Request) {
       });
     }
 
-    // FALLBACK: Fetch from Polymarket CLOB API for missing markets
+    // FALLBACK: Fetch from Gamma API for missing markets
     const missingConditionIds = conditionIds.filter(cid => !priceMap[cid]);
     
     if (missingConditionIds.length > 0) {
-      console.log(`[live-prices] Fetching ${missingConditionIds.length} markets from CLOB API`);
+      console.log(`[live-prices] Fetching ${missingConditionIds.length} markets from Gamma API`);
       
       await Promise.all(missingConditionIds.map(async (conditionId) => {
         try {
           const resp = await fetch(
-            `https://clob.polymarket.com/markets/${conditionId}`,
+            `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
             { cache: 'no-store', signal: AbortSignal.timeout(3000) }
           );
           
           if (resp.ok) {
-            const clobMarket = await resp.json();
-            if (Array.isArray(clobMarket?.tokens)) {
-              priceMap[conditionId] = {};
-              clobMarket.tokens.forEach((token: any) => {
-                const outcome = (token.outcome || 'YES').toUpperCase();
-                const price = parseFloat(token.price || '0.5');
-                priceMap[conditionId][outcome] = price;
-              });
-              console.log(`[live-prices] ✅ Fetched prices for ${conditionId} from CLOB`);
+            const data = await resp.json();
+            const gammaMarket = Array.isArray(data) && data.length > 0 ? data[0] : null;
+            if (gammaMarket?.outcomePrices && gammaMarket?.outcomes) {
+              const outcomes = typeof gammaMarket.outcomes === 'string'
+                ? JSON.parse(gammaMarket.outcomes) : gammaMarket.outcomes;
+              const prices = typeof gammaMarket.outcomePrices === 'string'
+                ? JSON.parse(gammaMarket.outcomePrices) : gammaMarket.outcomePrices;
+              if (Array.isArray(outcomes) && Array.isArray(prices)) {
+                priceMap[conditionId] = {};
+                outcomes.forEach((outcome: string, idx: number) => {
+                  priceMap[conditionId][outcome.toUpperCase()] = Number(prices[idx]) || 0.5;
+                });
+              }
             }
           }
         } catch (error: any) {
-          console.error(`[live-prices] Failed to fetch ${conditionId} from CLOB:`, error.message);
+          console.error(`[live-prices] Failed to fetch ${conditionId} from Gamma:`, error.message);
         }
       }));
     }

@@ -13,9 +13,15 @@ function pickFirstString(...values: Array<string | null | undefined>) {
   return null
 }
 
-// In-memory cache with TTL
+function parseJsonField(val: unknown): unknown {
+  if (typeof val === 'string') {
+    try { return JSON.parse(val) } catch { return val }
+  }
+  return val ?? null
+}
+
 const marketCache = new Map<string, { data: any; timestamp: number }>()
-const CACHE_TTL_MS = 60000 // 1 minute cache
+const CACHE_TTL_MS = 60000
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -25,98 +31,100 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'conditionId is required' }, { status: 400 })
   }
 
-  // Check cache first
   const cached = marketCache.get(conditionId)
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return NextResponse.json(cached.data)
   }
 
   try {
-    const response = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, {
-      cache: 'no-store',
-    })
-
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `CLOB returned ${response.status}` },
-        { status: response.status }
+    // Gamma-first: get market metadata and prices
+    let gammaMarket: any = null
+    try {
+      const gammaRes = await fetch(
+        `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
+        { cache: 'no-store', signal: AbortSignal.timeout(4000) }
       )
+      if (gammaRes.ok) {
+        const data = await gammaRes.json()
+        gammaMarket = Array.isArray(data) && data.length > 0 ? data[0] : null
+      }
+    } catch {
+      // Gamma unavailable, fall through to CLOB
     }
 
-    const market = await response.json()
-    const minimumOrderSize = toNumber(market?.minimum_order_size)
-    const minOrderSize = toNumber(market?.min_order_size)
-    const tickSize = toNumber(market?.tick_size)
-    const tokens =
-      Array.isArray(market?.tokens) ?
-        market.tokens.map((token: any) => ({
+    // CLOB fallback: needed for trading-specific fields (tokens, tickSize, acceptingOrders)
+    let clobMarket: any = null
+    try {
+      const clobRes = await fetch(
+        `https://clob.polymarket.com/markets/${conditionId}`,
+        { cache: 'no-store', signal: AbortSignal.timeout(4000) }
+      )
+      if (clobRes.ok) {
+        clobMarket = await clobRes.json()
+      }
+    } catch {
+      // CLOB unavailable — display-only callers will still work via Gamma
+    }
+
+    if (!gammaMarket && !clobMarket) {
+      return NextResponse.json({ error: 'Market not found' }, { status: 404 })
+    }
+
+    // Build tokens array from CLOB (has real-time token_id and price per outcome)
+    const tokens = Array.isArray(clobMarket?.tokens)
+      ? clobMarket.tokens.map((token: any) => ({
           token_id: token?.token_id ?? token?.tokenId ?? null,
           outcome: token?.outcome ?? null,
           price: token?.price ?? null,
-        })) :
-        []
+        }))
+      : []
 
-    let icon = pickFirstString(market?.icon, market?.image)
-    let image = pickFirstString(market?.image, market?.icon)
-
-    if (!icon || !image) {
-      try {
-        const gammaResponse = await fetch(
-          `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
-          { cache: 'no-store' }
-        )
-        if (gammaResponse.ok) {
-          const gammaData = await gammaResponse.json()
-          const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null
-          const gammaEvent =
-            gammaMarket && Array.isArray(gammaMarket.events) && gammaMarket.events.length > 0
-              ? gammaMarket.events[0]
-              : null
-          if (!icon) {
-            icon = pickFirstString(
-              gammaMarket?.icon,
-              gammaMarket?.image,
-              gammaMarket?.twitterCardImage,
-              gammaMarket?.twitter_card_image,
-              gammaEvent?.icon,
-              gammaEvent?.image
-            )
-          }
-          if (!image) {
-            image = pickFirstString(
-              gammaMarket?.image,
-              gammaMarket?.icon,
-              gammaMarket?.twitterCardImage,
-              gammaMarket?.twitter_card_image,
-              gammaEvent?.image,
-              gammaEvent?.icon
-            )
-          }
-        }
-      } catch {
-        // Ignore gamma fallback errors.
+    // If CLOB tokens are empty but Gamma has prices, build synthetic tokens
+    if (tokens.length === 0 && gammaMarket) {
+      const outcomes = parseJsonField(gammaMarket.outcomes)
+      const prices = parseJsonField(gammaMarket.outcomePrices)
+      const clobTokenIds = parseJsonField(gammaMarket.clobTokenIds)
+      if (Array.isArray(outcomes) && Array.isArray(prices)) {
+        outcomes.forEach((outcome: string, idx: number) => {
+          tokens.push({
+            token_id: Array.isArray(clobTokenIds) ? clobTokenIds[idx] ?? null : null,
+            outcome,
+            price: String(prices[idx] ?? '0.5'),
+          })
+        })
       }
     }
 
+    const icon = pickFirstString(
+      clobMarket?.icon, clobMarket?.image,
+      gammaMarket?.icon, gammaMarket?.image, gammaMarket?.twitterCardImage
+    )
+    const image = pickFirstString(
+      gammaMarket?.image, gammaMarket?.icon, gammaMarket?.twitterCardImage,
+      clobMarket?.image, clobMarket?.icon
+    )
+
     const responseData = {
       ok: true,
-      conditionId: market?.condition_id ?? conditionId,
-      question: market?.question ?? null,
+      conditionId: clobMarket?.condition_id ?? gammaMarket?.conditionId ?? conditionId,
+      question: clobMarket?.question ?? gammaMarket?.question ?? null,
       tokens,
-      icon: icon,
-      image: image,
-      minimumOrderSize: minimumOrderSize ?? minOrderSize,
-      minOrderSize,
-      tickSize,
-      acceptingOrders: typeof market?.accepting_orders === 'boolean' ? market.accepting_orders : null,
-      closed: typeof market?.closed === 'boolean' ? market.closed : null,
-      resolved: typeof market?.resolved === 'boolean' ? market.resolved : null,
+      icon,
+      image,
+      minimumOrderSize: toNumber(clobMarket?.minimum_order_size) ?? toNumber(clobMarket?.min_order_size),
+      minOrderSize: toNumber(clobMarket?.min_order_size),
+      tickSize: toNumber(clobMarket?.tick_size),
+      acceptingOrders: typeof clobMarket?.accepting_orders === 'boolean' ? clobMarket.accepting_orders : null,
+      closed: typeof clobMarket?.closed === 'boolean'
+        ? clobMarket.closed
+        : gammaMarket?.closed ?? null,
+      resolved: typeof clobMarket?.resolved === 'boolean'
+        ? clobMarket.resolved
+        : gammaMarket?.resolvedBy ? true : null,
     }
 
-    // Cache the result
     marketCache.set(conditionId, { data: responseData, timestamp: Date.now() })
 
-    // Cleanup old cache entries (simple LRU)
     if (marketCache.size > 1000) {
       const sortedEntries = Array.from(marketCache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp)
       const toDelete = sortedEntries.slice(0, 500)

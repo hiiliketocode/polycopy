@@ -134,36 +134,62 @@ function fallbackNicheFromTitle(title: string | null | undefined): string {
   return 'OTHER'
 }
 
-function mapClobMarketToRow(clobMarket: any) {
-  const toIsoFromUnix = (seconds: number | null | undefined) => {
-    if (!Number.isFinite(seconds)) return null
-    return new Date((seconds as number) * 1000).toISOString()
+function mapApiMarketToRow(market: any, source: 'gamma' | 'clob' = 'gamma') {
+  if (source === 'gamma') {
+    const parseJson = (v: unknown) => {
+      if (typeof v === 'string') { try { return JSON.parse(v) } catch { return v } }
+      return v ?? null
+    }
+    const toIso = (raw: string | null | undefined) => {
+      if (!raw) return null
+      const d = new Date(raw)
+      return Number.isNaN(d.getTime()) ? null : d.toISOString()
+    }
+    const outcomes = parseJson(market?.outcomes)
+    return {
+      condition_id: market?.conditionId ?? null,
+      title: market?.question ?? market?.title ?? null,
+      tags: market?.tags ?? [],
+      market_type: null as string | null,
+      market_subtype: null as string | null,
+      final_niche: null as string | null,
+      bet_structure: null as string | null,
+      volume_total: market?.volume != null ? Number(market.volume) : null,
+      volume_1_week: market?.volume1wk != null ? Number(market.volume1wk) : null,
+      volume_1_month: market?.volume1mo != null ? Number(market.volume1mo) : null,
+      volume_1_year: market?.volume1yr != null ? Number(market.volume1yr) : null,
+      status: market?.resolvedBy ? 'resolved' : market?.closed ? 'closed' : market?.active ? 'active' : 'open',
+      image: market?.image ?? null,
+      description: market?.description ?? null,
+      side_a: Array.isArray(outcomes) && outcomes.length >= 1 ? outcomes[0] : null,
+      side_b: Array.isArray(outcomes) && outcomes.length >= 2 ? outcomes[1] : null,
+      market_slug: market?.slug ?? null,
+      start_time: toIso(market?.startDate),
+      end_time: toIso(market?.endDate),
+      outcome_prices: parseJson(market?.outcomePrices),
+      outcomes: parseJson(market?.outcomes),
+      updated_at: new Date().toISOString(),
+    } as any
   }
 
+  // CLOB fallback
   const row: any = {
-    condition_id: clobMarket?.condition_id ?? null,
-    title: clobMarket?.question ?? clobMarket?.title ?? null,
-    tags: clobMarket?.tags ?? [],
-    market_type: null, // Will be populated by classification
-    market_subtype: null, // Will be populated by classification
-    bet_structure: null, // Will be populated by classification
-    volume_total: clobMarket?.volume_total ?? null,
-    volume_1_week: clobMarket?.volume_1_week ?? null,
-    volume_1_month: clobMarket?.volume_1_month ?? null,
-    volume_1_year: clobMarket?.volume_1_year ?? null,
-    status: clobMarket?.closed ? 'closed' : clobMarket?.resolved ? 'resolved' : 'open',
+    condition_id: market?.condition_id ?? null,
+    title: market?.question ?? market?.title ?? null,
+    tags: market?.tags ?? [],
+    market_type: null,
+    market_subtype: null,
+    bet_structure: null,
+    volume_total: market?.volume_total ?? null,
+    volume_1_week: market?.volume_1_week ?? null,
+    volume_1_month: market?.volume_1_month ?? null,
+    volume_1_year: market?.volume_1_year ?? null,
+    status: market?.closed ? 'closed' : market?.resolved ? 'resolved' : 'open',
     updated_at: new Date().toISOString(),
   }
-  
-  // Only add category if column exists (check via try/catch or conditional)
-  // For now, store category in tags or extra_fields if needed
-  if (clobMarket?.category) {
-    // Store category in tags array if not already present
-    if (Array.isArray(row.tags) && !row.tags.includes(clobMarket.category)) {
-      row.tags = [...row.tags, clobMarket.category]
-    }
+  if (market?.category && Array.isArray(row.tags) && !row.tags.includes(market.category)) {
+    row.tags = [...row.tags, market.category]
   }
-  
   return row
 }
 
@@ -281,68 +307,67 @@ export async function GET(request: Request) {
       console.log('[ensureMarket] Market not in database, fetching from CLOB...')
     }
 
-    // Step 3: Fetch from CLOB API
-    const clobUrl = `https://clob.polymarket.com/markets/${conditionId}`
-    console.log('[ensureMarket] CLOB URL:', clobUrl)
-    
-    const clobResponse = await fetch(clobUrl, {
-      cache: 'no-store',
-    })
+    // Step 3: Fetch from Gamma API (primary) with CLOB fallback
+    let apiMarket: any = null
+    let apiSource: 'gamma' | 'clob' = 'gamma'
 
-    console.log('[ensureMarket] CLOB API response:', {
-      ok: clobResponse.ok,
-      status: clobResponse.status,
-      statusText: clobResponse.statusText,
-    })
+    try {
+      const gammaRes = await fetch(
+        `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
+        { cache: 'no-store', signal: AbortSignal.timeout(5000) }
+      )
+      if (gammaRes.ok) {
+        const data = await gammaRes.json()
+        apiMarket = Array.isArray(data) && data.length > 0 ? data[0] : null
+        if (apiMarket) {
+          // Gamma markets don't always include tags — try fetching from the event
+          if ((!apiMarket.tags || (Array.isArray(apiMarket.tags) && apiMarket.tags.length === 0)) && apiMarket.slug) {
+            try {
+              const eventRes = await fetch(
+                `https://gamma-api.polymarket.com/events?slug=${encodeURIComponent(apiMarket.slug)}`,
+                { cache: 'no-store', signal: AbortSignal.timeout(3000) }
+              )
+              if (eventRes.ok) {
+                const eventData = await eventRes.json()
+                const event = Array.isArray(eventData) && eventData.length > 0 ? eventData[0] : null
+                if (event?.tags) apiMarket.tags = event.tags
+              }
+            } catch { /* event fetch failed, continue without tags */ }
+          }
+        }
+      }
+    } catch {
+      console.warn('[ensureMarket] Gamma API failed, trying CLOB')
+    }
 
-    if (!clobResponse.ok) {
-      const errorText = await clobResponse.text().catch(() => 'Unable to read error')
-      console.error('[ensureMarket] CLOB API failed:', {
-        status: clobResponse.status,
-        statusText: clobResponse.statusText,
-        errorText,
-      })
+    if (!apiMarket) {
+      apiSource = 'clob'
+      try {
+        const clobRes = await fetch(
+          `https://clob.polymarket.com/markets/${conditionId}`,
+          { cache: 'no-store', signal: AbortSignal.timeout(5000) }
+        )
+        if (clobRes.ok) {
+          apiMarket = await clobRes.json()
+        }
+      } catch { /* CLOB also failed */ }
+    }
+
+    if (!apiMarket || !(apiMarket.question || apiMarket.title)) {
       return NextResponse.json(
-        { 
-          error: `CLOB API returned ${clobResponse.status}`,
-          found: false,
-          source: 'clob_api_failed',
-          details: errorText.substring(0, 200),
-        },
-        { status: clobResponse.status }
+        { error: 'Market not found in Gamma or CLOB API', found: false, source: 'api_not_found' },
+        { status: 404 }
       )
     }
 
-    const clobMarket = await clobResponse.json()
-    console.log('[ensureMarket] STEP 3 RESULT: CLOB market data:', {
-      hasData: !!clobMarket,
-      hasQuestion: !!clobMarket?.question,
-      question: clobMarket?.question?.substring(0, 50),
-      hasTags: !!clobMarket?.tags,
-      tagsType: typeof clobMarket?.tags,
-      tagsIsArray: Array.isArray(clobMarket?.tags),
-      tagsLength: Array.isArray(clobMarket?.tags) ? clobMarket.tags.length : 0,
-      tags: Array.isArray(clobMarket?.tags) ? clobMarket.tags.slice(0, 5) : clobMarket?.tags,
+    console.log(`[ensureMarket] Fetched from ${apiSource}:`, {
+      question: (apiMarket.question || apiMarket.title)?.substring(0, 50),
+      hasTags: Array.isArray(apiMarket.tags) && apiMarket.tags.length > 0,
+      tagsLength: Array.isArray(apiMarket.tags) ? apiMarket.tags.length : 0,
     })
-
-    if (!clobMarket || !clobMarket.question) {
-      console.error('[ensureMarket] Invalid CLOB market data:', {
-        hasClobMarket: !!clobMarket,
-        hasQuestion: !!clobMarket?.question,
-        clobMarketKeys: clobMarket ? Object.keys(clobMarket) : [],
-      })
-      return NextResponse.json(
-        { 
-          error: 'Invalid market data from CLOB API',
-          found: false,
-          source: 'clob_api_invalid'
-        },
-        { status: 500 }
-      )
-    }
 
     // Step 4: Map to database schema
-    const marketRow = mapClobMarketToRow(clobMarket)
+    const marketRow = mapApiMarketToRow(apiMarket, apiSource)
     const normalizedTags = normalizeTags(marketRow.tags)
 
     // Infer classification on the server (service role bypasses RLS)
@@ -428,7 +453,7 @@ export async function GET(request: Request) {
       // Still return the CLOB data even if upsert fails
       return NextResponse.json({
         found: true,
-        source: 'clob_api',
+        source: apiSource === 'gamma' ? 'gamma_api' : 'clob_api',
         market: {
           market_type: finalMarketType || null,
           market_subtype: finalNiche || null,
@@ -450,7 +475,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       found: true,
-      source: existingMarket ? 'database_updated' : 'clob_api_saved',
+      source: existingMarket ? 'database_updated' : `${apiSource}_api_saved`,
       market: savedMarket || {
         market_subtype: null,
         bet_structure: null,
