@@ -2274,7 +2274,16 @@ export default function TraderProfilePage({
                   {/* Header */}
                   <div className="flex items-center gap-2">
                     <h3 className="text-2xl font-semibold text-slate-900">Realized P&L</h3>
-                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-xs text-slate-400 cursor-help" title="Realized P&L from trade activity">?</span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 text-xs text-slate-400 cursor-help">?</span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs text-sm">
+                          <p>The chart below shows realized P&L from closed positions only. Total P&L includes unrealized gains/losses from open positions and may differ from the chart.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
 
                   {/* Time window selector */}
@@ -2340,7 +2349,7 @@ export default function TraderProfilePage({
                   {/* Chart header */}
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-semibold text-slate-900">P&L</span>
+                      <span className="text-sm font-semibold text-slate-900">Realized P&L (Closed Positions)</span>
                       <span className="text-xs text-slate-400">{realizedRangeLabel}</span>
                     </div>
                     <div className="flex rounded-full border border-slate-200 overflow-hidden">
