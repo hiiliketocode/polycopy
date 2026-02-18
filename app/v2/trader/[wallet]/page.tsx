@@ -894,7 +894,7 @@ export default function TraderProfilePage({
                       <h2 className="font-sans text-xl font-bold uppercase tracking-wide text-poly-black">
                         Realized P&L
                       </h2>
-                      <Info className="h-4 w-4 text-muted-foreground cursor-help" title="The chart below shows realized P&L from closed positions only. Total P&L includes unrealized gains/losses from open positions and may differ from the chart." />
+                      <span title="The chart below shows realized P&L from closed positions only. Total P&L includes unrealized gains/losses from open positions and may differ from the chart."><Info className="h-4 w-4 text-muted-foreground cursor-help" /></span>
                     </div>
                     <p className="mt-1 font-body text-xs uppercase tracking-wide text-muted-foreground">
                       Realized P&L (Closed Positions)
