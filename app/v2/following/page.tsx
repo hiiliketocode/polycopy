@@ -91,20 +91,21 @@ export default function V2FollowingPage() {
         const results = await Promise.allSettled(
           wallets.map(async (wallet) => {
             try {
-              const res = await fetch(`/api/trader/${wallet}`, {
-                next: { revalidate: 60 },
-              })
+              const res = await fetch(`/api/v3/trader/${wallet}/profile`)
               if (!res.ok) return null
               const data = await res.json()
+              const allPerf = data.performance?.all
+              const pnl = allPerf?.pnl ?? 0
+              const volume = allPerf?.volume ?? 0
               return {
                 wallet,
-                displayName: data.displayName || wallet,
-                pnl: data.pnl || 0,
-                winRate: data.winRate || 0,
-                totalTrades: data.totalTrades || 0,
-                volume: data.volume || 0,
-                roi: data.volume > 0 ? (data.pnl / data.volume) * 100 : 0,
-                profileImage: data.profileImage || null,
+                displayName: data.profile?.displayName || wallet,
+                pnl,
+                winRate: data.winRate != null ? data.winRate / 100 : 0,
+                totalTrades: Array.isArray(data.trades) ? data.trades.length : 0,
+                volume,
+                roi: volume > 0 ? (pnl / volume) * 100 : 0,
+                profileImage: data.profile?.profileImage || null,
               } as FollowedTrader
             } catch {
               return null

@@ -329,33 +329,24 @@ function DiscoverPageContent() {
     if (walletsToFetch.length === 0) return
 
     let cancelled = false
-    const BATCH_SIZE = 5
     const loadRealized = async () => {
-      for (let i = 0; i < walletsToFetch.length; i += BATCH_SIZE) {
-        if (cancelled) return
-        const batch = walletsToFetch.slice(i, i + BATCH_SIZE)
-        const results = await Promise.all(
-          batch.map(async (wallet) => {
-            try {
-              const response = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: "no-store" })
-              if (!response.ok) return [wallet, []] as [string, { date: string; realized_pnl: number }[]]
-              const payload = await response.json()
-              const rows = Array.isArray(payload?.daily)
-                ? payload.daily.map((r: any) => ({ date: r.date, realized_pnl: Number(r.realized_pnl ?? 0) }))
-                : []
-              return [wallet, rows] as [string, { date: string; realized_pnl: number }[]]
-            } catch {
-              return [wallet, []] as [string, { date: string; realized_pnl: number }[]]
-            }
-          })
-        )
+      try {
+        const response = await fetch('/api/v3/trader/batch/sparklines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallets: walletsToFetch }),
+        })
+        if (!response.ok || cancelled) return
+        const data: Record<string, { date: string; realized_pnl: number }[]> = await response.json()
         if (!cancelled) {
           setRealizedDailyMap((prev) => {
             const next = { ...prev }
-            for (const [w, rows] of results) next[w] = rows
+            for (const [w, rows] of Object.entries(data)) next[w.toLowerCase()] = rows
             return next
           })
         }
+      } catch {
+        // Silently handle errors — sparklines are non-critical
       }
     }
     loadRealized()

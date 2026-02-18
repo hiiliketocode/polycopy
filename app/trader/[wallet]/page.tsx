@@ -1448,10 +1448,10 @@ export default function TraderProfilePage({
       }
       
       // Refetch trader data to update follower count
-      const response = await fetch(`/api/trader/${wallet}`);
+      const response = await fetch(`/api/v3/trader/${wallet}/profile`);
       if (response.ok) {
         const data = await response.json();
-        setTraderData(prev => prev ? { ...prev, followerCount: data.followerCount } : prev);
+        setTraderData(prev => prev ? { ...prev, followerCount: data.followerCount ?? 0 } : prev);
       }
     } catch (err: any) {
       console.error('Error toggling follow:', err);

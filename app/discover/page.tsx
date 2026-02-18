@@ -775,7 +775,7 @@ function DiscoverPageContent() {
         throw new Error('WALLET_REQUIRED');
       }
       
-      const response = await fetch(`/api/trader/${query}`);
+      const response = await fetch(`/api/v3/trader/${query}/profile`);
       
       if (!response.ok) {
         throw new Error('Trader profile not found for this wallet address.');
@@ -1063,79 +1063,26 @@ function DiscoverPageContent() {
     let cancelled = false;
 
     const loadRealized = async () => {
-      // Split into priority (trending) and non-priority wallets
-      const trendingSet = new Set(trendingCandidateWallets.map(w => normalizeWallet(w)));
-      const priorityWallets = walletsToFetch.filter(w => trendingSet.has(w));
-      const otherWallets = walletsToFetch.filter(w => !trendingSet.has(w));
-      
-      // Fetch priority wallets in small batches for progressive loading
-      const batchSize = 10; // Increased from 5 to 10 for faster loading
-      for (let i = 0; i < priorityWallets.length; i += batchSize) {
-        if (cancelled) break;
-        
-        const batch = priorityWallets.slice(i, i + batchSize);
-        const entries = await Promise.all(
-          batch.map(async (wallet) => {
-            const normalizedWallet = wallet.toLowerCase();
-            try {
-              const response = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: 'no-store' });
-              if (!response.ok) return [normalizedWallet, []] as [string, { date: string; realized_pnl: number }[]];
-              const payload = await response.json();
-              const rows = Array.isArray(payload?.daily)
-                ? payload.daily.map((row: { date: string; realized_pnl: number }) => ({
-                    date: row.date,
-                    realized_pnl: Number(row.realized_pnl ?? 0),
-                  }))
-                : [];
-              return [normalizedWallet, rows] as [string, { date: string; realized_pnl: number }[]];
-            } catch {
-              return [normalizedWallet, []] as [string, { date: string; realized_pnl: number }[]];
-            }
-          })
-        );
+      try {
+        const response = await fetch('/api/v3/trader/batch/sparklines', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallets: walletsToFetch }),
+        });
+        if (!response.ok || cancelled) return;
+        const data: Record<string, { date: string; realized_pnl: number }[]> = await response.json();
 
         if (!cancelled) {
           setRealizedDailyMap((prev) => {
             const next = { ...prev };
-            for (const [wallet, rows] of entries) {
-              next[wallet] = rows;
+            for (const [wallet, rows] of Object.entries(data)) {
+              next[wallet.toLowerCase()] = rows;
             }
             return next;
           });
         }
-      }
-      
-      // Then fetch other wallets
-      if (!cancelled && otherWallets.length > 0) {
-        const entries = await Promise.all(
-          otherWallets.map(async (wallet) => {
-            const normalizedWallet = wallet.toLowerCase();
-            try {
-              const response = await fetch(`/api/trader/${wallet}/realized-pnl`, { cache: 'no-store' });
-              if (!response.ok) return [normalizedWallet, []] as [string, { date: string; realized_pnl: number }[]];
-              const payload = await response.json();
-              const rows = Array.isArray(payload?.daily)
-                ? payload.daily.map((row: { date: string; realized_pnl: number }) => ({
-                    date: row.date,
-                    realized_pnl: Number(row.realized_pnl ?? 0),
-                  }))
-                : [];
-              return [normalizedWallet, rows] as [string, { date: string; realized_pnl: number }[]];
-            } catch {
-              return [normalizedWallet, []] as [string, { date: string; realized_pnl: number }[]];
-            }
-          })
-        );
-
-        if (!cancelled) {
-          setRealizedDailyMap((prev) => {
-            const next = { ...prev };
-            for (const [wallet, rows] of entries) {
-              next[wallet] = rows;
-            }
-            return next;
-          });
-        }
+      } catch {
+        // Silently handle errors — sparklines are non-critical
       }
     };
 
