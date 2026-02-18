@@ -95,12 +95,12 @@ export async function POST(request: Request) {
             const orderId = result.orderId ?? '';
             steps.push(`Order posted: ${orderId}`);
 
-            // Record in orders table (no lt_strategy_id — V2 doesn't use it)
             const traderId = await ensureTraderId(supabase, strategy.wallet_address);
             const now = new Date().toISOString();
             await supabase.from('orders').upsert({
                 order_id: orderId,
                 trader_id: traderId,
+                copy_user_id: strategy.user_id,
                 market_id: lastFtOrder.condition_id,
                 outcome: lastFtOrder.token_label || 'Yes',
                 side: 'buy',
@@ -112,6 +112,7 @@ export async function POST(request: Request) {
                 status: 'open',
                 created_at: now,
                 updated_at: now,
+                lt_strategy_id: strategy.strategy_id,
             }, { onConflict: 'order_id' });
 
             // Record in lt_orders (V2 schema)

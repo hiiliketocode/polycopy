@@ -26,6 +26,7 @@ export interface BotData {
 interface BotCardProps {
   bot: BotData
   onCopyBot?: () => void
+  onManage?: () => void
   onAnalysis?: () => void
   isPremiumUser?: boolean
   /** Whether the user has an active subscription for this bot */
@@ -101,6 +102,7 @@ function formatTrades(n: number): string {
 export function BotCard({
   bot,
   onCopyBot,
+  onManage,
   onAnalysis,
   isPremiumUser = false,
   isSubscribed = false,
@@ -229,7 +231,7 @@ export function BotCard({
         ) : (
           <button
             type="button"
-            onClick={onCopyBot}
+            onClick={isSubscribed ? onManage : onCopyBot}
             className={cn(
               "flex items-center justify-center gap-2 py-3 font-sans text-[10px] font-bold uppercase tracking-widest transition-colors",
               isSubscribed

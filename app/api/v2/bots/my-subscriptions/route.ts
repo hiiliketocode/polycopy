@@ -21,7 +21,7 @@ export async function GET() {
     const { data: strategies, error } = await supabase
       .from('lt_strategies')
       .select(
-        'strategy_id, ft_wallet_id, display_name, is_active, is_paused, initial_capital, available_cash, locked_capital, created_at',
+        'strategy_id, ft_wallet_id, display_name, is_active, is_paused, initial_capital, available_cash, locked_capital, cooldown_capital, max_order_size_usd, daily_budget_usd, slippage_tolerance_pct, daily_spent_usd, peak_equity, current_drawdown_pct, created_at, updated_at',
       )
       .eq('user_id', userId)
       .order('created_at', { ascending: false });

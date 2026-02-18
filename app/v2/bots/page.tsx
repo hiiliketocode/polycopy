@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { Sparkles, Loader2 } from "lucide-react"
+import { Sparkles, Loader2, Settings } from "lucide-react"
 import { BottomNav } from "@/components/polycopy-v2/bottom-nav"
 import { V2Footer } from "@/components/polycopy-v2/footer"
 import { TopNav } from "@/components/polycopy-v2/top-nav"
 import { BotCard } from "@/components/polycopy-v2/bot-card"
 import { CopyBotModal } from "@/components/polycopy-v2/copy-bot-modal"
+import { ManageBotModal, type BotSubscription } from "@/components/polycopy-v2/manage-bot-modal"
 import { cn } from "@/lib/utils"
 import { useAuthState } from "@/lib/auth/useAuthState"
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from "@/lib/feature-tier"
@@ -161,6 +162,11 @@ export default function BotsPage() {
   const [copyModalOpen, setCopyModalOpen] = useState(false)
   const [copyTargetBot, setCopyTargetBot] = useState<BotData | null>(null)
 
+  // Manage bot modal state
+  const [manageModalOpen, setManageModalOpen] = useState(false)
+  const [manageTargetSub, setManageTargetSub] = useState<BotSubscription | null>(null)
+  const [subscriptionMap, setSubscriptionMap] = useState<Record<string, BotSubscription>>({})
+
   useEffect(() => {
     if (!user) return
     let cancelled = false
@@ -187,6 +193,11 @@ export default function BotsPage() {
               .map((s: any) => s.ft_wallet_id)
           )
           setSubscribedBotIds(activeIds)
+          const sMap: Record<string, BotSubscription> = {}
+          for (const s of subData.subscriptions) {
+            sMap[s.ft_wallet_id] = s as BotSubscription
+          }
+          setSubscriptionMap(sMap)
         }
       } catch {}
 
@@ -268,6 +279,10 @@ export default function BotsPage() {
     })
   }, [sortedBots, activeFilter, walletCategoryMap])
 
+  const [showAll, setShowAll] = useState(false)
+  const INITIAL_DISPLAY_COUNT = 10
+  const displayedBots = showAll ? filteredBots : filteredBots.slice(0, INITIAL_DISPLAY_COUNT)
+  const hasMore = filteredBots.length > INITIAL_DISPLAY_COUNT
   const onlineCount = bots.length
 
   return (
@@ -296,11 +311,20 @@ export default function BotsPage() {
                 ecosystem in seconds.
               </p>
             </div>
-            <div className="ml-6 hidden shrink-0 items-center gap-2 border border-border px-4 py-2.5 md:flex">
-              <span className="h-2 w-2 rounded-full bg-profit-green" />
-              <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-foreground">
-                {onlineCount} STRATEGIES ONLINE
-              </span>
+            <div className="ml-4 shrink-0 flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2 border border-border px-4 py-2.5">
+                <span className="h-2 w-2 rounded-full bg-profit-green" />
+                <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-foreground">
+                  {onlineCount} STRATEGIES ONLINE
+                </span>
+              </div>
+              <button
+                onClick={() => router.push("/v2/copied-bots")}
+                className="flex items-center gap-2 border border-border bg-poly-yellow px-4 py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                VIEW COPIED BOTS{subscribedBotIds.size > 0 ? ` (${subscribedBotIds.size})` : ""}
+              </button>
             </div>
           </div>
         </div>
@@ -334,21 +358,40 @@ export default function BotsPage() {
             <p className="mt-3 font-body text-sm text-muted-foreground">Loading strategies...</p>
           </div>
         ) : filteredBots.length > 0 ? (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {filteredBots.map((bot) => (
-              <BotCard
-                key={bot.id}
-                bot={bot}
-                isPremiumUser={hasPremiumAccess}
-                isSubscribed={subscribedBotIds.has(bot.id)}
-                onCopyBot={() => {
-                  setCopyTargetBot(bot)
-                  setCopyModalOpen(true)
-                }}
-                onAnalysis={() => router.push(`/v2/bots/${bot.id}`)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              {displayedBots.map((bot) => (
+                <BotCard
+                  key={bot.id}
+                  bot={bot}
+                  isPremiumUser={hasPremiumAccess}
+                  isSubscribed={subscribedBotIds.has(bot.id)}
+                  onCopyBot={() => {
+                    setCopyTargetBot(bot)
+                    setCopyModalOpen(true)
+                  }}
+                  onManage={() => {
+                    const sub = subscriptionMap[bot.id]
+                    if (sub) {
+                      setManageTargetSub(sub)
+                      setManageModalOpen(true)
+                    }
+                  }}
+                  onAnalysis={() => router.push(`/v2/bots/${bot.id}`)}
+                />
+              ))}
+            </div>
+            {hasMore && !showAll && (
+              <div className="mt-8 text-center">
+                <button
+                  onClick={() => setShowAll(true)}
+                  className="border border-border px-8 py-3 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:border-poly-black hover:text-poly-black"
+                >
+                  SHOW ALL {filteredBots.length} STRATEGIES
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <p className="font-body text-sm text-muted-foreground">
@@ -373,6 +416,34 @@ export default function BotsPage() {
           usdcBalance={usdcBalance}
           onSuccess={() => {
             setSubscribedBotIds((prev) => new Set([...prev, copyTargetBot.id]))
+          }}
+        />
+      )}
+
+      {/* Manage Bot Modal */}
+      {manageTargetSub && (
+        <ManageBotModal
+          open={manageModalOpen}
+          onOpenChange={setManageModalOpen}
+          subscription={manageTargetSub}
+          onUpdate={(updated) => {
+            setManageTargetSub(updated)
+            setSubscriptionMap((prev) => ({ ...prev, [updated.ft_wallet_id]: updated }))
+            if (updated.is_paused !== manageTargetSub.is_paused) {
+              // refresh active IDs if pause state changed
+            }
+          }}
+          onUnsubscribe={(ftWalletId) => {
+            setSubscribedBotIds((prev) => {
+              const next = new Set(prev)
+              next.delete(ftWalletId)
+              return next
+            })
+            setSubscriptionMap((prev) => {
+              const next = { ...prev }
+              if (next[ftWalletId]) next[ftWalletId] = { ...next[ftWalletId], is_active: false }
+              return next
+            })
           }}
         />
       )}

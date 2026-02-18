@@ -161,15 +161,32 @@ export async function GET(request: Request) {
       'trader_still_has_position',
       'trade_method',
       'side',
+      'lt_strategy_id',
       'created_at',
     ].join(',')
 
-    const { data, error, count } = await supabase
+    let { data, error, count } = await supabase
       .from('orders_copy_enriched')
       .select(selectFields, { count: 'exact' })
       .eq('copy_user_id', requestedUserId)
       .order('created_at', { ascending: false })
       .range(from, to)
+
+    // Fallback: if lt_strategy_id column doesn't exist yet (migration not applied),
+    // retry without it so the page still loads
+    if (error && error.code === '42703' && error.message?.includes('lt_strategy_id')) {
+      console.warn('[portfolio/trades] lt_strategy_id column not found, retrying without it')
+      const fallbackFields = selectFields.replace(',lt_strategy_id', '')
+      const fallback = await supabase
+        .from('orders_copy_enriched')
+        .select(fallbackFields, { count: 'exact' })
+        .eq('copy_user_id', requestedUserId)
+        .order('created_at', { ascending: false })
+        .range(from, to)
+      data = fallback.data
+      error = fallback.error
+      count = fallback.count
+    }
 
     if (error) {
       console.error('Error fetching portfolio trades:', error)
@@ -380,6 +397,7 @@ export async function GET(request: Request) {
         trade_method: row.trade_method,
         side: row.side ?? null,
         pnl_usd: pnlUsd,
+        lt_strategy_id: row.lt_strategy_id ?? null,
       }
     })
 

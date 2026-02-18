@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Check,
   X,
+  Bot,
 } from "lucide-react"
 import { ShareCardModal } from "@/components/polycopy-v2/share-card-modal"
 import { supabase } from "@/lib/supabase"
@@ -83,6 +84,7 @@ interface CopiedTrade {
   trade_method?: string
   side?: string | null
   pnl_usd?: number | null
+  lt_strategy_id?: string | null
 }
 
 interface RealizedPnlRow {
@@ -324,7 +326,7 @@ export default function PortfolioPage() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("trades")
   const [copiedAddress, setCopiedAddress] = useState(false)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
-  const [tradeFilter, setTradeFilter] = useState<"all" | "open" | "closed" | "resolved">("open")
+  const [tradeFilter, setTradeFilter] = useState<"all" | "open" | "closed" | "resolved" | "bot">("open")
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null)
   const [closingTradeId, setClosingTradeId] = useState<string | null>(null)
   const [closeSuccess, setCloseSuccess] = useState<string | null>(null)
@@ -421,6 +423,8 @@ export default function PortfolioPage() {
     }
 
     fetchProfile()
+
+    return () => { hasLoadedProfile.current = false }
   }, [user])
 
   /* ═══════════════════════════════════════════════════════
@@ -510,6 +514,7 @@ export default function PortfolioPage() {
       trade_method: t.trade_method,
       side: t.side,
       pnl_usd: t.pnl_usd != null ? Number(t.pnl_usd) : null,
+      lt_strategy_id: t.lt_strategy_id ?? null,
     })
 
     const mapOrderTrade = (o: any): CopiedTrade => {
@@ -544,6 +549,7 @@ export default function PortfolioPage() {
         trader_wallet: o.copiedTraderWallet || o.traderWallet,
         trader_username: o.traderName,
         trader_profile_image_url: o.traderAvatarUrl,
+        lt_strategy_id: o.ltStrategyId ?? null,
       }
     }
 
@@ -675,6 +681,8 @@ export default function PortfolioPage() {
     }
 
     loadRealizedPnl()
+
+    return () => { hasLoadedRealizedPnl.current = false }
   }, [user])
 
   /* ═══════════════════════════════════════════════════════
@@ -696,6 +704,8 @@ export default function PortfolioPage() {
     }
 
     loadTopTraders()
+
+    return () => { hasLoadedTopTraders.current = false }
   }, [user])
 
   /* ═══════════════════════════════════════════════════════
@@ -717,6 +727,8 @@ export default function PortfolioPage() {
       }
     }
     load()
+
+    return () => { hasLoadedStats.current = false }
   }, [user, fetchStats])
 
   /* ═══════════════════════════════════════════════════════
@@ -726,6 +738,8 @@ export default function PortfolioPage() {
     if (!user || hasLoadedTrades.current) return
     hasLoadedTrades.current = true
     fetchTrades()
+
+    return () => { hasLoadedTrades.current = false }
   }, [user, fetchTrades])
 
   /* ═══════════════════════════════════════════════════════
@@ -759,6 +773,7 @@ export default function PortfolioPage() {
       if (tradeFilter === "open") return !trade.user_closed_at && !trade.market_resolved
       if (tradeFilter === "closed") return Boolean(trade.user_closed_at)
       if (tradeFilter === "resolved") return trade.market_resolved
+      if (tradeFilter === "bot") return Boolean(trade.lt_strategy_id)
       return true
     })
   }, [copiedTrades, tradeFilter])
@@ -1216,7 +1231,7 @@ export default function PortfolioPage() {
           <div className="space-y-3">
             {/* ── Filter buttons ── */}
             <div className="flex flex-wrap items-center gap-2">
-              {(["open", "all", "closed", "resolved"] as const).map((filter) => (
+              {(["open", "all", "closed", "resolved", "bot"] as const).map((filter) => (
                 <button
                   key={filter}
                   onClick={() => setTradeFilter(filter)}
@@ -1355,6 +1370,13 @@ export default function PortfolioPage() {
                                     ) : (
                                       trade.trader_username
                                     )}
+                                  </span>
+                                )}
+                                {/* Bot badge */}
+                                {trade.lt_strategy_id && (
+                                  <span className="inline-flex items-center gap-1 bg-poly-black px-1.5 py-0.5 font-sans text-[9px] font-bold uppercase tracking-wide text-poly-yellow">
+                                    <Bot className="h-2.5 w-2.5" />
+                                    BOT
                                   </span>
                                 )}
                               </div>

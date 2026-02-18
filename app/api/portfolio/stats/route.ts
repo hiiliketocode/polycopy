@@ -320,11 +320,7 @@ async function calculatePortfolioStats(
   const ordersTable = await resolveOrdersTableName(supabase)
   console.log(`[Portfolio Stats] Using orders table: ${ordersTable} for user: ${requestedUserId.substring(0, 8)}`)
 
-  // Query ALL orders (both BUY and SELL) for position-based P&L calculation
-  // Don't filter by copied_trade_id - we need ALL orders including sells
-  const { data: allOrders, error: ordersError } = await supabase
-    .from(ordersTable)
-    .select(`
+  const selectColumns = `
       order_id,
       side,
       filled_size,
@@ -344,52 +340,28 @@ async function calculatePortfolioStats(
       polymarket_avg_price,
       polymarket_total_bought,
       polymarket_synced_at
-    `)
-    .eq('copy_user_id', requestedUserId)
-    .order('created_at', { ascending: true })
+    `
+  const selectColumnsBasic = `
+      order_id,
+      side,
+      filled_size,
+      size,
+      price,
+      price_when_copied,
+      amount_invested,
+      market_id,
+      outcome,
+      current_price,
+      market_resolved,
+      resolved_outcome,
+      user_exit_price,
+      user_closed_at,
+      created_at
+    `
 
-  if (ordersError) {
-    console.error('Error fetching orders:', ordersError)
-    throw new Error(ordersError.message)
-  }
-
-  let orders = (allOrders || []) as Order[]
-  console.log(`[Portfolio Stats] Fetched ${orders.length} orders from ${ordersTable}`)
-  
-  // Log order breakdown
-  const buyOrders = orders.filter(o => normalizeSide(o.side) === 'buy')
-  const sellOrders = orders.filter(o => normalizeSide(o.side) === 'sell')
-  console.log(`[Portfolio Stats] Order breakdown: ${buyOrders.length} BUY, ${sellOrders.length} SELL`)
-  
-  // DEBUG: Log all orders and their investment amounts
-  if (debug) {
-    const totalInvestment = orders.reduce((sum, o) => sum + toNumber(o.amount_invested), 0)
-    console.log(`[DEBUG] Total amount_invested across all ${orders.length} orders: $${totalInvestment.toFixed(2)}`)
-    console.log(`[DEBUG] First 10 orders:`)
-    orders.slice(0, 10).forEach((o, i) => {
-      console.log(`  ${i + 1}. ${o.order_id}: ${o.side} $${toNumber(o.amount_invested).toFixed(2)} @ ${o.price || o.price_when_copied} ${o.outcome}`)
-    })
-  }
-  
-  // Log most recent order timestamp
-  if (orders.length > 0) {
-    const mostRecent = orders[orders.length - 1]?.created_at
-    console.log(`[Portfolio Stats] Most recent order: ${mostRecent}`)
-  }
-  
-  // SELL orders often lack copy_user_id. Fetch by trader_id and include only SELLs
-  // that close copy positions (same market_id + outcome as copy BUYs).
-  const copyBuyKeys = new Set<string>()
-  for (const o of orders) {
-    if (normalizeSide(o.side) !== 'buy') continue
-    const mid = o.market_id?.trim() || ''
-    const out = normalize(o.outcome)
-    if (mid && out) copyBuyKeys.add(`${mid}::${out}`)
-  }
-
-  // Get trader_id from wallet (via clob_credentials -> traders)
+  // Resolve trader_id early so we can use it as fallback
   let traderId: string | null = null
-  if (copyBuyKeys.size > 0) {
+  {
     const { data: cred } = await supabase
       .from('clob_credentials')
       .select('polymarket_account_address')
@@ -397,7 +369,7 @@ async function calculatePortfolioStats(
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    
+
     const wallet = cred?.polymarket_account_address?.toLowerCase()
     if (wallet) {
       const { data: trader } = await supabase
@@ -410,27 +382,90 @@ async function calculatePortfolioStats(
     }
   }
 
-  // Fetch SELL orders by trader_id that match copy positions
+  // Query orders — try copy_user_id first, fall back to trader_id
+  let orders: Order[] = []
+  {
+    let result: { data: any[] | null; error: any } = await supabase
+      .from(ordersTable)
+      .select(selectColumns)
+      .eq('copy_user_id', requestedUserId)
+      .order('created_at', { ascending: true })
+
+    // If polymarket columns don't exist, retry without them
+    if (result.error?.code === '42703') {
+      console.warn('[Portfolio Stats] polymarket columns missing, retrying basic select')
+      result = await supabase
+        .from(ordersTable)
+        .select(selectColumnsBasic)
+        .eq('copy_user_id', requestedUserId)
+        .order('created_at', { ascending: true })
+    }
+
+    if (result.error) {
+      console.error('Error fetching orders by copy_user_id:', result.error)
+      throw new Error(result.error.message)
+    }
+
+    orders = (result.data || []) as Order[]
+    console.log(`[Portfolio Stats] Fetched ${orders.length} orders via copy_user_id from ${ordersTable}`)
+
+    // Fallback: if copy_user_id returned 0 results, try trader_id
+    if (orders.length === 0 && traderId) {
+      console.warn(`[Portfolio Stats] 0 orders via copy_user_id, falling back to trader_id=${traderId.substring(0, 8)}`)
+      let traderResult: { data: any[] | null; error: any } = await supabase
+        .from(ordersTable)
+        .select(selectColumns)
+        .eq('trader_id', traderId)
+        .order('created_at', { ascending: true })
+
+      if (traderResult.error?.code === '42703') {
+        traderResult = await supabase
+          .from(ordersTable)
+          .select(selectColumnsBasic)
+          .eq('trader_id', traderId)
+          .order('created_at', { ascending: true })
+      }
+
+      if (!traderResult.error && traderResult.data) {
+        orders = traderResult.data as Order[]
+        console.log(`[Portfolio Stats] Fetched ${orders.length} orders via trader_id fallback`)
+      }
+    }
+  }
+
+  // Log order breakdown
+  const buyOrders = orders.filter(o => normalizeSide(o.side) === 'buy')
+  const sellOrders = orders.filter(o => normalizeSide(o.side) === 'sell')
+  console.log(`[Portfolio Stats] Order breakdown: ${buyOrders.length} BUY, ${sellOrders.length} SELL`)
+  
+  if (debug) {
+    const totalInvestment = orders.reduce((sum, o) => sum + toNumber(o.amount_invested), 0)
+    console.log(`[DEBUG] Total amount_invested across all ${orders.length} orders: $${totalInvestment.toFixed(2)}`)
+    console.log(`[DEBUG] First 10 orders:`)
+    orders.slice(0, 10).forEach((o, i) => {
+      console.log(`  ${i + 1}. ${o.order_id}: ${o.side} $${toNumber(o.amount_invested).toFixed(2)} @ ${o.price || o.price_when_copied} ${o.outcome}`)
+    })
+  }
+  
+  if (orders.length > 0) {
+    const mostRecent = orders[orders.length - 1]?.created_at
+    console.log(`[Portfolio Stats] Most recent order: ${mostRecent}`)
+  }
+  
+  // Collect buy position keys for matching sells
+  const copyBuyKeys = new Set<string>()
+  for (const o of orders) {
+    if (normalizeSide(o.side) !== 'buy') continue
+    const mid = o.market_id?.trim() || ''
+    const out = normalize(o.outcome)
+    if (mid && out) copyBuyKeys.add(`${mid}::${out}`)
+  }
+
+  // Fetch SELL orders by trader_id that match buy positions (sells often lack copy_user_id)
   if (traderId && copyBuyKeys.size > 0) {
     const { data: sellRows, error: sellErr } = await supabase
       .from(ordersTable)
-      .select(`
-        order_id,
-        side,
-        filled_size,
-        size,
-        price,
-        price_when_copied,
-        amount_invested,
-        market_id,
-        outcome,
-        current_price,
-        market_resolved,
-        resolved_outcome,
-        user_exit_price,
-        user_closed_at,
-        created_at
-      `)
+      .select(selectColumnsBasic)
       .eq('trader_id', traderId)
       .order('created_at', { ascending: true })
 

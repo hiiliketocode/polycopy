@@ -510,6 +510,7 @@ export async function executeTrade(
         await supabase.from('orders').upsert({
             order_id: orderId,
             trader_id: traderId,
+            copy_user_id: strategy.user_id,
             market_id: trade.conditionId ?? null,
             outcome: (trade.outcome || 'YES').toUpperCase(),
             side: side.toLowerCase(),
@@ -521,6 +522,7 @@ export async function executeTrade(
             status: 'open',
             created_at: now,
             updated_at: now,
+            lt_strategy_id: strategy.strategy_id,
         }, { onConflict: 'order_id' });
 
         // Upsert: may already have REJECTED row from prior retry — update to PENDING
@@ -597,6 +599,7 @@ export async function executeTrade(
     await supabase.from('orders').upsert({
         order_id: orderId,
         trader_id: traderId,
+        copy_user_id: strategy.user_id,
         market_id: trade.conditionId ?? null,
         outcome: (trade.outcome || 'YES').toUpperCase(),
         side: side.toLowerCase(),
@@ -608,6 +611,7 @@ export async function executeTrade(
         status: fillRate >= 1 ? 'filled' : 'partial',
         created_at: now,
         updated_at: now,
+        lt_strategy_id: strategy.strategy_id,
     }, { onConflict: 'order_id' });
 
     // Upsert lt_orders: may already have REJECTED row from prior retry — update to FILLED

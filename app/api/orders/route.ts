@@ -116,7 +116,22 @@ export async function GET(request: NextRequest) {
           if (!trader?.id) return
 
           const ordersTableForRefresh = await resolveOrdersTableName(supabaseService)
-          
+
+          // Check if this user has an active bot strategy so CLOB-refreshed orders
+          // inherit bot attribution (Polymarket returns different order IDs for the
+          // same trade on POST vs GET, creating duplicate rows without lt_strategy_id)
+          let activeBotStrategyId: string | null = null
+          try {
+            const { data: strat } = await supabaseService
+              .from('lt_strategies')
+              .select('strategy_id')
+              .eq('user_id', user.id)
+              .eq('status', 'active')
+              .limit(1)
+              .maybeSingle()
+            activeBotStrategyId = strat?.strategy_id ?? null
+          } catch { /* non-fatal */ }
+
           // Fetch full order details for open orders
           const orderDetails = await Promise.allSettled(
             openOrders.slice(0, 20).map(async (order: any) => {
@@ -164,7 +179,7 @@ export async function GET(request: NextRequest) {
                   fullOrder.orderType ||
                   null
 
-                return {
+                const orderRow: Record<string, any> = {
                   order_id: fullOrder.id,
                   trader_id: trader.id,
                   market_id: marketId,
@@ -181,6 +196,11 @@ export async function GET(request: NextRequest) {
                   updated_at: fullOrder.last_update ? new Date(fullOrder.last_update).toISOString() : new Date().toISOString(),
                   raw: fullOrder,
                 }
+                if (activeBotStrategyId) {
+                  orderRow.lt_strategy_id = activeBotStrategyId
+                  orderRow.copy_user_id = user.id
+                }
+                return orderRow
               } catch (error) {
                 console.warn('[orders] Failed to fetch order details:', error)
                 return null
@@ -604,7 +624,7 @@ export async function GET(request: NextRequest) {
         updatedAt: order.updated_at ?? order.created_at ?? new Date().toISOString(),
         raw: order.raw ?? null,
         isAutoClose,
-        ltStrategyId: null,
+        ltStrategyId: order.lt_strategy_id ?? null,
       }
     })
 
@@ -1754,7 +1774,7 @@ async function fetchOrdersForTrader(
   traderId: string
 ) {
   const selectWithCopied =
-    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, auto_close_order_id, copied_market_title, market_resolved, raw'
+    'order_id, trader_id, copied_trader_id, copied_trader_wallet, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, auto_close_order_id, copied_market_title, market_resolved, lt_strategy_id, raw'
   const selectLegacy =
     'order_id, trader_id, market_id, outcome, side, order_type, time_in_force, price, size, filled_size, remaining_size, status, created_at, updated_at, raw'
 

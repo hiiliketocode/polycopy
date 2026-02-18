@@ -390,6 +390,7 @@ export async function executeSell(
         await supabase.from('orders').upsert({
             order_id: orderId,
             trader_id: traderId,
+            copy_user_id: candidate.user_id,
             market_id: candidate.condition_id,
             outcome: candidate.token_label,
             side: 'sell',
@@ -401,6 +402,7 @@ export async function executeSell(
             status: 'filled',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            lt_strategy_id: candidate.strategy_id,
         }, { onConflict: 'order_id' });
 
         await logger?.info('SELL_EXECUTE', `Sell completed: ${sharesToSell} shares @ $${sellPrice.toFixed(4)} = $${sellProceeds.toFixed(2)} proceeds`, {
