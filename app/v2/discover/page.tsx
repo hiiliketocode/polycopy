@@ -156,7 +156,7 @@ function getNormalizedCumulativeSeries(rows: { date: string; realized_pnl: numbe
 
 function PnlSparkline({ rows, limit, width = 90, height = 32 }: { rows: { date: string; realized_pnl: number }[]; limit?: number; width?: number; height?: number }) {
   const data = useMemo(() => getNormalizedCumulativeSeries(rows, limit), [rows, limit])
-  if (data.length === 0) return <span className="text-[11px] text-muted-foreground">—</span>
+  if (data.length === 0) return <span className="text-xs text-muted-foreground">—</span>
   const minValue = Math.min(...data)
   const maxValue = Math.max(...data)
   const range = Math.max(maxValue - minValue, 1)
@@ -465,7 +465,7 @@ function DiscoverPageContent() {
           </div>
 
           <div className="mx-auto max-w-xl text-center">
-            <p className="mb-3 font-sans text-[10px] font-bold uppercase tracking-widest text-white/40">
+            <p className="mb-3 font-sans text-xs font-bold uppercase tracking-widest text-white/40">
               Search_Database_V2.0_Polymarket
             </p>
             <h1 className="font-sans text-4xl font-bold uppercase tracking-tight text-white md:text-5xl lg:text-6xl">
@@ -503,11 +503,11 @@ function DiscoverPageContent() {
               <h2 className="font-sans text-lg font-bold uppercase tracking-wide text-foreground">
                 Trending Traders
               </h2>
-              <p className="font-sans text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">
                 Most improved by realized PnL week-over-week
               </p>
             </div>
-            <Link href="/discover" className="font-sans text-[10px] font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground transition">
+            <Link href="/discover" className="font-sans text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground transition">
               View All Trending
             </Link>
           </div>
@@ -537,14 +537,14 @@ function DiscoverPageContent() {
                       <TraderAvatar displayName={trader.displayName} wallet={trader.wallet} src={trader.profileImage} size={36} className="ring-2 ring-border" />
                       <div className="min-w-0 flex-1">
                         <p className="font-sans text-xs font-bold text-foreground truncate">{formatDisplayName(trader.displayName, trader.wallet)}</p>
-                        <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">PnL_Growth</p>
+                        <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">PnL_Growth</p>
                       </div>
                     </div>
                     <p className={cn("mt-2 font-sans text-2xl font-bold tabular-nums", changeColor)}>
                       {formatPercentChange(entry.pctChange)}
                     </p>
                     <div className="mt-2">
-                      <p className="font-sans text-[8px] font-bold uppercase tracking-widest text-muted-foreground">Last 7 Days</p>
+                      <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Last 7 Days</p>
                       <p className="font-body text-sm font-semibold tabular-nums text-foreground">{formatSignedLargeNumber(entry.weekly.last7)}</p>
                     </div>
                     <div className="mt-2 flex justify-center">
@@ -552,7 +552,7 @@ function DiscoverPageContent() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleFollowChange(trader.wallet, !isFollowing) }}
-                      className="mt-3 w-full bg-poly-yellow py-2 font-sans text-[10px] font-bold uppercase tracking-wide text-poly-black transition hover:bg-poly-yellow/90"
+                      className="mt-3 w-full bg-poly-yellow py-2.5 font-sans text-xs font-bold uppercase tracking-wide text-poly-black transition hover:bg-poly-yellow/90"
                     >
                       {isFollowing ? "Following" : "Follow Trader"}
                     </button>
@@ -576,7 +576,7 @@ function DiscoverPageContent() {
                 <button
                   type="button"
                   onClick={() => setIsSortMenuOpen((p) => !p)}
-                  className="inline-flex items-center gap-1.5 border border-border bg-card px-3 py-1.5 font-sans text-sm font-bold uppercase tracking-wide text-profit-green transition hover:bg-accent"
+                  className="inline-flex items-center gap-1.5 border border-border bg-card px-3 py-2.5 font-sans text-sm font-bold uppercase tracking-wide text-profit-green transition hover:bg-accent"
                 >
                   {sortMetricOptions.find((o) => o.value === sortMetric)?.label || "PNL"}
                   <ChevronDown className="h-4 w-4" />
@@ -608,7 +608,7 @@ function DiscoverPageContent() {
                     key={cat}
                     onClick={() => setSelectedCategory(val)}
                     className={cn(
-                      "px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border",
+                      "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border",
                       isActive
                         ? "bg-poly-black text-white border-poly-black"
                         : "bg-card text-muted-foreground border-border hover:bg-accent hover:text-foreground"
@@ -631,13 +631,13 @@ function DiscoverPageContent() {
             <div className="border border-border bg-card">
               {/* Table header */}
               <div className="hidden md:grid grid-cols-[60px_1fr_100px_100px_120px_100px_120px] items-center border-b border-border px-4 py-3">
-                <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground text-center">Rank</span>
-                <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Trader</span>
-                <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground text-center">ROI</span>
-                <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground text-center">P&L</span>
-                <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground text-center">Trend</span>
-                <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground text-center">Volume</span>
-                <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground text-center">Action</span>
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Rank</span>
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">Trader</span>
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">ROI</span>
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">P&L</span>
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Trend</span>
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Volume</span>
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground text-center">Action</span>
               </div>
               {/* Table rows */}
               {visibleTraders.map((trader, index) => {
@@ -667,7 +667,7 @@ function DiscoverPageContent() {
                     <div className="flex justify-center">
                       <button
                         onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
-                        className="bg-poly-yellow px-4 py-1.5 font-sans text-[10px] font-bold uppercase tracking-wide text-poly-black transition hover:bg-poly-yellow/90"
+                        className="bg-poly-yellow px-4 py-2 font-sans text-xs font-bold uppercase tracking-wide text-poly-black transition hover:bg-poly-yellow/90"
                       >
                         {isFollowing ? <Check className="h-3.5 w-3.5 mx-auto" /> : "Follow"}
                       </button>
@@ -680,7 +680,7 @@ function DiscoverPageContent() {
                 <div className="flex justify-center border-t border-border px-4 py-4">
                   <button
                     onClick={() => setVisibleCount((p) => Math.min(p + 10, rankedTraders.length))}
-                    className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition"
+                    className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition"
                   >
                     Load_More_Records_001
                   </button>
@@ -699,7 +699,7 @@ function DiscoverPageContent() {
             <div className="border border-border bg-card">
               <div className="border-b border-border px-4 py-3">
                 <h3 className="font-sans text-sm font-bold uppercase tracking-wide text-foreground">Most Consistent</h3>
-                <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">Days up in last 30</p>
+                <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">Days up in last 30</p>
               </div>
               <div className="divide-y divide-border">
                 {mostConsistentEntries.length === 0 ? (
@@ -728,7 +728,7 @@ function DiscoverPageContent() {
             <div className="border border-border bg-card">
               <div className="border-b border-border px-4 py-3">
                 <h3 className="font-sans text-sm font-bold uppercase tracking-wide text-foreground">Biggest Winners</h3>
-                <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">By realized gain yesterday</p>
+                <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">By realized gain yesterday</p>
               </div>
               <div className="divide-y divide-border">
                 {sortedYesterdayWinners.length === 0 ? (
@@ -759,7 +759,7 @@ function DiscoverPageContent() {
             <div className="border border-border bg-card">
               <div className="border-b border-border px-4 py-3">
                 <h3 className="font-sans text-sm font-bold uppercase tracking-wide text-foreground">Most Active</h3>
-                <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">Trades in the last 24h</p>
+                <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">Trades in the last 24h</p>
               </div>
               <div className="divide-y divide-border">
                 {loadingMostActive ? (
@@ -781,7 +781,7 @@ function DiscoverPageContent() {
                           {formatDisplayName(trader.displayName, trader.wallet)}
                         </p>
                       </div>
-                      <span className="font-sans text-[9px] font-bold uppercase tracking-wide text-muted-foreground flex-shrink-0">Trader</span>
+                      <span className="font-sans text-xs font-bold uppercase tracking-wide text-muted-foreground flex-shrink-0">Trader</span>
                     </Link>
                   ))
                 )}

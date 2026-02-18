@@ -104,11 +104,11 @@ export function TradeExecutionNotifications({
           className="flex items-center gap-3 border border-border bg-white px-4 py-2 shadow-lg"
           aria-label="Expand trade updates"
         >
-          <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">
+          <span className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50">
             Trade updates
           </span>
-          <span className="flex items-center gap-2 font-sans text-[10px] font-bold text-poly-black/50">
-            <span className="flex h-5 min-w-[20px] items-center justify-center bg-poly-black px-1 font-sans text-[10px] font-bold text-poly-yellow">
+          <span className="flex items-center gap-2 font-sans text-xs font-bold text-poly-black/50">
+            <span className="flex h-5 min-w-[20px] items-center justify-center bg-poly-black px-1 font-sans text-xs font-bold text-poly-yellow">
               {notifications.length}
             </span>
             <ChevronUp className="h-4 w-4" />
@@ -128,17 +128,17 @@ export function TradeExecutionNotifications({
             ))}
           </div>
         ) : null}
-        <div className="flex items-center justify-between border-b border-border px-2 py-1.5">
+        <div className="flex items-center justify-between border-b border-border px-2 py-2.5">
           <button
             type="button"
             onClick={() => setIsExpanded(false)}
-            className="flex flex-1 items-center justify-between px-2 py-1 text-left"
+            className="flex flex-1 items-center justify-between px-2 py-2.5 text-left"
             aria-label="Collapse trade updates"
           >
-            <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">
-              Trade updates
-            </span>
-            <span className="flex items-center gap-2 font-sans text-[10px] font-bold text-poly-black/40">
+<span className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50">
+            Trade updates
+          </span>
+            <span className="flex items-center gap-2 font-sans text-xs font-bold text-poly-black/40">
               {notifications.length}
               <ChevronDown className="h-4 w-4" />
             </span>

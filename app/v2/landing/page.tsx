@@ -301,7 +301,7 @@ export default function LandingPage() {
         <div className="relative z-10 mx-auto grid max-w-[1400px] grid-cols-1 items-center gap-16 px-4 md:px-8 lg:grid-cols-2">
           <div className="space-y-10">
             <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 bg-black px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#FDB022]">
+              <div className="inline-flex items-center gap-2 bg-black px-3 py-1 text-xs font-black uppercase tracking-widest text-[#FDB022]">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#10B981]" />
                 SYSTEMS_LIVE_V2.0
               </div>
@@ -316,25 +316,25 @@ export default function LandingPage() {
             </div>
 
             <div className="flex flex-col gap-4 sm:flex-row">
-              <Link href="/v2/discover" className="group inline-flex items-center justify-center gap-4 bg-black px-12 py-5 font-sans text-[13px] font-black uppercase tracking-[0.3em] text-[#FDB022] shadow-2xl transition-all hover:bg-[#FDB022] hover:text-black">
+              <Link href="/v2/discover" className="group inline-flex items-center justify-center gap-4 bg-black px-12 py-5 font-sans text-sm font-black uppercase tracking-[0.3em] text-[#FDB022] shadow-2xl transition-all hover:bg-[#FDB022] hover:text-black">
                 Discover Traders <ArrowRight className="h-5 w-5" />
               </Link>
-              <Link href="/v2/bots" className="inline-flex items-center justify-center gap-4 border-2 border-black px-12 py-5 font-sans text-[13px] font-black uppercase tracking-[0.3em] text-black transition-all hover:bg-black hover:text-white">
+              <Link href="/v2/bots" className="inline-flex items-center justify-center gap-4 border-2 border-black px-12 py-5 font-sans text-sm font-black uppercase tracking-[0.3em] text-black transition-all hover:bg-black hover:text-white">
                 Explore Bots <Bot className="h-5 w-5" />
               </Link>
             </div>
 
             <div className="grid grid-cols-2 gap-8 pt-4 md:grid-cols-3">
               <div className="flex flex-col border-l border-black/5 py-2 pl-6">
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">TRADERS_TRACKED</span>
+                <span className="text-xs font-black uppercase tracking-[0.3em] text-zinc-400">TRADERS_TRACKED</span>
                 <span className="font-sans text-2xl font-black tracking-tighter">50,000+</span>
               </div>
               <div className="flex flex-col border-l border-black/5 py-2 pl-6">
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">TRADING_STRATEGIES</span>
+                <span className="text-xs font-black uppercase tracking-[0.3em] text-zinc-400">TRADING_STRATEGIES</span>
                 <span className="font-sans text-2xl font-black tracking-tighter">25+</span>
               </div>
               <div className="hidden flex-col border-l border-black/5 py-2 pl-6 md:flex">
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-400">MARKETS_COVERED</span>
+                <span className="text-xs font-black uppercase tracking-[0.3em] text-zinc-400">MARKETS_COVERED</span>
                 <span className="font-sans text-2xl font-black tracking-tighter">ALL</span>
               </div>
             </div>
@@ -353,7 +353,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1400px] space-y-20 px-4 md:px-8">
           <div className="flex flex-col items-end justify-between gap-8 md:flex-row">
             <div className="space-y-2">
-              <h2 className="text-[11px] font-black uppercase tracking-[0.5em] text-[#FDB022]">Product_Ecosystem</h2>
+              <h2 className="text-xs font-black uppercase tracking-[0.5em] text-[#FDB022]">Product_Ecosystem</h2>
               <h3 className="font-sans text-5xl font-black uppercase tracking-tighter">Engineered for Alpha</h3>
             </div>
             <p className="max-w-md text-sm font-medium leading-relaxed text-zinc-500">
@@ -372,7 +372,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="mb-3 font-sans text-xl font-black uppercase leading-none tracking-tight transition-colors group-hover:text-[#FDB022]">{card.title}</h3>
                 <p className="mb-6 text-sm font-medium leading-relaxed text-zinc-500">{card.desc}</p>
-                <Link href={card.href} className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all group-hover:gap-3">
+                <Link href={card.href} className="inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all group-hover:gap-3">
                   {card.cta} <ArrowRight className="h-3.5 w-3.5 text-[#FDB022]" />
                 </Link>
               </div>
@@ -388,16 +388,16 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1400px] px-4 md:px-8">
           <div className="mb-12 flex flex-col items-end justify-between gap-8 md:flex-row">
             <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 bg-black px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#FDB022]">
+              <div className="inline-flex items-center gap-2 bg-black px-3 py-1 text-xs font-black uppercase tracking-widest text-[#FDB022]">
                 <TrendingUp className="h-3 w-3" />
                 POLYMARKET_LEADERBOARD
               </div>
               <h3 className="font-sans text-5xl font-black uppercase tracking-tighter">See who you could be following</h3>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Top Traders by ROI (Last 30 Days)</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-zinc-500">Top Traders by ROI (Last 30 Days)</p>
             </div>
             <Link
               href="/v2/discover"
-              className="flex items-center gap-3 bg-black px-8 py-4 text-[12px] font-black uppercase tracking-[0.3em] text-[#FDB022] transition-all hover:bg-[#FDB022] hover:text-black"
+              className="flex items-center gap-3 bg-black px-8 py-4 text-sm font-black uppercase tracking-[0.3em] text-[#FDB022] transition-all hover:bg-[#FDB022] hover:text-black"
             >
               Discover Traders <ArrowRight className="h-[18px] w-[18px]" />
             </Link>
@@ -405,7 +405,7 @@ export default function LandingPage() {
 
           {/* Horizontal scroll */}
           <div className="relative">
-            <div className="flex gap-6 overflow-x-auto pb-8" style={{ scrollbarWidth: "none" }}>
+            <div className="flex gap-6 overflow-x-auto pb-8 pl-4" style={{ scrollbarWidth: "none" }}>
               {tradersLoading
                 ? Array.from({ length: 6 }).map((_, i) => (
                     <div key={i} className="min-w-[300px] animate-pulse border border-black/5 bg-white p-6">
@@ -444,24 +444,24 @@ export default function LandingPage() {
                           )}
                           <div className="min-w-0">
                             <h4 className="truncate font-sans font-black uppercase leading-none tracking-tight">{displayName}</h4>
-                            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400">{walletShort}</p>
+                            <p className="mt-1 text-xs font-bold uppercase tracking-widest text-zinc-400">{walletShort}</p>
                           </div>
                         </div>
 
                         {/* Stats row */}
                         <div className="mb-6 grid grid-cols-3 gap-4 border-y border-black/5 py-4">
                           <div className="text-center">
-                            <p className="mb-1 text-[8px] font-black uppercase tracking-widest text-zinc-400">ROI</p>
+                            <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-zinc-400">ROI</p>
                             <p className={cn("text-sm font-black", isPositive ? "text-[#10B981]" : "text-red-500")}>
                               {isPositive ? "+" : ""}{t.roi.toFixed(0)}%
                             </p>
                           </div>
                           <div className="text-center">
-                            <p className="mb-1 text-[8px] font-black uppercase tracking-widest text-zinc-400">P&L</p>
+                            <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-zinc-400">P&L</p>
                             <p className="text-sm font-black text-black">{formatSignedCurrency(t.pnl)}</p>
                           </div>
                           <div className="text-center">
-                            <p className="mb-1 text-[8px] font-black uppercase tracking-widest text-zinc-400">VOL</p>
+                            <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-zinc-400">VOL</p>
                             <p className="text-sm font-black text-black">{formatCurrency(t.volume)}</p>
                           </div>
                         </div>
@@ -469,7 +469,7 @@ export default function LandingPage() {
                         {/* CTA */}
                         <Link
                           href={`/v2/trader/${t.wallet}`}
-                          className="flex w-full items-center justify-center border border-[#FDB022]/20 bg-[#FDB022]/10 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-[#FDB022] transition-all hover:bg-[#FDB022] hover:text-black"
+                          className="flex w-full items-center justify-center border border-[#FDB022]/20 bg-[#FDB022]/10 py-4 text-xs font-black uppercase tracking-[0.2em] text-[#FDB022] transition-all hover:bg-[#FDB022] hover:text-black"
                         >
                           View Profile
                         </Link>
@@ -486,23 +486,23 @@ export default function LandingPage() {
         <div className="mx-auto max-w-[1400px] px-4 pt-12 md:px-8">
           <div className="mb-12 flex flex-col items-end justify-between gap-8 md:flex-row">
             <div className="space-y-4">
-              <div className="inline-flex items-center gap-2 bg-black px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#FDB022]">
+              <div className="inline-flex items-center gap-2 bg-black px-3 py-1 text-xs font-black uppercase tracking-widest text-[#FDB022]">
                 <Bot className="h-3 w-3" />
                 ALGORITHMIC_STRATEGIES
               </div>
               <h3 className="font-sans text-5xl font-black uppercase tracking-tighter">Proprietary Copy Trading Bots</h3>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Polycopy&#39;s Top Performing ML Algorithms</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-zinc-500">Polycopy&#39;s Top Performing ML Algorithms</p>
             </div>
             <Link
               href="/v2/bots"
-              className="flex items-center gap-3 bg-black px-8 py-4 text-[12px] font-black uppercase tracking-[0.3em] text-[#FDB022] transition-all hover:bg-[#FDB022] hover:text-black"
+              className="flex items-center gap-3 bg-black px-8 py-4 text-sm font-black uppercase tracking-[0.3em] text-[#FDB022] transition-all hover:bg-[#FDB022] hover:text-black"
             >
               Explore the Bots <ArrowRight className="h-[18px] w-[18px]" />
             </Link>
           </div>
 
           <div className="relative">
-            <div className="flex gap-6 overflow-x-auto pb-8" style={{ scrollbarWidth: "none" }}>
+            <div className="flex gap-6 overflow-x-auto pb-8 pl-4" style={{ scrollbarWidth: "none" }}>
               {bots.length === 0
                 ? Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="min-w-[300px] animate-pulse border border-white/5 bg-black p-6 text-white">
@@ -525,33 +525,33 @@ export default function LandingPage() {
                           <div className="flex h-10 w-10 items-center justify-center border border-white/10 bg-white/10 text-[#FDB022]">
                             <Bot className="h-5 w-5" />
                           </div>
-                          <div className="border border-[#10B981]/20 bg-[#10B981]/10 px-3 py-1 text-[8px] font-black uppercase tracking-widest text-[#10B981]">
+                          <div className="border border-[#10B981]/20 bg-[#10B981]/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#10B981]">
                             ACTIVE_DEPLOY
                           </div>
                         </div>
                         <div className="mb-6">
                           <h4 className="font-sans text-xl font-black uppercase leading-none tracking-tighter text-[#FDB022]">{bot.name}</h4>
-                          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">{bot.description || "Algorithmic Strategy"}</p>
+                          <p className="mt-1 text-xs font-bold uppercase tracking-widest text-zinc-500">{bot.description || "Algorithmic Strategy"}</p>
                         </div>
                         <div className="mb-8 space-y-3">
                           <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                            <span className="text-[9px] font-black uppercase text-zinc-500">30D_PERFORMANCE</span>
+                            <span className="text-[11px] font-black uppercase text-zinc-500">30D_PERFORMANCE</span>
                             <span className={cn("text-sm font-black", isPositive ? "text-[#10B981]" : "text-red-500")}>
                               {isPositive ? "+" : ""}{bot.roi.toFixed(1)}%
                             </span>
                           </div>
                           <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                            <span className="text-[9px] font-black uppercase text-zinc-500">TOTAL_TRADES</span>
+                            <span className="text-[11px] font-black uppercase text-zinc-500">TOTAL_TRADES</span>
                             <span className="text-sm font-black text-white">{bot.totalTrades.toLocaleString()}</span>
                           </div>
                           <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                            <span className="text-[9px] font-black uppercase text-zinc-500">WIN_RATE</span>
+                            <span className="text-[11px] font-black uppercase text-zinc-500">WIN_RATE</span>
                             <span className="text-sm font-black text-white">{bot.winRate.toFixed(1)}%</span>
                           </div>
                         </div>
                         <Link
                           href={`/v2/bots/${bot.id}`}
-                          className="flex w-full items-center justify-center bg-white py-4 text-[10px] font-black uppercase tracking-[0.3em] text-black transition-all hover:bg-[#FDB022]"
+                          className="flex w-full items-center justify-center bg-white py-4 text-xs font-black uppercase tracking-[0.3em] text-black transition-all hover:bg-[#FDB022]"
                         >
                           Analyze Bot
                         </Link>
@@ -584,7 +584,7 @@ export default function LandingPage() {
             ].map((step) => (
               <div key={step.num} className="relative z-10 flex flex-col items-center space-y-6 text-center">
                 <div className="relative flex h-20 w-20 items-center justify-center border border-black/5 bg-[#F9F8F1] shadow-sm">
-                  <div className="absolute -left-3 -top-3 flex h-8 w-8 items-center justify-center bg-[#FDB022] text-[10px] font-black italic text-black">
+                  <div className="absolute -left-3 -top-3 flex h-8 w-8 items-center justify-center bg-[#FDB022] text-xs font-black italic text-black">
                     {step.num}
                   </div>
                   <step.icon className="h-8 w-8" strokeWidth={1.5} />
@@ -600,7 +600,7 @@ export default function LandingPage() {
           <div className="mt-16 text-center">
             <Link
               href="/v2/login?mode=signup"
-              className="inline-flex items-center gap-2 bg-[#FDB022] px-12 py-5 text-[13px] font-black uppercase tracking-[0.3em] text-black shadow-xl transition-all hover:bg-black hover:text-[#FDB022]"
+              className="inline-flex items-center gap-2 bg-[#FDB022] px-12 py-5 text-sm font-black uppercase tracking-[0.3em] text-black shadow-xl transition-all hover:bg-black hover:text-[#FDB022]"
             >
               Sign Up Free <ArrowRight className="ml-2 inline h-[18px] w-[18px]" />
             </Link>
@@ -614,7 +614,7 @@ export default function LandingPage() {
       <section id="pricing" className="bg-zinc-50 py-24">
         <div className="mx-auto max-w-[1400px] px-4 md:px-8">
           <div className="mb-16 space-y-4 text-center">
-            <div className="inline-flex items-center gap-2 bg-black px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#FDB022]">
+            <div className="inline-flex items-center gap-2 bg-black px-3 py-1 text-xs font-black uppercase tracking-widest text-[#FDB022]">
               SUBSCRIPTION_PLANS
             </div>
             <h3 className="font-sans text-5xl font-black uppercase tracking-tighter">Start free, upgrade when ready</h3>
@@ -627,7 +627,7 @@ export default function LandingPage() {
             {/* Free Tier */}
             <div className="flex flex-col border-2 border-black/5 bg-white p-8 transition-all hover:border-black">
               <div className="mb-8">
-                <h4 className="mb-2 text-[11px] font-black uppercase tracking-[0.4em] text-[#FDB022]">Free Tier</h4>
+                <h4 className="mb-2 text-xs font-black uppercase tracking-[0.4em] text-[#FDB022]">Free Tier</h4>
                 <div className="flex items-baseline gap-1">
                   <span className="font-sans text-5xl font-black tracking-tighter">$0</span>
                   <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">/ Month</span>
@@ -659,11 +659,11 @@ export default function LandingPage() {
 
             {/* Premium Tier */}
             <div className="relative z-10 flex flex-col border-2 border-[#FDB022] bg-[#FDB022] p-8 shadow-2xl md:scale-105">
-              <div className="mb-4 self-end bg-black px-3 py-1 text-[8px] font-black uppercase tracking-widest text-[#FDB022]">
+              <div className="mb-4 self-end bg-black px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#FDB022]">
                 Popular Choice
               </div>
               <div className="mb-8">
-                <h4 className="mb-2 text-[11px] font-black uppercase tracking-[0.4em] text-black/60">Premium</h4>
+                <h4 className="mb-2 text-xs font-black uppercase tracking-[0.4em] text-black/60">Premium</h4>
                 <div className="flex items-baseline gap-1">
                   <span className="font-sans text-5xl font-black tracking-tighter">$20</span>
                   <span className="text-xs font-bold uppercase tracking-widest text-black/60">/ Month</span>
@@ -687,7 +687,7 @@ export default function LandingPage() {
               </div>
               <Link
                 href="/pricing"
-                className="mt-auto flex w-full items-center justify-center bg-black py-5 text-[12px] font-black uppercase tracking-[0.3em] text-[#FDB022] transition-all hover:bg-zinc-900"
+                className="mt-auto flex w-full items-center justify-center bg-black py-5 text-sm font-black uppercase tracking-[0.3em] text-[#FDB022] transition-all hover:bg-zinc-900"
               >
                 Upgrade to Premium
               </Link>
@@ -716,7 +716,7 @@ export default function LandingPage() {
             <div className="space-y-4">
               <div className="flex items-center gap-3 text-[#10B981]">
                 <ShieldCheck className="h-5 w-5" />
-                <span className="text-[11px] font-black uppercase tracking-widest">INDUSTRIAL_SECURITY</span>
+                <span className="text-xs font-black uppercase tracking-widest">INDUSTRIAL_SECURITY</span>
               </div>
               <p className="font-medium leading-relaxed text-zinc-400">
                 Non-custodial execution. Your keys, your capital. We only provide the intelligence and automation layer for your Polymarket deployment.
@@ -725,7 +725,7 @@ export default function LandingPage() {
             <div className="space-y-4">
               <div className="flex items-center gap-3 text-[#FDB022]">
                 <Target className="h-5 w-5" />
-                <span className="text-[11px] font-black uppercase tracking-widest">PRECISION_DATAFEED</span>
+                <span className="text-xs font-black uppercase tracking-widest">PRECISION_DATAFEED</span>
               </div>
               <p className="font-medium leading-relaxed text-zinc-400">
                 We track over 50,000 Polymarket traders in real time. When a top trader makes a move, you see it instantly on your feed and can copy the trade in seconds.
@@ -736,7 +736,7 @@ export default function LandingPage() {
           <div className="pt-12">
             <Link
               href="/v2/login?mode=signup"
-              className="inline-flex px-16 py-6 text-[14px] font-black uppercase tracking-[0.4em] text-black bg-white transition-all hover:bg-[#FDB022]"
+              className="inline-flex px-16 py-6 text-sm font-black uppercase tracking-[0.4em] text-black bg-white transition-all hover:bg-[#FDB022]"
             >
               Sign Up Now
             </Link>

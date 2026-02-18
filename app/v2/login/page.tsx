@@ -89,14 +89,14 @@ function LoginForm() {
             {!isSignupMode ? (
               <Link
                 href="/v2/login?mode=signup"
-                className="bg-poly-yellow px-5 py-2 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
+                className="bg-poly-yellow px-5 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
               >
                 START FREE
               </Link>
             ) : (
               <Link
                 href="/v2/login"
-                className="px-4 py-2 font-sans text-xs font-bold uppercase tracking-widest text-foreground transition-colors hover:text-poly-yellow"
+                className="px-4 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-foreground transition-colors hover:text-poly-yellow"
               >
                 SIGN IN
               </Link>
@@ -165,7 +165,7 @@ function LoginForm() {
             <div className="lg:w-1/2 flex items-center justify-center p-6 py-8 lg:p-12 bg-poly-cream">
               <div className="w-full max-w-md">
                 <div className="mb-8">
-                  <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50 mb-2">
+                  <div className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50 mb-2">
                     GET STARTED
                   </div>
                   <h2 className="font-sans text-3xl font-black uppercase tracking-tight text-poly-black mb-2">
@@ -194,7 +194,7 @@ function LoginForm() {
 
                 <form onSubmit={handleSubmit}>
                   <div className="mb-6">
-                    <label htmlFor="email" className="block font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50 mb-2">
+                    <label htmlFor="email" className="block font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50 mb-2">
                       Email address
                     </label>
                     <input
@@ -212,7 +212,7 @@ function LoginForm() {
                   <button
                     type="submit"
                     disabled={loading || success}
-                    className="w-full bg-poly-yellow text-poly-black font-sans font-bold uppercase tracking-widest py-3 px-4 text-sm hover:bg-poly-black hover:text-poly-yellow transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full bg-poly-yellow text-poly-black font-sans font-bold uppercase tracking-widest py-3.5 px-4 text-sm hover:bg-poly-black hover:text-poly-yellow transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -232,14 +232,14 @@ function LoginForm() {
 
                 <div className="mt-6 mb-6 flex items-center">
                   <div className="flex-1 border-t border-border"></div>
-                  <span className="px-4 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/40">or</span>
+                  <span className="px-4 font-sans text-xs font-bold uppercase tracking-widest text-poly-black/40">or</span>
                   <div className="flex-1 border-t border-border"></div>
                 </div>
 
                 <button
                   onClick={handleGoogleSignIn}
                   disabled={loading || success}
-                  className="w-full bg-white text-poly-black font-sans font-bold uppercase tracking-widest py-3 px-4 text-sm border border-border hover:bg-poly-black/5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                  className="w-full bg-white text-poly-black font-sans font-bold uppercase tracking-widest py-3.5 px-4 text-sm border border-border hover:bg-poly-black/5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -284,7 +284,7 @@ function LoginForm() {
               </div>
 
               <div className="bg-white border border-border p-8">
-                <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50 mb-2">
+                <div className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50 mb-2">
                   WELCOME BACK
                 </div>
                 <h2 className="font-sans text-2xl font-black uppercase tracking-tight text-poly-black mb-2">Sign In</h2>
@@ -316,7 +316,7 @@ function LoginForm() {
 
                 <form onSubmit={handleSubmit}>
                   <div className="mb-6">
-                    <label htmlFor="email" className="block font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50 mb-2">
+                    <label htmlFor="email" className="block font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50 mb-2">
                       Email address
                     </label>
                     <input
@@ -334,7 +334,7 @@ function LoginForm() {
                   <button
                     type="submit"
                     disabled={loading || success}
-                    className="w-full bg-poly-yellow text-poly-black font-sans font-bold uppercase tracking-widest py-3 px-4 text-sm hover:bg-poly-black hover:text-poly-yellow transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full bg-poly-yellow text-poly-black font-sans font-bold uppercase tracking-widest py-3.5 px-4 text-sm hover:bg-poly-black hover:text-poly-yellow transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -354,14 +354,14 @@ function LoginForm() {
 
                 <div className="mt-6 mb-6 flex items-center">
                   <div className="flex-1 border-t border-border"></div>
-                  <span className="px-4 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/40">or</span>
+                  <span className="px-4 font-sans text-xs font-bold uppercase tracking-widest text-poly-black/40">or</span>
                   <div className="flex-1 border-t border-border"></div>
                 </div>
 
                 <button
                   onClick={handleGoogleSignIn}
                   disabled={loading || success}
-                  className="w-full bg-white text-poly-black font-sans font-bold uppercase tracking-widest py-3 px-4 text-sm border border-border hover:bg-poly-black/5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                  className="w-full bg-white text-poly-black font-sans font-bold uppercase tracking-widest py-3.5 px-4 text-sm border border-border hover:bg-poly-black/5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />

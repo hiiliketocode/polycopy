@@ -166,7 +166,7 @@ export function ManageBotModal({
             </div>
             <button
               onClick={() => onOpenChange(false)}
-              className="text-white/60 transition-colors hover:text-white"
+              className="flex h-11 w-11 items-center justify-center text-white/60 transition-colors hover:text-white"
             >
               <X className="h-5 w-5" />
               <span className="sr-only">Close</span>
@@ -178,7 +178,7 @@ export function ManageBotModal({
             </p>
             <span
               className={cn(
-                "inline-flex items-center gap-1 px-2 py-0.5 font-sans text-[9px] font-bold uppercase tracking-widest",
+                "inline-flex items-center gap-1 px-2 py-0.5 font-sans text-[11px] font-bold uppercase tracking-widest",
                 isPaused
                   ? "bg-poly-yellow/20 text-poly-yellow"
                   : "bg-profit-green/20 text-profit-green"
@@ -230,7 +230,7 @@ export function ManageBotModal({
             </div>
             <button
               onClick={() => setView("main")}
-              className="mt-2 border border-poly-black px-8 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-cream"
+              className="mt-2 border border-poly-black px-8 py-3 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-cream"
             >
               GO BACK
             </button>
@@ -266,13 +266,13 @@ export function ManageBotModal({
             <div className="flex gap-3">
               <button
                 onClick={() => setView("main")}
-                className="flex-1 border border-border py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:border-poly-black hover:text-poly-black"
+                className="flex-1 border border-border py-3 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:border-poly-black hover:text-poly-black"
               >
                 GO BACK
               </button>
               <button
                 onClick={handleCancelSubscription}
-                className="flex-1 bg-loss-red py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-loss-red/90"
+                className="flex-1 bg-loss-red py-3 font-sans text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-loss-red/90"
               >
                 YES, CANCEL
               </button>
@@ -292,9 +292,9 @@ export function ManageBotModal({
                 </h3>
               </div>
 
-              <div className="mb-4 grid grid-cols-3 gap-3">
+              <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="border border-border bg-white px-3 py-2.5">
-                  <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     Available
                   </p>
                   <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-profit-green">
@@ -302,7 +302,7 @@ export function ManageBotModal({
                   </p>
                 </div>
                 <div className="border border-border bg-white px-3 py-2.5">
-                  <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     Locked
                   </p>
                   <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
@@ -310,7 +310,7 @@ export function ManageBotModal({
                   </p>
                 </div>
                 <div className="border border-border bg-white px-3 py-2.5">
-                  <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     Cooldown
                   </p>
                   <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-muted-foreground">
@@ -319,7 +319,7 @@ export function ManageBotModal({
                 </div>
               </div>
 
-              <label className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <label className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 TOTAL CAPITAL (USD)
               </label>
               <div className="mt-1 flex gap-2">
@@ -340,7 +340,7 @@ export function ManageBotModal({
                   onClick={handleSaveCapital}
                   disabled={!capitalChanged}
                   className={cn(
-                    "shrink-0 px-5 py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest transition-colors",
+                    "shrink-0 px-5 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-colors",
                     capitalChanged
                       ? "bg-poly-yellow text-poly-black hover:bg-poly-black hover:text-poly-yellow"
                       : "bg-muted text-muted-foreground cursor-not-allowed"

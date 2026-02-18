@@ -98,7 +98,7 @@ export function TraderCard({
           >
             {formatUSD(trader.stats.pnl)}
           </p>
-          <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             PnL
           </p>
         </div>
@@ -106,7 +106,7 @@ export function TraderCard({
           <p className="font-body text-sm font-semibold tabular-nums text-foreground">
             {trader.stats.win_rate}%
           </p>
-          <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             WIN RATE
           </p>
         </div>
@@ -114,7 +114,7 @@ export function TraderCard({
           <p className="font-body text-sm font-semibold tabular-nums text-foreground">
             {trader.stats.total_trades}
           </p>
-          <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             TRADES
           </p>
         </div>
@@ -122,7 +122,7 @@ export function TraderCard({
           <p className="font-body text-sm font-semibold tabular-nums text-foreground">
             {trader.stats.roi.toFixed(1)}x
           </p>
-          <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             ROI
           </p>
         </div>

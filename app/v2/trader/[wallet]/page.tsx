@@ -713,7 +713,7 @@ export default function TraderProfilePage({
                 {truncateAddress(wallet)}
               </button>
               {rankBadge && (
-                <span className="flex items-center gap-1 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-yellow">
+                <span className="flex items-center gap-1 font-sans text-xs font-bold uppercase tracking-widest text-poly-yellow">
                   <span className="inline-block h-1.5 w-1.5 bg-poly-yellow" />
                   {rankBadge}
                 </span>
@@ -781,15 +781,15 @@ export default function TraderProfilePage({
                   Trading History
                 </h2>
                 <div className="flex items-center gap-2">
-                  <button className="flex items-center gap-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black">
+                  <button className="flex items-center gap-1.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black">
                     <Filter className="h-3.5 w-3.5" />
                     Filter_By_Type
                   </button>
                   <div className="flex items-center border border-border">
-                    <button className="p-1.5 text-poly-black">
+                    <button className="p-2.5 text-poly-black">
                       <LayoutList className="h-4 w-4" />
                     </button>
-                    <button className="p-1.5 text-muted-foreground">
+                    <button className="p-2.5 text-muted-foreground">
                       <LayoutGrid className="h-4 w-4" />
                     </button>
                   </div>
@@ -847,9 +847,9 @@ export default function TraderProfilePage({
               <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
                 Core Alpha Metrics
               </h3>
-              <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 sm:gap-6 md:grid-cols-4">
                 <div>
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     Total_P&L
                   </p>
                   <p className={cn("mt-1 font-sans text-2xl font-bold tabular-nums md:text-3xl", traderPnl >= 0 ? "text-profit-green" : "text-loss-red")}>
@@ -857,7 +857,7 @@ export default function TraderProfilePage({
                   </p>
                 </div>
                 <div>
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     ROI(All_Time)
                   </p>
                   <p className={cn("mt-1 font-sans text-2xl font-bold tabular-nums md:text-3xl", traderRoi >= 0 ? "text-profit-green" : "text-loss-red")}>
@@ -865,7 +865,7 @@ export default function TraderProfilePage({
                   </p>
                 </div>
                 <div>
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     Cum_Volume
                   </p>
                   <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
@@ -873,7 +873,7 @@ export default function TraderProfilePage({
                   </p>
                 </div>
                 <div>
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     Win_Rate
                   </p>
                   <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
@@ -884,7 +884,7 @@ export default function TraderProfilePage({
             </div>
 
             {/* Two‑column layout: P&L left, Copied Performance right */}
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
               {/* ── Realized P&L Section (2/3 width) ── */}
               <div className="border border-border bg-poly-paper p-6 lg:col-span-2">
                 {/* Header */}
@@ -908,7 +908,7 @@ export default function TraderProfilePage({
                         key={view}
                         onClick={() => setPnlView(view)}
                         className={cn(
-                          "px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                          "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                           pnlView === view
                             ? "bg-poly-black text-poly-cream"
                             : "border border-poly-black text-poly-black hover:bg-poly-black/5"
@@ -927,7 +927,7 @@ export default function TraderProfilePage({
                       key={opt.key}
                       onClick={() => setPnlWindow(opt.key)}
                       className={cn(
-                        "px-2.5 py-1 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                        "px-3 py-2 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                         pnlWindow === opt.key
                           ? "bg-poly-black text-poly-cream"
                           : "text-muted-foreground hover:text-poly-black"
@@ -941,68 +941,68 @@ export default function TraderProfilePage({
                 {/* Stats grid */}
                 <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   <div className="border border-border p-3">
-                    <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       Total_PnL
                     </p>
                     <p className={cn("mt-1 font-sans text-xl font-bold tabular-nums", windowSummary.totalPnl >= 0 ? "text-profit-green" : "text-loss-red")}>
                       {formatSignedCurrency(windowSummary.totalPnl)}
                     </p>
-                    <p className="font-body text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <p className="font-body text-[11px] uppercase tracking-widest text-muted-foreground">
                       Last {PNL_WINDOW_OPTIONS.find((o) => o.key === pnlWindow)?.label || "30 Days"}
                     </p>
                   </div>
                   <div className="border border-border p-3">
-                    <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       ROI
                     </p>
                     <p className={cn("mt-1 font-sans text-xl font-bold tabular-nums", windowSummary.roi >= 0 ? "text-profit-green" : "text-loss-red")}>
                       {windowSummary.roi !== 0 ? `${windowSummary.roi > 0 ? '+' : ''}${windowSummary.roi.toFixed(1)}%` : "—"}
                     </p>
-                    <p className="font-body text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <p className="font-body text-[11px] uppercase tracking-widest text-muted-foreground">
                       Return on Volume
                     </p>
                   </div>
                   <div className="border border-border p-3">
-                    <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       P&L_Rank
                     </p>
                     <p className="mt-1 font-sans text-xl font-bold tabular-nums text-poly-black">
                       {windowSummary.rank ? `#${windowSummary.rank}` : "—"}
                     </p>
-                    <p className="font-body text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <p className="font-body text-[11px] uppercase tracking-widest text-muted-foreground">
                       Global Leaderboard
                     </p>
                   </div>
                   <div className="border border-border p-3">
-                    <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       Win_Rate
                     </p>
                     <p className="mt-1 font-sans text-xl font-bold tabular-nums text-poly-black">
                       {traderWinRate > 0 ? `${traderWinRate.toFixed(1)}%` : "—"}
                     </p>
-                    <p className="font-body text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <p className="font-body text-[11px] uppercase tracking-widest text-muted-foreground">
                       Closed Positions
                     </p>
                   </div>
                   <div className="border border-border p-3">
-                    <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       Days_Up
                     </p>
                     <p className="mt-1 font-sans text-xl font-bold tabular-nums text-profit-green">
                       {windowSummary.daysUp}
                     </p>
-                    <p className="font-body text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <p className="font-body text-[11px] uppercase tracking-widest text-muted-foreground">
                       Profitable
                     </p>
                   </div>
                   <div className="border border-border p-3">
-                    <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       Days_Down
                     </p>
                     <p className="mt-1 font-sans text-xl font-bold tabular-nums text-loss-red">
                       {windowSummary.daysDown}
                     </p>
-                    <p className="font-body text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <p className="font-body text-[11px] uppercase tracking-widest text-muted-foreground">
                       Losses
                     </p>
                   </div>
@@ -1060,11 +1060,11 @@ export default function TraderProfilePage({
                 {/* My Copy Stats Card */}
                 <div className="bg-poly-black p-6 text-poly-cream">
                   <div className="mb-4 flex items-center gap-2">
-                    <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-yellow">
+                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-poly-yellow">
                       ⚡ Your Copied Performance
                     </span>
                   </div>
-                  <p className="mb-4 font-body text-[10px] uppercase tracking-widest text-poly-cream/60">
+                  <p className="mb-4 font-body text-xs uppercase tracking-widest text-poly-cream/60">
                     Real-time execution snapshot
                   </p>
 
@@ -1076,7 +1076,7 @@ export default function TraderProfilePage({
                     <div className="space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <p className="font-body text-[9px] uppercase tracking-widest text-poly-cream/50">
+                          <p className="font-body text-[11px] uppercase tracking-widest text-poly-cream/50">
                             Open Positions
                           </p>
                           <p className="font-sans text-2xl font-bold tabular-nums text-poly-cream">
@@ -1084,7 +1084,7 @@ export default function TraderProfilePage({
                           </p>
                         </div>
                         <div>
-                          <p className="font-body text-[9px] uppercase tracking-widest text-poly-cream/50">
+                          <p className="font-body text-[11px] uppercase tracking-widest text-poly-cream/50">
                             Total_P&L
                           </p>
                           <p className={cn("font-sans text-2xl font-bold tabular-nums", myStats.totalPnl >= 0 ? "text-profit-green" : "text-loss-red")}>
@@ -1094,7 +1094,7 @@ export default function TraderProfilePage({
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <p className="font-body text-[9px] uppercase tracking-widest text-poly-cream/50">
+                          <p className="font-body text-[11px] uppercase tracking-widest text-poly-cream/50">
                             Realized
                           </p>
                           <p className={cn("font-sans text-lg font-bold tabular-nums", myStats.realizedPnl >= 0 ? "text-profit-green" : "text-loss-red")}>
@@ -1102,7 +1102,7 @@ export default function TraderProfilePage({
                           </p>
                         </div>
                         <div>
-                          <p className="font-body text-[9px] uppercase tracking-widest text-poly-cream/50">
+                          <p className="font-body text-[11px] uppercase tracking-widest text-poly-cream/50">
                             Unrealized
                           </p>
                           <p className={cn("font-sans text-lg font-bold tabular-nums", myStats.unrealizedPnl >= 0 ? "text-profit-green" : "text-loss-red")}>
@@ -1116,7 +1116,7 @@ export default function TraderProfilePage({
                             <p className="font-sans text-lg font-bold tabular-nums text-poly-cream">
                               {myStats.totalTrades}
                             </p>
-                            <p className="font-body text-[9px] uppercase tracking-widest text-poly-cream/50">
+                            <p className="font-body text-[11px] uppercase tracking-widest text-poly-cream/50">
                               Trades
                             </p>
                           </div>
@@ -1124,7 +1124,7 @@ export default function TraderProfilePage({
                             <p className="font-sans text-lg font-bold tabular-nums text-profit-green">
                               {myStats.winningTrades}
                             </p>
-                            <p className="font-body text-[9px] uppercase tracking-widest text-poly-cream/50">
+                            <p className="font-body text-[11px] uppercase tracking-widest text-poly-cream/50">
                               Win
                             </p>
                           </div>
@@ -1132,7 +1132,7 @@ export default function TraderProfilePage({
                             <p className="font-sans text-lg font-bold tabular-nums text-loss-red">
                               {myStats.losingTrades}
                             </p>
-                            <p className="font-body text-[9px] uppercase tracking-widest text-poly-cream/50">
+                            <p className="font-body text-[11px] uppercase tracking-widest text-poly-cream/50">
                               Losses
                             </p>
                           </div>
@@ -1163,7 +1163,7 @@ export default function TraderProfilePage({
                             <p className="font-sans text-sm font-bold text-poly-black line-clamp-1">
                               {t.market || t.title || t.question || "Unknown"}
                             </p>
-                            <p className="font-body text-[10px] text-muted-foreground">
+                            <p className="font-body text-xs text-muted-foreground">
                               {formatRelativeTime(t.timestamp || t.created_at)}
                             </p>
                           </div>
@@ -1181,7 +1181,7 @@ export default function TraderProfilePage({
 
 
             {/* ── Active Categories + Size Distribution ── */}
-            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               {/* Active Categories */}
               <div className="border border-border bg-poly-paper p-6">
                 <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
@@ -1198,7 +1198,7 @@ export default function TraderProfilePage({
                       {categoryDistribution.map((cat) => (
                         <div key={cat.category} className="flex items-center gap-3">
                           <div className="h-3 w-3 shrink-0" style={{ backgroundColor: cat.color }} />
-                          <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black">
+                          <span className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black">
                             {cat.category}
                           </span>
                           <span className="font-body text-xs tabular-nums text-muted-foreground">
@@ -1224,7 +1224,7 @@ export default function TraderProfilePage({
                   <div className="space-y-3">
                     {sizeDistribution.map((bucket) => (
                       <div key={bucket.label} className="flex items-center gap-3">
-                        <span className="w-16 shrink-0 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black">
+                        <span className="w-16 shrink-0 font-sans text-xs font-bold uppercase tracking-widest text-poly-black">
                           {bucket.label}
                         </span>
                         <div className="relative h-5 flex-1 bg-border/30">

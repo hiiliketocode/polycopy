@@ -103,16 +103,16 @@ export function TopNav() {
               <button
                 type="button"
                 onClick={() => setUpgradeModalOpen(true)}
-                className="group flex items-center gap-1.5 bg-poly-yellow px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
+                className="group flex items-center gap-1.5 bg-poly-yellow px-3 py-2 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
               >
                 <Zap className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
                 UPGRADE
               </button>
             )}
             {isLoggedIn && isPremium === true && (
-              <div className="flex items-center gap-1.5 border border-poly-yellow/40 bg-poly-yellow/10 px-3 py-1.5">
+              <div className="flex items-center gap-1.5 border border-poly-yellow/40 bg-poly-yellow/10 px-3 py-2">
                 <Zap className="h-3.5 w-3.5 text-poly-yellow" />
-                <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-yellow">
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-poly-yellow">
                   PRO
                 </span>
               </div>
@@ -120,14 +120,14 @@ export function TopNav() {
 
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+              className="flex h-11 w-11 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
               aria-label="Notifications"
             >
               <Bell className="h-5 w-5" />
             </button>
             <Link
               href="/v2/settings"
-              className="flex h-8 w-8 items-center justify-center bg-poly-yellow font-sans text-xs font-black text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
+              className="flex h-11 w-11 items-center justify-center bg-poly-yellow font-sans text-xs font-black text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
               aria-label="Settings"
             >
               P

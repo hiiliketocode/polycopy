@@ -292,11 +292,11 @@ export default function BotsPage() {
       {/* ── Hero Section ── */}
       <div className="border-b border-border bg-card">
         <div className="mx-auto max-w-6xl px-4 py-10">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="mb-2 flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-poly-yellow" />
-                <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   POLYCOPY_V2_CORE
                 </span>
               </div>
@@ -311,16 +311,16 @@ export default function BotsPage() {
                 ecosystem in seconds.
               </p>
             </div>
-            <div className="ml-4 shrink-0 flex flex-col items-end gap-2">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-end">
               <div className="flex items-center gap-2 border border-border px-4 py-2.5">
                 <span className="h-2 w-2 rounded-full bg-profit-green" />
-                <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-foreground">
+                <span className="font-sans text-xs font-bold uppercase tracking-widest text-foreground">
                   {onlineCount} STRATEGIES ONLINE
                 </span>
               </div>
               <button
                 onClick={() => router.push("/v2/copied-bots")}
-                className="flex items-center gap-2 border border-border bg-poly-yellow px-4 py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
+                className="flex items-center gap-2 border border-border bg-poly-yellow px-4 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
               >
                 <Settings className="h-3.5 w-3.5" />
                 VIEW COPIED BOTS{subscribedBotIds.size > 0 ? ` (${subscribedBotIds.size})` : ""}
@@ -338,7 +338,7 @@ export default function BotsPage() {
               key={f.id}
               onClick={() => setActiveFilter(f.id)}
               className={cn(
-                "shrink-0 px-4 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                "shrink-0 px-4 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                 activeFilter === f.id
                   ? "bg-poly-yellow text-poly-black"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -385,7 +385,7 @@ export default function BotsPage() {
               <div className="mt-8 text-center">
                 <button
                   onClick={() => setShowAll(true)}
-                  className="border border-border px-8 py-3 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:border-poly-black hover:text-poly-black"
+                  className="border border-border px-8 py-3 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:border-poly-black hover:text-poly-black"
                 >
                   SHOW ALL {filteredBots.length} STRATEGIES
                 </button>

@@ -204,7 +204,7 @@ export function CopyBotModal({
             {/* Section 1: Capital Allocation */}
             <div className="border-b border-border px-6 py-5">
               <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center bg-poly-black font-sans text-[10px] font-bold text-poly-cream">
+                <span className="flex h-5 w-5 items-center justify-center bg-poly-black font-sans text-xs font-bold text-poly-cream">
                   1
                 </span>
                 <h3 className="font-sans text-sm font-bold uppercase tracking-wide text-poly-black">
@@ -213,7 +213,7 @@ export function CopyBotModal({
               </div>
 
               <div className="mb-2">
-                <label className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                <label className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   AMOUNT (USD)
                 </label>
                 <div className="relative mt-1">
@@ -261,13 +261,13 @@ export function CopyBotModal({
                 className="flex w-full items-center justify-between"
               >
                 <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 items-center justify-center bg-poly-black font-sans text-[10px] font-bold text-poly-cream">
+                  <span className="flex h-5 w-5 items-center justify-center bg-poly-black font-sans text-xs font-bold text-poly-cream">
                     2
                   </span>
                   <h3 className="font-sans text-sm font-bold uppercase tracking-wide text-poly-black">
                     Risk Settings
                   </h3>
-                  <span className="font-body text-[10px] text-muted-foreground">
+                  <span className="font-body text-xs text-muted-foreground">
                     (OPTIONAL)
                   </span>
                 </div>
@@ -281,7 +281,7 @@ export function CopyBotModal({
               {showRiskSettings && (
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
-                    <label className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <label className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                       MAX PER TRADE
                     </label>
                     <div className="relative mt-1">
@@ -298,7 +298,7 @@ export function CopyBotModal({
                     </div>
                   </div>
                   <div>
-                    <label className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <label className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                       DAILY BUDGET
                     </label>
                     <div className="relative mt-1">
@@ -316,7 +316,7 @@ export function CopyBotModal({
                     </div>
                   </div>
                   <div>
-                    <label className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <label className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                       SLIPPAGE
                     </label>
                     <div className="relative mt-1">
@@ -341,7 +341,7 @@ export function CopyBotModal({
             {/* Section 3: Disclosures */}
             <div className="px-6 py-5">
               <div className="mb-3 flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center bg-poly-black font-sans text-[10px] font-bold text-poly-cream">
+                <span className="flex h-5 w-5 items-center justify-center bg-poly-black font-sans text-xs font-bold text-poly-cream">
                   3
                 </span>
                 <h3 className="font-sans text-sm font-bold uppercase tracking-wide text-poly-black">

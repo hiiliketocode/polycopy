@@ -386,7 +386,7 @@ export function BotShareCardModal({ open, onOpenChange, bot }: BotShareCardModal
 
             {/* Theme */}
             <div>
-              <p className="mb-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="mb-1.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 Theme
               </p>
               <div className="grid grid-cols-4 gap-2">
@@ -423,7 +423,7 @@ export function BotShareCardModal({ open, onOpenChange, bot }: BotShareCardModal
                 <button
                   onClick={handleCopy}
                   disabled={!currentBlob || isGenerating}
-                  className="flex items-center justify-center gap-1.5 border border-poly-black py-2 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black/5 disabled:opacity-40"
+                  className="flex items-center justify-center gap-1.5 border border-poly-black py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black/5 disabled:opacity-40"
                 >
                   {copied ? (
                     <>
@@ -438,7 +438,7 @@ export function BotShareCardModal({ open, onOpenChange, bot }: BotShareCardModal
                 <button
                   onClick={handleSave}
                   disabled={!currentBlob || isGenerating}
-                  className="flex items-center justify-center gap-1.5 border border-poly-black py-2 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black/5 disabled:opacity-40"
+                  className="flex items-center justify-center gap-1.5 border border-poly-black py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black/5 disabled:opacity-40"
                 >
                   <Download className="h-3.5 w-3.5" /> Save
                 </button>

@@ -810,7 +810,7 @@ export function TradeCard({
   const StatusIcon = statusIconMap[statusBadgeVariant]
 
   const badgeBaseClass =
-    "h-7 px-2.5 font-sans text-[10px] font-bold uppercase tracking-wide border"
+    "h-7 px-2.5 font-sans text-xs font-bold uppercase tracking-wide border"
   const espnLink = espnUrl?.trim() ? espnUrl : undefined
   const showTraderPositionBadge = Boolean(traderPositionBadge?.trades?.length)
   const showUserPositionBadge = Boolean(userPositionBadge?.trades?.length)
@@ -1404,7 +1404,7 @@ export function TradeCard({
                   type="button"
                   onClick={() => setPositionDrawerTab(option.key)}
                   className={cn(
-                    "rounded-none px-2.5 py-1 font-sans text-[10px] font-bold uppercase tracking-wide transition",
+                    "rounded-none px-2.5 py-2 font-sans text-xs font-bold uppercase tracking-wide transition",
                     positionDrawerTab === option.key
                       ? "bg-poly-black text-white"
                       : "text-muted-foreground hover:text-foreground"
@@ -1415,7 +1415,7 @@ export function TradeCard({
               ))}
             </div>
           ) : (
-            <span className="bg-poly-black px-3 py-1 font-sans text-[10px] font-bold uppercase tracking-wide text-white">
+            <span className="bg-poly-black px-3 py-1 font-sans text-xs font-bold uppercase tracking-wide text-white">
               {tabOptions[0]?.label}
             </span>
           )}
@@ -1488,7 +1488,7 @@ export function TradeCard({
                     <span className={cn("font-sans font-bold uppercase tracking-wide", sideClass)}>{sideLabel}</span>
                     <Badge
                       variant="secondary"
-                      className={`font-sans font-bold text-[10px] uppercase tracking-wide ${outcomeBadgeClass}`}
+                      className={`font-sans font-bold text-xs uppercase tracking-wide ${outcomeBadgeClass}`}
                     >
                       {formatOutcomeLabel(trade.outcome)}
                     </Badge>
@@ -1506,7 +1506,7 @@ export function TradeCard({
           })}
         </div>
         <div className="mt-2 flex items-end justify-between gap-3 border-t border-border pt-2">
-          <div className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <div className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             Total{hasSellTrades ? " (Buys - Sells)" : ""}
             <div className="font-body text-sm font-semibold tabular-nums text-foreground">{totalAmountLabel}</div>
             <div className="font-body text-[11px] font-medium tabular-nums text-muted-foreground normal-case tracking-normal">
@@ -3106,12 +3106,12 @@ export function TradeCard({
           <div className="flex items-center gap-1.5 shrink-0">
             {/* Flags — Hedging / Sold / Positions */}
             {traderHedgingInfo.isHedging && (
-              <span className="h-6 px-2 inline-flex items-center font-sans text-[9px] font-bold uppercase tracking-wide bg-poly-yellow/20 text-poly-black border border-poly-yellow whitespace-nowrap">
+              <span className="h-6 px-2 inline-flex items-center font-sans text-[11px] font-bold uppercase tracking-wide bg-poly-yellow/20 text-poly-black border border-poly-yellow whitespace-nowrap">
                 Hedging
               </span>
             )}
             {isSellTrade && (
-              <span className="h-6 px-2 inline-flex items-center font-sans text-[9px] font-bold uppercase tracking-wide bg-loss-red/10 text-loss-red border border-loss-red/40 whitespace-nowrap">
+              <span className="h-6 px-2 inline-flex items-center font-sans text-[11px] font-bold uppercase tracking-wide bg-loss-red/10 text-loss-red border border-loss-red/40 whitespace-nowrap">
                 Sold
               </span>
             )}
@@ -3235,7 +3235,7 @@ export function TradeCard({
                           <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
                           <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                         </span>
-                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-sans text-[8px] font-bold uppercase tracking-widest opacity-70">
+                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-sans text-xs font-bold uppercase tracking-widest opacity-70">
                           {combinedScoreLabel}
                         </span>
                       </a>
@@ -3246,7 +3246,7 @@ export function TradeCard({
                         <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
                         <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                       </span>
-                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-sans text-[8px] font-bold uppercase tracking-widest opacity-70">
+                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-sans text-xs font-bold uppercase tracking-widest opacity-70">
                         {combinedScoreLabel}
                       </span>
                     </Badge>
@@ -3295,7 +3295,7 @@ export function TradeCard({
                 type="button"
                 onClick={() => handleInsightsDrawerToggle("positions")}
                 className={cn(
-                  "px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
+                  "px-3 py-2 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
                   isInsightsDrawerOpen && insightsDrawerTab === "positions"
                     ? "text-foreground bg-card border-border -mb-px"
                     : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
@@ -3308,7 +3308,7 @@ export function TradeCard({
               type="button"
               onClick={() => handleInsightsDrawerToggle("indicators")}
               className={cn(
-                "px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
+                "px-3 py-2 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
                 isInsightsDrawerOpen && insightsDrawerTab === "indicators"
                   ? "text-foreground bg-card border-border -mb-px"
                   : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
@@ -3323,7 +3323,7 @@ export function TradeCard({
               type="button"
               onClick={() => handleInsightsDrawerToggle("insights")}
               className={cn(
-                "px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
+                "px-3 py-2 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
                 isInsightsDrawerOpen && insightsDrawerTab === "insights"
                   ? "text-foreground bg-card border-border -mb-px"
                   : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
@@ -3341,7 +3341,7 @@ export function TradeCard({
                   }
                 }}
                 className={cn(
-                  "px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0 flex items-center gap-1.5",
+                  "px-3 py-2 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0 flex items-center gap-1.5",
                   isInsightsDrawerOpen && insightsDrawerTab === "gemini"
                     ? "text-foreground bg-card border-border -mb-px"
                     : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
@@ -3432,14 +3432,14 @@ export function TradeCard({
 
                     <div className="rounded-none border border-border bg-accent p-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary" className="font-sans text-[10px] font-bold uppercase tracking-wide">
+                        <Badge variant="secondary" className="font-sans text-xs font-bold uppercase tracking-wide">
                           Verdict: {(assessmentResult?.recommendation ?? "pending").replace(/_/g, " ")}
                         </Badge>
-                        <Badge variant="secondary" className="font-sans text-[10px] font-bold uppercase tracking-wide">
+                        <Badge variant="secondary" className="font-sans text-xs font-bold uppercase tracking-wide">
                           Size: {assessmentResult?.betSize ?? "—"}
                         </Badge>
                         {assessmentResult?.timingCallout && (
-                          <span className="bg-card px-3 py-1 font-sans text-[10px] font-bold text-foreground border border-border">
+                          <span className="bg-card px-3 py-1 font-sans text-xs font-bold text-foreground border border-border">
                             {assessmentResult.timingCallout}
                           </span>
                         )}
@@ -3461,7 +3461,7 @@ export function TradeCard({
                         ) : null}
                         {assessmentResult?.liveInsights?.length ? (
                           <div>
-                            <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Live Notes</p>
+                            <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Live Notes</p>
                             <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
                               {assessmentResult.liveInsights.slice(0, 3).map((item, idx) => (
                                 <li key={idx}>{item}</li>
@@ -3471,7 +3471,7 @@ export function TradeCard({
                         ) : null}
                         {assessmentResult?.riskNotes?.length ? (
                           <div>
-                            <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Risk</p>
+                            <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Risk</p>
                             <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
                               {assessmentResult.riskNotes.slice(0, 3).map((item, idx) => (
                                 <li key={idx}>{item}</li>
@@ -3488,7 +3488,7 @@ export function TradeCard({
                     </div>
 
                     <div className="rounded-none border border-border bg-card p-3">
-                      <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Conversation</p>
+                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Conversation</p>
                       <div className="max-h-64 overflow-y-auto space-y-3">
                         {assessmentMessages.length === 0 ? (
                           <p className="text-sm text-muted-foreground">No messages yet. Gemini will drop a verdict when you ask.</p>
@@ -3510,7 +3510,7 @@ export function TradeCard({
                                 >
                                   <p
                                     className={cn(
-                                      "font-sans text-[9px] font-bold uppercase tracking-widest mb-1",
+                                      "font-sans text-[11px] font-bold uppercase tracking-widest mb-1",
                                       isAssistant ? "text-muted-foreground" : "text-white/80"
                                     )}
                                   >
@@ -3565,7 +3565,7 @@ export function TradeCard({
 
         <div className="grid grid-cols-2 md:grid-cols-6 gap-px bg-border mb-0">
             <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Outcome</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Outcome</p>
               <div className="flex flex-wrap items-center justify-center max-w-full">
                 <Badge
                   variant="secondary"
@@ -3576,19 +3576,19 @@ export function TradeCard({
               </div>
             </div>
             <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Invested</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Invested</p>
               <p className="font-body text-sm md:text-base font-semibold tabular-nums text-foreground">{formatCurrency(total)}</p>
             </div>
             <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Contracts</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Contracts</p>
               <p className="font-body text-sm md:text-base font-semibold tabular-nums text-foreground">{formatContracts(size)}</p>
             </div>
             <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Entry</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Entry</p>
               <p className="font-body text-sm md:text-base font-semibold tabular-nums text-foreground">{formatPrice(price)}</p>
             </div>
             <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Current</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-1">Current</p>
               <p className="font-body text-sm md:text-base font-semibold tabular-nums">
                 <span
                   className={cn(
@@ -3605,7 +3605,7 @@ export function TradeCard({
               </p>
             </div>
             <div className="bg-card py-2.5 text-center">
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground mb-1">ROI</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-1">ROI</p>
               <p className={`font-body text-sm md:text-base font-semibold tabular-nums ${
                 priceDirection === 'neutral' || !hasCurrentPrice ? 'text-muted-foreground' :
                 priceDirection === 'up' ? 'text-profit-green' :
@@ -3623,7 +3623,7 @@ export function TradeCard({
               <button
                 type="button"
                 onClick={closeManualDrawer}
-                className="p-1 rounded-none text-muted-foreground hover:text-muted-foreground hover:bg-accent"
+                className="flex h-11 w-11 items-center justify-center rounded-none text-muted-foreground hover:text-muted-foreground hover:bg-accent"
                 aria-label="Close manual copy drawer"
               >
                 <X className="w-4 h-4" />
@@ -3632,7 +3632,7 @@ export function TradeCard({
 
             <div className="bg-card border border-border rounded-none p-2.5">
               <div className="flex items-center justify-between">
-                <span className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">Current Price</span>
+                <span className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Current Price</span>
                 <div className="text-right">
                   <p className="font-body text-base font-semibold tabular-nums text-foreground">${manualDisplayPrice.toFixed(4)}</p>
                   <p className={`font-body text-xs font-medium tabular-nums ${manualPriceChangeColor}`}>{manualPriceChangeLabel}</p>
@@ -3641,7 +3641,7 @@ export function TradeCard({
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="manual-copy-price" className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">
+              <label htmlFor="manual-copy-price" className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground">
                 Price
               </label>
               <div className="relative">
@@ -3660,7 +3660,7 @@ export function TradeCard({
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="manual-copy-amount" className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">
+              <label htmlFor="manual-copy-amount" className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground">
                 Amount (USD)
               </label>
               <div className="relative">
@@ -3777,7 +3777,7 @@ export function TradeCard({
                       variant="outline"
                       size="sm"
                       className={cn(
-                        "h-9 rounded-none px-4 font-sans text-[10px] font-bold uppercase tracking-wide",
+                        "h-9 rounded-none px-4 font-sans text-xs font-bold uppercase tracking-wide",
                         canSellAction
                           ? "border-loss-red/30 text-loss-red hover:bg-loss-red/10 hover:text-loss-red"
                           : "border-border text-muted-foreground"
@@ -3820,7 +3820,7 @@ export function TradeCard({
                             "Market Resolved"
                           ) : (
                             <>
-                              <span className="inline-flex items-center justify-center w-5 h-5 bg-poly-black text-poly-yellow font-sans text-[10px] font-bold mr-2">
+                              <span className="inline-flex items-center justify-center w-5 h-5 bg-poly-black text-poly-yellow font-sans text-xs font-bold mr-2">
                                 1
                               </span>
                               Copy trade
@@ -3843,7 +3843,7 @@ export function TradeCard({
                             "Market Resolved"
                           ) : (
                             <>
-                              <span className="inline-flex items-center justify-center w-5 h-5 bg-poly-black text-white font-sans text-[10px] font-bold mr-2">
+                              <span className="inline-flex items-center justify-center w-5 h-5 bg-poly-black text-white font-sans text-xs font-bold mr-2">
                                 2
                               </span>
                               Mark as copied
@@ -3858,7 +3858,7 @@ export function TradeCard({
                           <TooltipTrigger asChild>
                             <button
                               type="button"
-                              className="flex items-center gap-1.5 font-sans text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                              className="flex items-center gap-1.5 font-sans text-xs text-muted-foreground hover:text-foreground transition-colors"
                             >
                               <Info className="w-3.5 h-3.5" />
                               <span className="font-medium uppercase tracking-wide">How to trade</span>
@@ -3890,7 +3890,7 @@ export function TradeCard({
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="font-sans text-[10px] font-bold uppercase tracking-wide text-foreground border-border hover:bg-accent"
+                      className="font-sans text-xs font-bold uppercase tracking-wide text-foreground border-border hover:bg-accent"
                       onClick={() => onOpenConnectWallet?.()}
                     >
                       Link my wallet for quick trades
@@ -3937,7 +3937,7 @@ export function TradeCard({
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">Status</p>
+                    <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Status</p>
                     <p className="flex items-center gap-2 font-sans text-lg font-bold text-foreground">
                       {!isFinalStatus && <Loader2 className="h-4 w-4 animate-spin text-poly-yellow" />}
                       {statusLabel}
@@ -3967,7 +3967,7 @@ export function TradeCard({
                               <TooltipTrigger asChild>
                                 <button
                                   type="button"
-                                  className="inline-flex h-4 w-4 items-center justify-center rounded-none border border-border bg-card text-[10px] font-semibold text-muted-foreground"
+                                  className="inline-flex h-4 w-4 items-center justify-center rounded-none border border-border bg-card text-xs font-semibold text-muted-foreground"
                                   aria-label="Why orders fail to match"
                                 >
                                   ?
@@ -3996,7 +3996,7 @@ export function TradeCard({
                         type="button"
                         onClick={handleCancelOrder}
                         disabled={isCancelingOrder}
-                        className={`inline-flex items-center justify-center rounded-none border px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-wide transition ${
+                        className={`inline-flex items-center justify-center rounded-none border px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-wide transition ${
                           isCancelingOrder
                             ? 'border-border bg-accent text-muted-foreground cursor-not-allowed'
                             : 'border-loss-red/30 bg-card text-loss-red hover:bg-loss-red/10'
@@ -4042,7 +4042,7 @@ export function TradeCard({
                 <div className="space-y-2">
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                     <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
-                      <label className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">
+                      <label className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground">
                         {filledAmountValue !== null ? "Filled USD" : "Estimated max USD"}
                       </label>
                     <div className="flex h-14 items-center rounded-none border border-border bg-card px-4 font-body text-base font-semibold tabular-nums text-foreground">
@@ -4050,7 +4050,7 @@ export function TradeCard({
                     </div>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
-                      <span className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground text-center sm:text-left">
+                      <span className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground text-center sm:text-left">
                         Filled / submitted
                       </span>
                       <div className="flex h-14 items-center justify-center rounded-none border border-border bg-card font-body text-base font-semibold tabular-nums text-foreground text-center">
@@ -4058,7 +4058,7 @@ export function TradeCard({
                       </div>
                     </div>
                     <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
-                      <span className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground text-center sm:text-left">
+                      <span className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground text-center sm:text-left">
                         Average fill price
                       </span>
                       <div className="flex h-14 items-center justify-center rounded-none border border-border bg-card font-body text-base font-semibold tabular-nums text-foreground text-center">
@@ -4074,7 +4074,7 @@ export function TradeCard({
                   <button
                     type="button"
                     onClick={() => setShowTradeDetails((current) => !current)}
-                    className="inline-flex items-center gap-1 rounded-none border border-border bg-card px-2.5 py-1 font-sans text-[9px] font-bold uppercase tracking-wide text-muted-foreground hover:bg-accent"
+                    className="inline-flex items-center gap-1 rounded-none border border-border bg-card px-2.5 py-1 font-sans text-[11px] font-bold uppercase tracking-wide text-muted-foreground hover:bg-accent"
                   >
                     Trade Details
                     {showTradeDetails ? (
@@ -4086,7 +4086,7 @@ export function TradeCard({
                 </div>
                 {showTradeDetails && (
                   <div className="mt-3 rounded-none border border-border bg-accent p-3">
-                    <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Polymarket Response</p>
+                    <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Polymarket Response</p>
                   {tradeDetailsJson ? (
                     <pre className="mt-2 max-h-56 overflow-auto rounded-none border border-border bg-card p-3 text-[11px] leading-relaxed text-muted-foreground">
                       {tradeDetailsJson}
@@ -4129,7 +4129,7 @@ export function TradeCard({
                     <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                       <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
                         <div className="flex items-center justify-between gap-2">
-                  <label htmlFor="amount" className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">
+                  <label htmlFor="amount" className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground">
                     {amountMode === "usd" ? `USD (min $${minUsdLabel})` : "Contracts"}
                   </label>
                         </div>
@@ -4363,7 +4363,7 @@ export function TradeCard({
                     <button
                       type="button"
                       onClick={() => setShowAdvanced((prev) => !prev)}
-                      className="inline-flex items-center gap-1 font-sans text-[10px] font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+                      className="inline-flex items-center gap-1 font-sans text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground"
                     >
                     Advanced
                       <ChevronDown className={`h-4 w-4 transition-transform ${showAdvanced ? "rotate-180" : ""}`} />
@@ -4374,7 +4374,7 @@ export function TradeCard({
                       <div className="space-y-1.5">
                         <TooltipProvider>
                           <div className="flex items-center gap-1.5">
-                            <Label className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">Slippage Tolerance</Label>
+                            <Label className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground">Slippage Tolerance</Label>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button type="button" className="text-muted-foreground hover:text-muted-foreground">
@@ -4402,8 +4402,8 @@ export function TradeCard({
                               }}
                               className={
                                 slippagePreset === value
-                                  ? "bg-poly-black text-white hover:bg-poly-black/90 font-sans font-bold h-8 text-[10px] uppercase tracking-wide"
-                                  : "border-border text-foreground hover:bg-accent font-sans font-medium h-8 text-[10px]"
+                                  ? "bg-poly-black text-white hover:bg-poly-black/90 font-sans font-bold h-8 text-xs uppercase tracking-wide"
+                                  : "border-border text-foreground hover:bg-accent font-sans font-medium h-8 text-xs"
                               }
                             >
                               {value}%
@@ -4426,7 +4426,7 @@ export function TradeCard({
                       <div className="space-y-1.5">
                         <TooltipProvider>
                           <div className="flex items-center gap-1.5">
-                            <Label className="font-sans text-[9px] font-medium uppercase tracking-widest text-foreground">Order Behavior</Label>
+                            <Label className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground">Order Behavior</Label>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button type="button" className="text-muted-foreground hover:text-muted-foreground">
@@ -4503,7 +4503,7 @@ export function TradeCard({
 
       {!hideActions && (
         <Dialog open={showWalletPrompt} onOpenChange={setShowWalletPrompt}>
-          <DialogContent className="sm:max-w-[420px]">
+          <DialogContent className="max-w-[min(420px,calc(100vw-2rem))]">
             <DialogHeader>
               <DialogTitle>Connect your wallet to trade</DialogTitle>
             </DialogHeader>

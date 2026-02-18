@@ -217,7 +217,7 @@ export default function V2SettingsPage() {
       <main className="mx-auto max-w-6xl px-4 py-8 md:py-12">
         {/* Page header */}
         <div className="mb-10">
-          <p className="mb-1 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-yellow">ACCOUNT_SETTINGS</p>
+          <p className="mb-1 font-sans text-xs font-bold uppercase tracking-widest text-poly-yellow">ACCOUNT_SETTINGS</p>
           <h1 className="font-sans text-3xl font-black uppercase tracking-tight text-poly-black md:text-4xl">SETTINGS</h1>
           <p className="mt-2 font-body text-sm text-muted-foreground">
             Manage notifications, trading defaults, and membership in one place.
@@ -241,7 +241,7 @@ export default function V2SettingsPage() {
                   onClick={handleToggleNotifications}
                   disabled={loadingNotificationPrefs}
                   className={cn(
-                    "px-4 py-2 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                    "px-4 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                     notificationsEnabled
                       ? "bg-poly-black text-white hover:bg-poly-black/80"
                       : "border border-border text-muted-foreground hover:text-foreground",
@@ -284,7 +284,7 @@ export default function V2SettingsPage() {
                           key={v}
                           onClick={() => handleUpdateSlippage("buy", v)}
                           className={cn(
-                            "px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                            "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                             defaultBuySlippage === v
                               ? "bg-poly-black text-white"
                               : "border border-border text-muted-foreground hover:text-foreground",
@@ -308,7 +308,7 @@ export default function V2SettingsPage() {
                           key={v}
                           onClick={() => handleUpdateSlippage("sell", v)}
                           className={cn(
-                            "px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                            "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                             defaultSellSlippage === v
                               ? "bg-poly-black text-white"
                               : "border border-border text-muted-foreground hover:text-foreground",
@@ -331,7 +331,7 @@ export default function V2SettingsPage() {
                   </p>
                   <button
                     onClick={() => setShowUpgradeModal(true)}
-                    className="inline-flex items-center gap-2 bg-poly-yellow px-5 py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
+                    className="inline-flex items-center gap-2 bg-poly-yellow px-5 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
                   >
                     UPGRADE TO PREMIUM <ArrowRight className="h-3 w-3" />
                   </button>
@@ -368,7 +368,7 @@ export default function V2SettingsPage() {
                   </p>
                   <button
                     onClick={() => setShowUpgradeModal(true)}
-                    className="inline-flex items-center gap-2 bg-poly-yellow px-5 py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
+                    className="inline-flex items-center gap-2 bg-poly-yellow px-5 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
                   >
                     UPGRADE TO PREMIUM <ArrowRight className="h-3 w-3" />
                   </button>
@@ -387,14 +387,14 @@ export default function V2SettingsPage() {
                   {walletAddress ? (
                     <button
                       onClick={() => setShowDisconnectModal(true)}
-                      className="px-4 py-2 border border-loss-red/30 font-sans text-[10px] font-bold uppercase tracking-widest text-loss-red transition-all hover:bg-loss-red hover:text-white"
+                      className="px-4 py-2.5 border border-loss-red/30 font-sans text-xs font-bold uppercase tracking-widest text-loss-red transition-all hover:bg-loss-red hover:text-white"
                     >
                       REMOVE
                     </button>
                   ) : (
                     <Link
                       href="/portfolio/connect-wallet?source=v2"
-                      className="inline-flex items-center gap-1 bg-poly-black px-4 py-2 font-sans text-[10px] font-bold uppercase tracking-widest text-white transition-all hover:bg-poly-yellow hover:text-poly-black"
+                      className="inline-flex items-center gap-1 bg-poly-black px-4 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-poly-yellow hover:text-poly-black"
                     >
                       CONNECT <Wallet className="h-3 w-3" />
                     </Link>
@@ -410,7 +410,7 @@ export default function V2SettingsPage() {
                   </p>
                   <button
                     onClick={() => setShowCancelModal(true)}
-                    className="px-4 py-2 border border-loss-red/30 font-sans text-[10px] font-bold uppercase tracking-widest text-loss-red transition-all hover:bg-loss-red hover:text-white"
+                    className="px-4 py-2.5 border border-loss-red/30 font-sans text-xs font-bold uppercase tracking-widest text-loss-red transition-all hover:bg-loss-red hover:text-white"
                   >
                     CANCEL SUBSCRIPTION
                   </button>
@@ -428,19 +428,19 @@ export default function V2SettingsPage() {
                   {(user?.email || "U")[0].toUpperCase()}
                 </div>
                 <div className="min-w-0">
-                  <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">SIGNED IN AS</p>
+                  <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">SIGNED IN AS</p>
                   <p className="truncate font-sans text-sm font-bold text-poly-black">{user?.email || "User"}</p>
                 </div>
               </div>
               <div className="mb-4 flex flex-col gap-2.5 border-t border-border pt-4">
                 <div className="flex items-center justify-between">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">MEMBERSHIP</span>
+                  <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">MEMBERSHIP</span>
                   <span className={hasPremiumAccess ? "badge-premium" : "badge-free"}>
                     {hasPremiumAccess ? "PREMIUM" : "FREE"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">WALLET</span>
+                  <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">WALLET</span>
                   <span className="font-sans text-[11px] font-bold uppercase tabular-nums text-poly-black">
                     {walletAddress ? truncateAddress(walletAddress) : "NOT CONNECTED"}
                   </span>
@@ -448,7 +448,7 @@ export default function V2SettingsPage() {
               </div>
               <button
                 onClick={handleSignOut}
-                className="flex w-full items-center justify-center gap-2 border border-loss-red/30 py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-loss-red transition-all hover:bg-loss-red hover:text-white"
+                className="flex w-full items-center justify-center gap-2 border border-loss-red/30 py-3 font-sans text-xs font-bold uppercase tracking-widest text-loss-red transition-all hover:bg-loss-red hover:text-white"
               >
                 <LogOut className="h-3 w-3" /> SIGN OUT
               </button>
@@ -469,7 +469,7 @@ export default function V2SettingsPage() {
                     <HelpCircle className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                     <div>
                       <p className="font-sans text-xs font-bold uppercase tracking-wide text-poly-black">FAQ</p>
-                      <p className="font-body text-[10px] text-muted-foreground">Common questions answered.</p>
+                      <p className="font-body text-xs text-muted-foreground">Common questions answered.</p>
                     </div>
                   </div>
                   <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -482,7 +482,7 @@ export default function V2SettingsPage() {
                     <BookOpen className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                     <div>
                       <p className="font-sans text-xs font-bold uppercase tracking-wide text-poly-black">SETUP GUIDE</p>
-                      <p className="font-body text-[10px] text-muted-foreground">Step-by-step trading setup.</p>
+                      <p className="font-body text-xs text-muted-foreground">Step-by-step trading setup.</p>
                     </div>
                   </div>
                   <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
@@ -520,7 +520,7 @@ export default function V2SettingsPage() {
 
       {/* Disconnect wallet confirmation */}
       <Dialog open={showDisconnectModal} onOpenChange={setShowDisconnectModal}>
-        <DialogContent className="max-w-[480px] gap-0 border-0 bg-poly-cream p-0 overflow-hidden">
+        <DialogContent className="max-w-[min(480px,calc(100vw-2rem))] gap-0 border-0 bg-poly-cream p-0 overflow-hidden">
           <DialogTitle className="sr-only">Remove wallet</DialogTitle>
           <div className="bg-loss-red px-8 py-6">
             <h2 className="font-sans text-xl font-black uppercase tracking-tight text-white">REMOVE WALLET?</h2>
@@ -543,14 +543,14 @@ export default function V2SettingsPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDisconnectModal(false)}
-                className="flex-1 border border-border py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-foreground transition-all hover:bg-accent"
+                className="flex-1 border border-border py-3 font-sans text-xs font-bold uppercase tracking-widest text-foreground transition-all hover:bg-accent"
               >
                 CANCEL
               </button>
               <button
                 onClick={handleWalletDisconnect}
                 disabled={disconnectingWallet}
-                className="flex-1 bg-loss-red py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-white transition-all hover:bg-loss-red/80 disabled:opacity-50"
+                className="flex-1 bg-loss-red py-3 font-sans text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-loss-red/80 disabled:opacity-50"
               >
                 {disconnectingWallet ? "REMOVING..." : "REMOVE WALLET"}
               </button>
@@ -561,7 +561,7 @@ export default function V2SettingsPage() {
 
       {/* Disconnect success */}
       <Dialog open={showDisconnectSuccess} onOpenChange={setShowDisconnectSuccess}>
-        <DialogContent className="max-w-[480px] gap-0 border-0 bg-poly-cream p-0 overflow-hidden">
+        <DialogContent className="max-w-[min(480px,calc(100vw-2rem))] gap-0 border-0 bg-poly-cream p-0 overflow-hidden">
           <DialogTitle className="sr-only">Wallet removed</DialogTitle>
           <div className="px-8 py-8 text-center">
             <h2 className="mb-2 font-sans text-xl font-black uppercase tracking-tight text-poly-black">WALLET REMOVED</h2>
@@ -571,13 +571,13 @@ export default function V2SettingsPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDisconnectSuccess(false)}
-                className="flex-1 border border-border py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-foreground transition-all hover:bg-accent"
+                className="flex-1 border border-border py-3 font-sans text-xs font-bold uppercase tracking-widest text-foreground transition-all hover:bg-accent"
               >
                 DONE
               </button>
               <Link
                 href="/portfolio/connect-wallet?source=v2"
-                className="flex flex-1 items-center justify-center bg-poly-black py-2.5 font-sans text-[10px] font-bold uppercase tracking-widest text-white transition-all hover:bg-poly-yellow hover:text-poly-black"
+                className="flex flex-1 items-center justify-center bg-poly-black py-3 font-sans text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-poly-yellow hover:text-poly-black"
               >
                 RECONNECT
               </Link>
@@ -589,7 +589,7 @@ export default function V2SettingsPage() {
       {/* Toast */}
       {showToast && (
         <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <div className="bg-poly-black px-5 py-3 font-sans text-[10px] font-bold uppercase tracking-widest text-white shadow-lg">
+          <div className="bg-poly-black px-5 py-3 font-sans text-xs font-bold uppercase tracking-widest text-white shadow-lg">
             {toastMessage}
           </div>
         </div>

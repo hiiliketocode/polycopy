@@ -56,11 +56,11 @@ export function CancelSubscriptionModal({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[600px] gap-0 border-0 bg-poly-cream p-0 overflow-hidden">
+      <DialogContent className="max-w-[min(600px,calc(100vw-2rem))] gap-0 border-0 bg-poly-cream p-0 overflow-hidden">
         {step === 1 ? (
           <>
             <DialogHeader className="bg-loss-red/10 px-8 pb-6 pt-8">
-              <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-loss-red/60">
+              <div className="font-sans text-xs font-bold uppercase tracking-widest text-loss-red/60">
                 ARE YOU SURE?
               </div>
               <DialogTitle className="font-sans text-2xl font-black uppercase tracking-tight text-loss-red flex items-center gap-2 mt-1">
@@ -128,14 +128,14 @@ export function CancelSubscriptionModal({
             <div className="flex gap-3 px-8 py-6">
               <button
                 onClick={handleDontCancel}
-                className="flex-1 bg-poly-yellow py-3 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow flex items-center justify-center gap-2"
+                className="flex-1 bg-poly-yellow py-3 font-sans text-xs font-bold uppercase tracking-[0.2em] text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow flex items-center justify-center gap-2"
               >
                 <Zap className="h-4 w-4" />
                 Keep Premium
               </button>
               <button
                 onClick={handleProceedToConfirm}
-                className="flex-1 border border-loss-red/30 py-3 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-loss-red transition-all hover:bg-loss-red/10"
+                className="flex-1 border border-loss-red/30 py-3 font-sans text-xs font-bold uppercase tracking-[0.2em] text-loss-red transition-all hover:bg-loss-red/10"
               >
                 Continue to Cancel
               </button>
@@ -144,7 +144,7 @@ export function CancelSubscriptionModal({
         ) : (
           <>
             <DialogHeader className="bg-loss-red/10 px-8 pb-6 pt-8">
-              <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-loss-red/60">
+              <div className="font-sans text-xs font-bold uppercase tracking-widest text-loss-red/60">
                 FINAL STEP
               </div>
               <DialogTitle className="font-sans text-2xl font-black uppercase tracking-tight text-loss-red mt-1">
@@ -169,7 +169,7 @@ export function CancelSubscriptionModal({
               </div>
 
               <div>
-                <label htmlFor="cancel-confirm" className="block font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50 mb-2">
+                <label htmlFor="cancel-confirm" className="block font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50 mb-2">
                   Type <span className="text-loss-red">CANCEL</span> to confirm:
                 </label>
                 <Input
@@ -188,14 +188,14 @@ export function CancelSubscriptionModal({
               <button
                 onClick={() => setStep(1)}
                 disabled={isCanceling}
-                className="flex-1 border border-border py-3 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-black transition-all hover:bg-poly-black/5 disabled:opacity-50"
+                className="flex-1 border border-border py-3 font-sans text-xs font-bold uppercase tracking-[0.2em] text-poly-black transition-all hover:bg-poly-black/5 disabled:opacity-50"
               >
                 Go Back
               </button>
               <button
                 onClick={handleFinalCancel}
                 disabled={confirmText !== 'CANCEL' || isCanceling}
-                className="flex-1 bg-loss-red py-3 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-white transition-all hover:bg-loss-red/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 bg-loss-red py-3 font-sans text-xs font-bold uppercase tracking-[0.2em] text-white transition-all hover:bg-loss-red/90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isCanceling ? 'Canceling...' : 'Confirm Cancellation'}
               </button>

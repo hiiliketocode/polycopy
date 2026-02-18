@@ -207,7 +207,7 @@ function PerformanceChart({
       </svg>
       <div className="mt-2 flex justify-between px-1">
         {labels.map((l, i) => (
-          <span key={i} className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+          <span key={i} className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             {l.date}
           </span>
         ))}
@@ -418,7 +418,7 @@ export default function BotDetailPage() {
               </button>
             </div>
           </div>
-          <div className="mt-1.5 flex items-center gap-3 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <div className="mt-1.5 flex items-center gap-3 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
             <span className="flex items-center gap-1">
               <Clock className="h-3 w-3" />
               RUNNING_{timeRunning(wallet.start_date)}
@@ -476,7 +476,7 @@ export default function BotDetailPage() {
                     <h2 className="font-sans text-lg font-bold uppercase tracking-wide text-foreground">
                       PERFORMANCE DELTA
                     </h2>
-                    <p className="mt-0.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <p className="mt-0.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       CUMULATIVE_P&L
                     </p>
                   </div>
@@ -511,7 +511,7 @@ export default function BotDetailPage() {
                     <TrendingUp className="h-4 w-4 text-poly-yellow" />
                     BEST TRADES (7D)
                   </h2>
-                  <p className="mt-0.5 font-sans text-[9px] font-bold uppercase tracking-widest text-white/50">
+                  <p className="mt-0.5 font-sans text-[11px] font-bold uppercase tracking-widest text-white/50">
                     TOP_PERFORMING_RESOLVED
                   </p>
                 </div>
@@ -527,12 +527,12 @@ export default function BotDetailPage() {
                       return (
                         <div key={i} className="border border-white/10 bg-white/5 p-3">
                           <div className="mb-2 flex items-center justify-between">
-                            <p className="font-sans text-[10px] font-bold uppercase leading-tight tracking-wide text-white line-clamp-2">
+                            <p className="font-sans text-xs font-bold uppercase leading-tight tracking-wide text-white line-clamp-2">
                               {trade.market_title || "Unknown Market"}
                             </p>
                             <span
                               className={cn(
-                                "ml-2 shrink-0 font-sans text-[10px] font-bold tabular-nums",
+                                "ml-2 shrink-0 font-sans text-xs font-bold tabular-nums",
                                 isWon ? "text-profit-green" : "text-loss-red"
                               )}
                             >
@@ -543,7 +543,7 @@ export default function BotDetailPage() {
                             <div className="flex items-center gap-2">
                               <span
                                 className={cn(
-                                  "px-1.5 py-0.5 font-sans text-[8px] font-bold uppercase text-white",
+                                  "px-1.5 py-0.5 font-sans text-xs font-bold uppercase text-white",
                                   (trade.token_label || "YES").toUpperCase() === "YES"
                                     ? "bg-profit-green"
                                     : "bg-loss-red"
@@ -557,7 +557,7 @@ export default function BotDetailPage() {
                             </div>
                             <span
                               className={cn(
-                                "font-sans text-[9px] font-bold uppercase",
+                                "font-sans text-[11px] font-bold uppercase",
                                 isWon ? "text-profit-green" : "text-loss-red"
                               )}
                             >
@@ -589,7 +589,7 @@ export default function BotDetailPage() {
                       return (
                         <div key={cat.category}>
                           <div className="mb-1 flex items-center justify-between">
-                            <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-foreground">
+                            <span className="font-sans text-xs font-bold uppercase tracking-widest text-foreground">
                               {cat.category}
                             </span>
                             <span className="font-body text-xs font-semibold tabular-nums text-foreground">
@@ -613,15 +613,15 @@ export default function BotDetailPage() {
                 </h2>
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center justify-between">
-                    <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       ALPHA GENERATION
                     </span>
-                    <span className="bg-profit-green/15 px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-widest text-profit-green">
+                    <span className="bg-profit-green/15 px-2 py-0.5 font-sans text-xs font-bold uppercase tracking-widest text-profit-green">
                       {benchmarks.alpha}
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-border pt-4">
-                    <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       DRAWDOWN MAX
                     </span>
                     <span className="font-body text-sm font-semibold tabular-nums text-foreground">
@@ -629,7 +629,7 @@ export default function BotDetailPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-border pt-4">
-                    <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       SHARPE RATIO
                     </span>
                     <span className="font-body text-sm font-semibold tabular-nums text-foreground">
@@ -642,18 +642,18 @@ export default function BotDetailPage() {
               {/* Right stats column */}
               <div className="flex flex-col gap-6">
                 <div className="border border-border bg-card p-5">
-                  <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     TOTAL_TRADES
                   </p>
                   <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-foreground">
                     {stats.total_trades.toLocaleString()}
                   </p>
-                  <p className="mt-0.5 font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="mt-0.5 font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     LIFETIME_EXECUTION
                   </p>
                 </div>
                 <div className="border border-border bg-card p-5">
-                  <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     TOTAL_P&L
                   </p>
                   <p className={cn(
@@ -662,18 +662,18 @@ export default function BotDetailPage() {
                   )}>
                     {formatPnl(stats.total_pnl)}
                   </p>
-                  <p className="mt-0.5 font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="mt-0.5 font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     REALIZED + UNREALIZED
                   </p>
                 </div>
                 <div className="border border-border bg-card p-5">
-                  <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     OPEN_POSITIONS
                   </p>
                   <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-info-blue">
                     {stats.open_positions}
                   </p>
-                  <p className="mt-0.5 font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="mt-0.5 font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     EXPOSURE: {formatCurrency(stats.open_exposure)}
                   </p>
                 </div>
@@ -690,7 +690,7 @@ export default function BotDetailPage() {
               </div>
               <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
                 <div>
-                  <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  <p className="mb-2 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                     DESCRIPTION
                   </p>
                   <p className="font-body text-sm leading-relaxed text-muted-foreground">
@@ -699,7 +699,7 @@ export default function BotDetailPage() {
                 </div>
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center justify-between">
-                    <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       RISK PROFILE
                     </span>
                     <span className={cn("font-sans text-xs font-bold uppercase tracking-widest", riskProfile.color)}>
@@ -707,7 +707,7 @@ export default function BotDetailPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-border pt-4">
-                    <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       TARGET CATEGORIES
                     </span>
                     <span className="font-sans text-xs font-bold uppercase tracking-wide text-foreground">
@@ -715,7 +715,7 @@ export default function BotDetailPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t border-border pt-4">
-                    <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       ALLOCATION METHOD
                     </span>
                     <span className="font-body text-sm font-semibold text-foreground">
@@ -724,7 +724,7 @@ export default function BotDetailPage() {
                   </div>
                   {wallet.model_threshold != null && wallet.model_threshold > 0 && (
                     <div className="flex items-center justify-between border-t border-border pt-4">
-                      <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <span className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         ML THRESHOLD
                       </span>
                       <span className="font-body text-sm font-semibold tabular-nums text-foreground">
@@ -746,7 +746,7 @@ export default function BotDetailPage() {
                 <h2 className="font-sans text-lg font-bold uppercase tracking-wide text-foreground">
                   TRADE HISTORY
                 </h2>
-                <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   {recentTrades.length} RESOLVED TRADES
                 </p>
               </div>
@@ -763,28 +763,28 @@ export default function BotDetailPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b bg-muted/50">
                     <tr>
-                      <th className="px-4 py-3 text-left font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-4 py-3 text-left font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         MARKET
                       </th>
-                      <th className="px-3 py-3 text-left font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-left font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         SIDE
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         ENTRY
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         SIZE
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         P&L
                       </th>
-                      <th className="px-3 py-3 text-center font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-center font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         OUTCOME
                       </th>
-                      <th className="px-3 py-3 text-left font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-left font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         TRADER
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         RESOLVED
                       </th>
                     </tr>
@@ -800,7 +800,7 @@ export default function BotDetailPage() {
                           <td className="px-3 py-3">
                             <span
                               className={cn(
-                                "px-1.5 py-0.5 font-sans text-[9px] font-bold uppercase text-white",
+                                "px-1.5 py-0.5 font-sans text-[11px] font-bold uppercase text-white",
                                 (trade.token_label || "YES").toUpperCase() === "YES"
                                   ? "bg-profit-green"
                                   : "bg-loss-red"
@@ -826,7 +826,7 @@ export default function BotDetailPage() {
                           <td className="px-3 py-3 text-center">
                             <span
                               className={cn(
-                                "px-2 py-0.5 font-sans text-[9px] font-bold uppercase",
+                                "px-2 py-0.5 font-sans text-[11px] font-bold uppercase",
                                 trade.outcome === "WON"
                                   ? "bg-profit-green/15 text-profit-green"
                                   : "bg-loss-red/15 text-loss-red"
@@ -859,7 +859,7 @@ export default function BotDetailPage() {
                 <h2 className="font-sans text-lg font-bold uppercase tracking-wide text-foreground">
                   OPEN POSITIONS
                 </h2>
-                <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   {openPositions.length} ACTIVE SIGNALS
                 </p>
               </div>
@@ -876,31 +876,31 @@ export default function BotDetailPage() {
                 <table className="w-full text-sm">
                   <thead className="border-b bg-muted/50">
                     <tr>
-                      <th className="px-4 py-3 text-left font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-4 py-3 text-left font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         MARKET
                       </th>
-                      <th className="px-3 py-3 text-left font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-left font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         SIDE
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         ENTRY
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         CURRENT
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         SIZE
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         UNREAL. P&L
                       </th>
-                      <th className="px-3 py-3 text-left font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-left font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         TRADER
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         RESOLVES
                       </th>
-                      <th className="px-3 py-3 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <th className="px-3 py-3 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                         ENTERED
                       </th>
                     </tr>
@@ -916,7 +916,7 @@ export default function BotDetailPage() {
                           <td className="px-3 py-3">
                             <span
                               className={cn(
-                                "px-1.5 py-0.5 font-sans text-[9px] font-bold uppercase text-white",
+                                "px-1.5 py-0.5 font-sans text-[11px] font-bold uppercase text-white",
                                 (pos.token_label || "YES").toUpperCase() === "YES"
                                   ? "bg-profit-green"
                                   : "bg-loss-red"

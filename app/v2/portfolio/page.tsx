@@ -1125,7 +1125,7 @@ export default function PortfolioPage() {
             <>
               {/* Total PnL */}
               <div className="border border-border bg-poly-paper p-4 text-center">
-                <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                <p className="mb-2 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Total_PnL
                 </p>
                 <p
@@ -1136,14 +1136,14 @@ export default function PortfolioPage() {
                 >
                   {formatSignedCurrency(userStats.totalPnl)}
                 </p>
-                <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                <p className="mt-2 font-body text-xs uppercase tracking-widest text-muted-foreground">
                   Net Performance
                 </p>
               </div>
 
               {/* ROI */}
               <div className="border border-border bg-poly-paper p-4 text-center">
-                <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                <p className="mb-2 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   ROI_Percent
                 </p>
                 <p
@@ -1154,14 +1154,14 @@ export default function PortfolioPage() {
                 >
                   {formatPercent(userStats.roi, true)}
                 </p>
-                <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                <p className="mt-2 font-body text-xs uppercase tracking-widest text-muted-foreground">
                   Total Return
                 </p>
               </div>
 
               {/* Volume */}
               <div className="border border-border bg-poly-paper p-4 text-center">
-                <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                <p className="mb-2 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Traded_Vol
                 </p>
                 <p className="font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
@@ -1169,20 +1169,20 @@ export default function PortfolioPage() {
                     ? `$${(userStats.totalVolume / 1000).toFixed(2)}K`
                     : `$${userStats.totalVolume.toFixed(2)}`}
                 </p>
-                <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                <p className="mt-2 font-body text-xs uppercase tracking-widest text-muted-foreground">
                   Total Exposure
                 </p>
               </div>
 
               {/* Win Rate */}
               <div className="border border-border bg-poly-paper p-4 text-center">
-                <p className="mb-2 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                <p className="mb-2 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                   Win_Rate
                 </p>
                 <p className="font-sans text-2xl font-bold tabular-nums text-poly-black md:text-3xl">
                   {userStats.winRate.toFixed(1)}%
                 </p>
-                <p className="mt-2 font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                <p className="mt-2 font-body text-xs uppercase tracking-widest text-muted-foreground">
                   Trade Success
                 </p>
               </div>
@@ -1236,7 +1236,7 @@ export default function PortfolioPage() {
                   key={filter}
                   onClick={() => setTradeFilter(filter)}
                   className={cn(
-                    "px-4 py-2 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                    "px-4 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                     tradeFilter === filter
                       ? "bg-poly-black text-poly-cream"
                       : "border border-border text-muted-foreground hover:text-poly-black hover:border-poly-black"
@@ -1346,14 +1346,14 @@ export default function PortfolioPage() {
                                 {/* Status badge */}
                                 <span
                                   className={cn(
-                                    "inline-flex items-center border px-1.5 py-0.5 font-sans text-[9px] font-bold uppercase tracking-wide",
+                                    "inline-flex items-center border px-1.5 py-0.5 font-sans text-[11px] font-bold uppercase tracking-wide",
                                     getTradeStatusClass(status)
                                   )}
                                 >
                                   {status}
                                 </span>
                                 {/* Outcome badge */}
-                                <span className="inline-flex items-center border border-border bg-accent px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wide text-foreground">
+                                <span className="inline-flex items-center border border-border bg-accent px-2 py-0.5 font-sans text-[11px] font-bold uppercase tracking-wide text-foreground">
                                   {trade.outcome}
                                 </span>
                                 {/* Trader name */}
@@ -1374,7 +1374,7 @@ export default function PortfolioPage() {
                                 )}
                                 {/* Bot badge */}
                                 {trade.lt_strategy_id && (
-                                  <span className="inline-flex items-center gap-1 bg-poly-black px-1.5 py-0.5 font-sans text-[9px] font-bold uppercase tracking-wide text-poly-yellow">
+                                  <span className="inline-flex items-center gap-1 bg-poly-black px-1.5 py-0.5 font-sans text-[11px] font-bold uppercase tracking-wide text-poly-yellow">
                                     <Bot className="h-2.5 w-2.5" />
                                     BOT
                                   </span>
@@ -1445,7 +1445,7 @@ export default function PortfolioPage() {
                             onClick={() => handleUnmarkAsSold(trade)}
                             disabled={isClosing}
                             className={cn(
-                              "inline-flex items-center gap-1.5 border border-border px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black hover:border-poly-black",
+                              "inline-flex items-center gap-1.5 border border-border px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black hover:border-poly-black",
                               isClosing && "opacity-50 cursor-not-allowed"
                             )}
                           >
@@ -1460,7 +1460,7 @@ export default function PortfolioPage() {
                         <button
                           type="button"
                           onClick={() => setExpandedTradeId(isExpanded ? null : trade.id)}
-                          className="ml-auto inline-flex items-center gap-1 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
+                          className="ml-auto inline-flex items-center gap-1 py-2 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
                         >
                           Details
                           {isExpanded ? (
@@ -1476,7 +1476,7 @@ export default function PortfolioPage() {
                         <div className="border-t border-border/50 bg-accent/30 px-4 py-3">
                           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                             <div>
-                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                 Entry Price
                               </p>
                               <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
@@ -1484,7 +1484,7 @@ export default function PortfolioPage() {
                               </p>
                             </div>
                             <div>
-                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                 Current Price
                               </p>
                               <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
@@ -1492,7 +1492,7 @@ export default function PortfolioPage() {
                               </p>
                             </div>
                             <div>
-                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                 Invested
                               </p>
                               <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
@@ -1500,7 +1500,7 @@ export default function PortfolioPage() {
                               </p>
                             </div>
                             <div>
-                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                 Shares
                               </p>
                               <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
@@ -1513,7 +1513,7 @@ export default function PortfolioPage() {
 
                           <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">
                             <div>
-                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                 Side
                               </p>
                               <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
@@ -1521,7 +1521,7 @@ export default function PortfolioPage() {
                               </p>
                             </div>
                             <div>
-                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                 Method
                               </p>
                               <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
@@ -1529,7 +1529,7 @@ export default function PortfolioPage() {
                               </p>
                             </div>
                             <div>
-                              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                 Copied At
                               </p>
                               <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
@@ -1538,7 +1538,7 @@ export default function PortfolioPage() {
                             </div>
                             {trade.user_closed_at && (
                               <div>
-                                <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                   Closed At
                                 </p>
                                 <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
@@ -1548,7 +1548,7 @@ export default function PortfolioPage() {
                             )}
                             {trade.user_exit_price != null && (
                               <div>
-                                <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                   Exit Price
                                 </p>
                                 <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
@@ -1558,7 +1558,7 @@ export default function PortfolioPage() {
                             )}
                             {trade.resolved_outcome && (
                               <div>
-                                <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                                <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                                   Resolution
                                 </p>
                                 <p className="mt-0.5 font-body text-sm font-semibold text-foreground">
@@ -1575,7 +1575,7 @@ export default function PortfolioPage() {
                                 href={`https://polymarket.com/market/${trade.market_slug}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
+                                className="inline-flex items-center gap-1.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
                               >
                                 View on Polymarket
                                 <ExternalLink className="h-3 w-3" />
@@ -1587,7 +1587,7 @@ export default function PortfolioPage() {
                                 onClick={() => handleMarkAsSold(trade)}
                                 disabled={isClosing}
                                 className={cn(
-                                  "inline-flex items-center gap-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black",
+                                  "inline-flex items-center gap-1.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black",
                                   isClosing && "opacity-50 cursor-not-allowed"
                                 )}
                               >
@@ -1638,7 +1638,7 @@ export default function PortfolioPage() {
                       key={opt.key}
                       onClick={() => setPnlWindow(opt.key)}
                       className={cn(
-                        "px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                        "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                         pnlWindow === opt.key
                           ? "bg-poly-black text-poly-cream"
                           : "text-muted-foreground hover:text-poly-black"
@@ -1663,7 +1663,7 @@ export default function PortfolioPage() {
                   >
                     {formatSignedCurrency(pnlSummary.allTime)}
                   </p>
-                  <p className="font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <p className="font-body text-xs uppercase tracking-widest text-muted-foreground">
                     All Time
                   </p>
                 </div>
@@ -1678,7 +1678,7 @@ export default function PortfolioPage() {
                   >
                     {formatSignedCurrency(pnlSummary.windowTotal)}
                   </p>
-                  <p className="font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <p className="font-body text-xs uppercase tracking-widest text-muted-foreground">
                     {pnlWindow} PnL
                   </p>
                 </div>
@@ -1686,7 +1686,7 @@ export default function PortfolioPage() {
                   <p className="font-sans text-xl font-bold tabular-nums text-poly-black">
                     {String(pnlSummary.openTrades).padStart(2, "0")}
                   </p>
-                  <p className="font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <p className="font-body text-xs uppercase tracking-widest text-muted-foreground">
                     Open Trades
                   </p>
                 </div>
@@ -1694,7 +1694,7 @@ export default function PortfolioPage() {
                   <p className="font-sans text-xl font-bold tabular-nums text-profit-green">
                     {String(pnlSummary.profitable).padStart(2, "0")}
                   </p>
-                  <p className="font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <p className="font-body text-xs uppercase tracking-widest text-muted-foreground">
                     Profitable
                   </p>
                 </div>
@@ -1702,7 +1702,7 @@ export default function PortfolioPage() {
                   <p className="font-sans text-xl font-bold tabular-nums text-loss-red">
                     {String(pnlSummary.losing).padStart(2, "0")}
                   </p>
-                  <p className="font-body text-[10px] uppercase tracking-widest text-muted-foreground">
+                  <p className="font-body text-xs uppercase tracking-widest text-muted-foreground">
                     Losing
                   </p>
                 </div>
@@ -1715,7 +1715,7 @@ export default function PortfolioPage() {
                     key={view}
                     onClick={() => setPnlView(view)}
                     className={cn(
-                      "px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                      "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                       pnlView === view
                         ? "bg-poly-black text-poly-cream"
                         : "border border-poly-black text-poly-black hover:bg-poly-black/5"
@@ -1907,7 +1907,7 @@ export default function PortfolioPage() {
                   {topTradersStats.length > 5 && (
                     <button
                       onClick={() => setShowAllTraders(!showAllTraders)}
-                      className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
+                      className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
                     >
                       {showAllTraders
                         ? "Show Top 5"
@@ -1925,19 +1925,19 @@ export default function PortfolioPage() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border">
-                          <th className="py-2 pr-2 text-left font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          <th className="py-2 pr-2 text-left font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             Trader
                           </th>
-                          <th className="px-2 py-2 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          <th className="px-2 py-2 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             Copied
                           </th>
-                          <th className="px-2 py-2 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          <th className="px-2 py-2 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             PnL
                           </th>
-                          <th className="px-2 py-2 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          <th className="px-2 py-2 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             ROI
                           </th>
-                          <th className="pl-2 py-2 text-right font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                          <th className="pl-2 py-2 text-right font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                             Win
                           </th>
                         </tr>
@@ -2017,7 +2017,7 @@ export default function PortfolioPage() {
                             className="h-3 w-3 shrink-0"
                             style={{ backgroundColor: cat.color }}
                           />
-                          <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black">
+                          <span className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black">
                             {cat.category}
                           </span>
                           <span className="font-body text-xs tabular-nums text-muted-foreground">
@@ -2061,7 +2061,7 @@ export default function PortfolioPage() {
                       <div className="flex shrink-0 items-center gap-3">
                         <span
                           className={cn(
-                            "inline-flex items-center border px-2 py-0.5 font-sans text-[10px] font-bold uppercase",
+                            "inline-flex items-center border px-2 py-0.5 font-sans text-[11px] font-bold uppercase",
                             trade.outcome?.toUpperCase() === "YES"
                               ? "border-profit-green/20 bg-profit-green/10 text-profit-green"
                               : "border-loss-red/20 bg-loss-red/10 text-loss-red"

@@ -85,7 +85,7 @@ export function BottomNav({ className }: BottomNavProps) {
                   className="h-5 w-5"
                   strokeWidth={isActive ? 2.5 : 2}
                 />
-                <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">
+                <span className="font-sans text-xs font-semibold uppercase tracking-wide">
                   {item.label}
                 </span>
               </Link>
@@ -100,7 +100,7 @@ export function BottomNav({ className }: BottomNavProps) {
               className="flex flex-col items-center gap-1 px-3 py-2 text-poly-yellow transition-colors duration-150"
             >
               <Zap className="h-5 w-5" strokeWidth={2.5} />
-              <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">
+              <span className="font-sans text-xs font-semibold uppercase tracking-wide">
                 UPGRADE
               </span>
             </button>
@@ -108,7 +108,7 @@ export function BottomNav({ className }: BottomNavProps) {
           {isLoggedIn && isPremium === true && (
             <div className="flex flex-col items-center gap-1 px-3 py-2 text-poly-yellow">
               <Zap className="h-5 w-5" strokeWidth={2.5} />
-              <span className="font-sans text-[10px] font-semibold uppercase tracking-wide">
+              <span className="font-sans text-xs font-semibold uppercase tracking-wide">
                 PRO
               </span>
             </div>

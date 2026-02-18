@@ -22,7 +22,7 @@ export function SubscriptionSuccessModal({
 }: SubscriptionSuccessModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[550px] gap-0 border-0 bg-poly-cream p-0 overflow-hidden" onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent className="max-w-[min(550px,calc(100vw-2rem))] gap-0 border-0 bg-poly-cream p-0 overflow-hidden" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader className="bg-poly-yellow px-8 pb-6 pt-8">
           {/* Progress Indicator */}
           <div className="flex items-center justify-center gap-2 mb-4">
@@ -30,14 +30,14 @@ export function SubscriptionSuccessModal({
               <div className="flex items-center justify-center w-8 h-8 bg-profit-green text-white text-sm font-sans font-bold">
                 <CheckCircle className="h-5 w-5" />
               </div>
-              <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/60">Payment Complete</span>
+              <span className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/60">Payment Complete</span>
             </div>
             <div className="w-12 h-0.5 bg-poly-black/20"></div>
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center w-8 h-8 bg-poly-black text-poly-yellow text-sm font-sans font-bold">
                 2
               </div>
-              <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black">Connect Wallet</span>
+              <span className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black">Connect Wallet</span>
             </div>
           </div>
 
@@ -79,7 +79,7 @@ export function SubscriptionSuccessModal({
         <div className="flex flex-col gap-3 px-8 py-6">
           <button
             onClick={onConnectWallet}
-            className="w-full bg-poly-black py-4 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black flex items-center justify-center gap-2"
+            className="w-full bg-poly-black py-4 font-sans text-xs font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black flex items-center justify-center gap-2"
           >
             <Wallet className="h-5 w-5" />
             Connect Wallet & Complete Setup

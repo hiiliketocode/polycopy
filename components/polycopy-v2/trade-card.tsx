@@ -398,10 +398,10 @@ function FlagsRow({
           <Star className="h-3 w-3" />
           {isSell ? "Exiting" : "Existing"} Positions
           {hasUserPos && (
-            <span className="rounded-sm bg-gray-200 px-1 py-px text-[8px]">You</span>
+            <span className="rounded-sm bg-gray-200 px-1 py-px text-[10px]">You</span>
           )}
           {hasTraderPos && (
-            <span className="rounded-sm bg-gray-200 px-1 py-px text-[8px]">Trader</span>
+            <span className="rounded-sm bg-gray-200 px-1 py-px text-[10px]">Trader</span>
           )}
         </span>
       )}
@@ -448,23 +448,23 @@ function InsightsDrawer({
               Trader Insights
             </span>
             {insights.niche && (
-              <span className="border border-gray-200 bg-gray-50 px-1.5 py-px font-sans text-[9px] font-semibold text-gray-500">
+              <span className="border border-gray-200 bg-gray-50 px-1.5 py-px font-sans text-[11px] font-semibold text-gray-500">
                 {insights.niche}
               </span>
             )}
           </div>
 
-          <div className="grid grid-cols-4 gap-px bg-border">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-border">
             {/* Trades */}
             <div className="bg-card py-2 text-center">
               <p className="font-body text-sm font-semibold tabular-nums text-foreground">
                 {insights.trades}
               </p>
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                 Trades
               </p>
               {insights.globalTrades != null && (
-                <p className="font-body text-[9px] text-muted-foreground">
+                <p className="font-body text-[11px] text-muted-foreground">
                   (All: {insights.globalTrades})
                 </p>
               )}
@@ -484,11 +484,11 @@ function InsightsDrawer({
               >
                 {insights.winRate != null ? `${insights.winRate.toFixed(0)}%` : "N/A"}
               </p>
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                 Win Rate
               </p>
               {insights.globalWinRate != null && (
-                <p className="font-body text-[9px] text-muted-foreground">
+                <p className="font-body text-[11px] text-muted-foreground">
                   (All: {insights.globalWinRate.toFixed(0)}%)
                 </p>
               )}
@@ -511,7 +511,7 @@ function InsightsDrawer({
                   <span className="text-[10px]"> ({formatPercent(insights.roiPct)})</span>
                 )}
               </p>
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                 Ave PnL
               </p>
             </div>
@@ -530,7 +530,7 @@ function InsightsDrawer({
               >
                 {formatMultiplier(insights.conviction)}
               </p>
-              <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                 Conviction
               </p>
             </div>
@@ -538,12 +538,12 @@ function InsightsDrawer({
 
           {/* Secondary insights row */}
           {(insights.momentum || insights.aiEdgePct != null || insights.timing) && (
-            <div className="mt-2 grid grid-cols-3 gap-1.5">
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-1.5">
               {insights.momentum != null && (
                 <div className="flex items-center gap-1 bg-card px-2 py-1.5">
                   <Activity className="h-3 w-3 text-muted-foreground" />
                   <div>
-                    <p className="font-sans text-[9px] text-muted-foreground">Momentum</p>
+                    <p className="font-sans text-[11px] text-muted-foreground">Momentum</p>
                     <p
                       className={cn(
                         "font-body text-[11px] font-semibold",
@@ -561,7 +561,7 @@ function InsightsDrawer({
                 <div className="flex items-center gap-1 bg-card px-2 py-1.5">
                   <Zap className="h-3 w-3 text-muted-foreground" />
                   <div>
-                    <p className="font-sans text-[9px] text-muted-foreground">AI Edge</p>
+                    <p className="font-sans text-[11px] text-muted-foreground">AI Edge</p>
                     <p
                       className={cn(
                         "font-body text-[11px] font-semibold",
@@ -582,7 +582,7 @@ function InsightsDrawer({
                 <div className="flex items-center gap-1 bg-card px-2 py-1.5">
                   <Clock className="h-3 w-3 text-muted-foreground" />
                   <div>
-                    <p className="font-sans text-[9px] text-muted-foreground">Timing</p>
+                    <p className="font-sans text-[11px] text-muted-foreground">Timing</p>
                     <p className="font-body text-[11px] font-semibold text-foreground truncate">
                       {insights.timing}
                     </p>
@@ -607,13 +607,13 @@ function InsightsDrawer({
           {/* Trader positions */}
           {hasTraderPos && trade.traderPositionBadge && (
             <div className="mb-2">
-              <p className="mb-1 font-sans text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">
+              <p className="mb-1 font-sans text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                 Trader
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-left font-body text-xs">
                   <thead>
-                    <tr className="border-b border-border/50 text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <tr className="border-b border-border/50 text-[11px] uppercase tracking-widest text-muted-foreground">
                       <th className="py-1 pr-2 font-medium">Side</th>
                       <th className="py-1 pr-2 font-medium">Outcome</th>
                       <th className="py-1 pr-2 font-medium text-right">Size</th>
@@ -644,13 +644,13 @@ function InsightsDrawer({
           {/* User positions */}
           {hasUserPos && trade.userPositionBadge && (
             <div>
-              <p className="mb-1 font-sans text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">
+              <p className="mb-1 font-sans text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                 Your Positions
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-left font-body text-xs">
                   <thead>
-                    <tr className="border-b border-border/50 text-[9px] uppercase tracking-widest text-muted-foreground">
+                    <tr className="border-b border-border/50 text-[11px] uppercase tracking-widest text-muted-foreground">
                       <th className="py-1 pr-2 font-medium">Side</th>
                       <th className="py-1 pr-2 font-medium">Outcome</th>
                       <th className="py-1 pr-2 font-medium text-right">Size</th>
@@ -784,13 +784,13 @@ export function TradeCard({
       </div>
 
       {/* ── Metrics Row: Token + Entry + Size + Conviction ── */}
-      <div className="mt-3 grid grid-cols-4 gap-px bg-border mx-4 sm:mx-5">
+      <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-px bg-border mx-4 sm:mx-5">
         {/* Token (YES/NO) */}
         <div className="bg-card py-2.5 text-center">
           <div className="flex items-center justify-center">
             <TokenBadge token={trade.market.token} />
           </div>
-          <p className="mt-0.5 font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="mt-0.5 font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             {isSell ? "SELLING" : "BUYING"}
           </p>
         </div>
@@ -800,7 +800,7 @@ export function TradeCard({
           <p className="font-body text-lg font-semibold tabular-nums text-foreground sm:text-xl">
             {formatPrice(trade.entry_price)}&cent;
           </p>
-          <p className="mt-0.5 font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="mt-0.5 font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             Entry
           </p>
         </div>
@@ -810,7 +810,7 @@ export function TradeCard({
           <p className="font-body text-lg font-semibold tabular-nums text-foreground sm:text-xl">
             {formatUSD(trade.size_usd)}
           </p>
-          <p className="mt-0.5 font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="mt-0.5 font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             Size
           </p>
         </div>
@@ -820,7 +820,7 @@ export function TradeCard({
           <p className="font-body text-lg font-semibold tabular-nums text-foreground sm:text-xl">
             {trade.conviction.toFixed(1)}x
           </p>
-          <p className="mt-0.5 font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+          <p className="mt-0.5 font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
             Conviction
           </p>
         </div>

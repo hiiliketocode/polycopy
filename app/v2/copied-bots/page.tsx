@@ -160,7 +160,7 @@ export default function CopiedBotsPage() {
         <div className="mx-auto max-w-4xl px-4 py-8">
           <button
             onClick={() => router.push("/v2/bots")}
-            className="mb-4 inline-flex items-center gap-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
+            className="mb-4 inline-flex items-center gap-1.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:text-poly-black"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             BACK TO BOTS
@@ -180,7 +180,7 @@ export default function CopiedBotsPage() {
           <div className="bg-card px-4 py-4">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-muted-foreground" />
-              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                 Active Bots
               </p>
             </div>
@@ -191,7 +191,7 @@ export default function CopiedBotsPage() {
           <div className="bg-card px-4 py-4">
             <div className="flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                 Capital Deployed
               </p>
             </div>
@@ -202,7 +202,7 @@ export default function CopiedBotsPage() {
           <div className="bg-card px-4 py-4">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
-              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                 Total P&L
               </p>
             </div>
@@ -218,7 +218,7 @@ export default function CopiedBotsPage() {
           <div className="bg-card px-4 py-4">
             <div className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-muted-foreground" />
-              <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                 Total Trades
               </p>
             </div>
@@ -237,7 +237,7 @@ export default function CopiedBotsPage() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "border-b-2 px-5 py-3 font-sans text-[10px] font-bold uppercase tracking-widest transition-colors",
+                "border-b-2 px-5 py-3 font-sans text-xs font-bold uppercase tracking-widest transition-colors",
                 activeTab === tab.id
                   ? "border-poly-yellow text-poly-black"
                   : "border-transparent text-muted-foreground hover:text-poly-black"
@@ -309,7 +309,7 @@ export default function CopiedBotsPage() {
                         </h3>
                         <span
                           className={cn(
-                            "inline-flex items-center gap-1 px-2 py-0.5 font-sans text-[9px] font-bold uppercase tracking-widest",
+                            "inline-flex items-center gap-1 px-2 py-0.5 font-sans text-[11px] font-bold uppercase tracking-widest",
                             !sub.is_active
                               ? "bg-muted text-muted-foreground"
                               : sub.is_paused
@@ -342,7 +342,7 @@ export default function CopiedBotsPage() {
                     <div className="flex items-center gap-2">
                       <Link
                         href={`/v2/bots/${sub.ft_wallet_id}`}
-                        className="border border-border px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:border-poly-black hover:text-poly-black"
+                        className="border border-border px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:border-poly-black hover:text-poly-black"
                       >
                         VIEW BOT
                       </Link>
@@ -352,7 +352,7 @@ export default function CopiedBotsPage() {
                             setManageTargetSub(sub)
                             setManageModalOpen(true)
                           }}
-                          className="flex items-center gap-1.5 bg-poly-yellow px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
+                          className="flex items-center gap-1.5 bg-poly-yellow px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
                         >
                           <Settings className="h-3 w-3" />
                           MANAGE
@@ -362,9 +362,9 @@ export default function CopiedBotsPage() {
                   </div>
 
                   {/* Stats Grid */}
-                  <div className="grid grid-cols-3 gap-px border-t border-border bg-border sm:grid-cols-6">
+                  <div className="grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-3 lg:grid-cols-6">
                     <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                         Total Capital
                       </p>
                       <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
@@ -372,7 +372,7 @@ export default function CopiedBotsPage() {
                       </p>
                     </div>
                     <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                         Available
                       </p>
                       <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-profit-green">
@@ -380,7 +380,7 @@ export default function CopiedBotsPage() {
                       </p>
                     </div>
                     <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                         Locked
                       </p>
                       <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
@@ -388,7 +388,7 @@ export default function CopiedBotsPage() {
                       </p>
                     </div>
                     <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                         P&L
                       </p>
                       <p
@@ -403,7 +403,7 @@ export default function CopiedBotsPage() {
                       </p>
                     </div>
                     <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                         Win Rate
                       </p>
                       <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
@@ -411,7 +411,7 @@ export default function CopiedBotsPage() {
                       </p>
                     </div>
                     <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                         Trades
                       </p>
                       <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">

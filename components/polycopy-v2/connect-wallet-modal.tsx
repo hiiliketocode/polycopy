@@ -315,7 +315,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[560px] p-0 gap-0 overflow-hidden border-0 bg-poly-cream">
+      <DialogContent className="max-w-[min(560px,calc(100vw-2rem))] p-0 gap-0 overflow-hidden border-0 bg-poly-cream">
         {/* Intro */}
         {step === "intro" && (
           <>
@@ -343,7 +343,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   />
                 </div>
               </div>
-              <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50 mt-4 text-center">
+              <div className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50 mt-4 text-center">
                 WALLET CONNECTION
               </div>
               <DialogTitle className="font-sans text-2xl font-black uppercase tracking-tight text-poly-black mt-1 text-center">
@@ -354,12 +354,12 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
             <div className="border-b border-border bg-white px-8 py-6">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="border border-border bg-poly-cream p-3">
-                  <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">Step 1</div>
+                  <div className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50">Step 1</div>
                   <div className="font-sans text-sm font-bold text-poly-black mt-1">Enter Polymarket address</div>
                   <p className="font-body text-xs text-poly-black/60 mt-1">We use it to link your profile.</p>
                 </div>
                 <div className="border border-border bg-poly-cream p-3">
-                  <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">Step 2</div>
+                  <div className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50">Step 2</div>
                   <div className="font-sans text-sm font-bold text-poly-black mt-1">Securely connect your key</div>
                   <p className="font-body text-xs text-poly-black/60 mt-1">Encrypted via Turnkey.</p>
                 </div>
@@ -370,7 +370,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <button
                 type="button"
                 onClick={() => setStep("link-account")}
-                className="w-full bg-poly-black py-4 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black"
+                className="w-full bg-poly-black py-4 font-sans text-xs font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black"
               >
                 Continue
               </button>
@@ -382,7 +382,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
         {step === "link-account" && (
           <>
             <DialogHeader className="bg-poly-yellow px-8 pb-6 pt-8">
-              <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">
+              <div className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50">
                 STEP 1 OF 2
               </div>
               <DialogTitle className="font-sans text-2xl font-black uppercase tracking-tight text-poly-black mt-1">
@@ -428,14 +428,14 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   </p>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <div className="border border-border bg-white p-4">
-                      <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">Account value</p>
+                      <p className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50">Account value</p>
                       <p className="text-lg font-sans font-bold text-poly-black mt-2">
                         {balanceLoading ? "Loading..." : balanceData?.usdcBalanceFormatted || "\u2014"}
                       </p>
                       {balanceError && <p className="text-xs font-body text-loss-red mt-1">{balanceError}</p>}
                     </div>
                     <div className="border border-border bg-white p-4">
-                      <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">Trade count</p>
+                      <p className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50">Trade count</p>
                       <p className="text-lg font-sans font-bold text-poly-black mt-2">
                         {tradeCountLoading ? "Loading..." : tradeCount ?? "\u2014"}
                       </p>
@@ -453,7 +453,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <button
                 type="submit"
                 disabled={isSubmitting || validateLoading || !walletAddress}
-                className="w-full bg-poly-black py-4 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-poly-black py-4 font-sans text-xs font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? "Checking..." : showAccountDetails ? "Continue" : "Check account"}
               </button>
@@ -466,7 +466,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                       e.preventDefault()
                       window.open("https://polymarket.com/", "_blank", "noopener,noreferrer")
                     }}
-                    className="border border-border bg-white px-3 py-1 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black hover:bg-poly-black/5 transition-all inline-flex items-center gap-2"
+                    className="border border-border bg-white px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black hover:bg-poly-black/5 transition-all inline-flex items-center gap-2"
                   >
                     Open Polymarket
                     <ExternalLink className="h-3 w-3" />
@@ -504,7 +504,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   <ArrowLeft className="h-4 w-4" />
                 </button>
               </div>
-              <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50">
+              <div className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50">
                 STEP 2 OF 2
               </div>
               <DialogTitle className="font-sans text-2xl font-black uppercase tracking-tight text-poly-black mt-1">
@@ -549,7 +549,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <button
                 type="submit"
                 disabled={isSubmitting || !privateKey}
-                className="w-full bg-poly-black py-4 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-poly-black py-4 font-sans text-xs font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? "Securing Connection..." : "Link"}
               </button>
@@ -558,11 +558,11 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 href="https://www.turnkey.com/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 border border-border bg-white px-3 py-1 font-sans text-[10px] uppercase tracking-widest text-poly-black/60 hover:bg-poly-black/5 transition-all"
+                className="inline-flex items-center gap-2 border border-border bg-white px-3 py-2.5 font-sans text-xs uppercase tracking-widest text-poly-black/60 hover:bg-poly-black/5 transition-all"
               >
                 <span>Secured by</span>
                 <span className="flex items-center gap-1.5 font-bold text-poly-black">
-                  <span className="inline-flex h-5 w-5 items-center justify-center bg-poly-black text-[10px] font-bold text-white">
+                  <span className="inline-flex h-5 w-5 items-center justify-center bg-poly-black text-xs font-bold text-white">
                     T
                   </span>
                   Turnkey
@@ -613,7 +613,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                   <button
                     type="button"
                     onClick={() => window.open("https://reveal.magic.link/polymarket", "_blank", "noopener,noreferrer")}
-                    className="border border-border bg-white px-3 py-1 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black hover:bg-poly-black/5 transition-all inline-flex items-center gap-2"
+                    className="border border-border bg-white px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black hover:bg-poly-black/5 transition-all inline-flex items-center gap-2"
                   >
                     Open Polymarket key export
                     <ExternalLink className="h-3.5 w-3.5" />
@@ -670,7 +670,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
                 <div className="flex h-14 w-14 items-center justify-center border border-profit-green/30 bg-profit-green/10">
                   <CheckCircle2 className="h-7 w-7 text-profit-green" />
                 </div>
-                <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black/50 mt-4">
+                <div className="font-sans text-xs font-bold uppercase tracking-widest text-poly-black/50 mt-4">
                   SETUP COMPLETE
                 </div>
                 <DialogTitle className="font-sans text-2xl font-black uppercase tracking-tight text-poly-black mt-1">
@@ -685,7 +685,7 @@ export function ConnectWalletModal({ open, onOpenChange, onConnect }: ConnectWal
               <button
                 type="button"
                 onClick={handleDone}
-                className="w-full bg-poly-black py-4 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black"
+                className="w-full bg-poly-black py-4 font-sans text-xs font-bold uppercase tracking-[0.2em] text-poly-yellow transition-all hover:bg-poly-yellow hover:text-poly-black"
               >
                 Start Trading
               </button>

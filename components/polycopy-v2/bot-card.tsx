@@ -134,7 +134,7 @@ export function BotCard({
           {/* Access badge */}
           <span
             className={cn(
-              "inline-flex items-center gap-1 px-2 py-0.5 font-sans text-[9px] font-bold uppercase tracking-widest",
+              "inline-flex items-center gap-1 px-2 py-0.5 font-sans text-[11px] font-bold uppercase tracking-widest",
               bot.is_premium
                 ? "bg-poly-black text-white"
                 : "bg-poly-yellow text-poly-black"
@@ -148,7 +148,7 @@ export function BotCard({
 
       {/* ── ROI + Chart ── */}
       <div className="px-5 pt-4">
-        <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
           ROI_30D
         </p>
         <p
@@ -166,9 +166,9 @@ export function BotCard({
       </div>
 
       {/* ── Stats Row ── */}
-      <div className="mx-5 grid grid-cols-4 border-t border-border py-3">
+      <div className="mx-5 grid grid-cols-2 border-t border-border py-3 sm:grid-cols-4">
         <div>
-          <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             WIN_RATE
           </p>
           <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
@@ -176,7 +176,7 @@ export function BotCard({
           </p>
         </div>
         <div>
-          <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             TRADES
           </p>
           <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
@@ -184,7 +184,7 @@ export function BotCard({
           </p>
         </div>
         <div>
-          <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             RISK
           </p>
           <p className={cn("mt-0.5 font-sans text-sm font-bold uppercase", risk.color)}>
@@ -192,7 +192,7 @@ export function BotCard({
           </p>
         </div>
         <div>
-          <p className="font-sans text-[9px] font-bold uppercase tracking-widest text-muted-foreground">
+          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             VOLUME
           </p>
           <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
@@ -205,7 +205,7 @@ export function BotCard({
       {isSubscribed && (
         <div className="mx-5 flex items-center gap-2 border-t border-border py-2">
           <span className="h-2 w-2 rounded-full bg-profit-green" />
-          <span className="font-sans text-[9px] font-bold uppercase tracking-widest text-profit-green">
+          <span className="font-sans text-[11px] font-bold uppercase tracking-widest text-profit-green">
             ACTIVE — COPYING
           </span>
         </div>
@@ -216,7 +216,7 @@ export function BotCard({
         <button
           type="button"
           onClick={onAnalysis}
-          className="flex items-center justify-center gap-2 border-r border-border py-3 font-sans text-[10px] font-bold uppercase tracking-widest text-foreground transition-colors hover:bg-accent"
+          className="flex items-center justify-center gap-2 border-r border-border py-3 font-sans text-xs font-bold uppercase tracking-widest text-foreground transition-colors hover:bg-accent"
         >
           ANALYSIS
         </button>
@@ -224,7 +224,7 @@ export function BotCard({
           <button
             type="button"
             disabled
-            className="flex items-center justify-center gap-2 py-3 font-sans text-[10px] font-bold uppercase tracking-widest bg-muted text-muted-foreground cursor-not-allowed"
+            className="flex items-center justify-center gap-2 py-3 font-sans text-xs font-bold uppercase tracking-widest bg-muted text-muted-foreground cursor-not-allowed"
           >
             <Zap className="h-3.5 w-3.5" /> PREMIUM ONLY
           </button>
@@ -233,7 +233,7 @@ export function BotCard({
             type="button"
             onClick={isSubscribed ? onManage : onCopyBot}
             className={cn(
-              "flex items-center justify-center gap-2 py-3 font-sans text-[10px] font-bold uppercase tracking-widest transition-colors",
+              "flex items-center justify-center gap-2 py-3 font-sans text-xs font-bold uppercase tracking-widest transition-colors",
               isSubscribed
                 ? "bg-accent text-foreground hover:bg-accent/80"
                 : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"

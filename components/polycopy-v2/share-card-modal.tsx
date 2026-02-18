@@ -259,7 +259,7 @@ export function ShareCardModal({
 
             {/* Period */}
             <div>
-              <p className="mb-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="mb-1.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 Period
               </p>
               <div className="flex gap-1">
@@ -269,7 +269,7 @@ export function ShareCardModal({
                     onClick={() => handlePeriodChange(p.value)}
                     disabled={isLoading}
                     className={cn(
-                      "flex-1 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest transition-all",
+                      "flex-1 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
                       selectedPeriod === p.value
                         ? "bg-poly-black text-poly-cream"
                         : "border border-border text-poly-black hover:bg-poly-black/5",
@@ -284,7 +284,7 @@ export function ShareCardModal({
 
             {/* Theme */}
             <div>
-              <p className="mb-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              <p className="mb-1.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
                 Theme
               </p>
               <div className="grid grid-cols-4 gap-2">
@@ -321,7 +321,7 @@ export function ShareCardModal({
                 <button
                   onClick={handleCopy}
                   disabled={!currentBlob || isLoading}
-                  className="flex items-center justify-center gap-1.5 border border-poly-black py-2 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black/5 disabled:opacity-40"
+                  className="flex items-center justify-center gap-1.5 border border-poly-black py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black/5 disabled:opacity-40"
                 >
                   {copied ? (
                     <>
@@ -336,7 +336,7 @@ export function ShareCardModal({
                 <button
                   onClick={handleSave}
                   disabled={!currentBlob || isLoading}
-                  className="flex items-center justify-center gap-1.5 border border-poly-black py-2 font-sans text-[10px] font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black/5 disabled:opacity-40"
+                  className="flex items-center justify-center gap-1.5 border border-poly-black py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black/5 disabled:opacity-40"
                 >
                   <Download className="h-3.5 w-3.5" /> Save
                 </button>

@@ -937,17 +937,17 @@ export default function FeedPage() {
   const formatTradeSize = (value: number) => `$${value.toLocaleString('en-US')}+`;
   const formatWallet = (wallet: string) =>
     wallet.length > 10 ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : wallet;
-  const filterTabBase = "rounded-none px-2.5 py-1 text-[11px] font-medium transition-all whitespace-nowrap";
+  const filterTabBase = "rounded-none px-2.5 py-2.5 text-[11px] font-medium transition-all whitespace-nowrap";
   const filterTabActive = "bg-poly-yellow text-poly-black shadow-sm";
   const filterTabInactive = "bg-card border border-border text-foreground hover:bg-accent";
-  const modeTabBase = "px-3 py-1.5 font-sans text-xs font-bold uppercase tracking-wide transition-all";
+  const modeTabBase = "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-wide transition-all";
   const modeTabActive = "bg-poly-yellow text-poly-black";
   const modeTabInactive = "text-muted-foreground hover:text-foreground";
   const togglePillBase =
-    "inline-flex items-center gap-2 rounded-none border px-3 py-1.5 text-xs font-semibold transition";
+    "inline-flex items-center gap-2 rounded-none border px-3 py-2.5 text-xs font-semibold transition";
   const togglePillActive = "border-emerald-200 bg-emerald-50 text-emerald-700";
   const togglePillInactive = "border-border bg-card text-muted-foreground hover:border-border";
-  const categoryPillBase = "rounded-none px-3 py-1.5 text-xs font-medium transition-all whitespace-nowrap";
+  const categoryPillBase = "rounded-none px-3 py-2.5 text-xs font-medium transition-all whitespace-nowrap";
   const categoryPillActive = "bg-gradient-to-r from-yellow-400 to-amber-500 text-foreground shadow-sm";
   const categoryPillInactive = "bg-accent text-foreground hover:bg-accent/80";
 
@@ -4341,14 +4341,14 @@ export default function FeedPage() {
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-orange-500"></span>
                 </span>
                 {!hasPremiumAccess && !tierLoading && (
-                  <span className="ml-1 inline-flex items-center gap-1 border border-[#FDB022]/30 bg-[#FDB022]/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-[#FDB022]">
+                  <span className="ml-1 inline-flex items-center gap-1 border border-[#FDB022]/30 bg-[#FDB022]/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-widest text-[#FDB022]">
                     <Crown className="h-2.5 w-2.5" /> Premium
                   </span>
                 )}
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button className="ml-1 inline-flex h-4 w-4 items-center justify-center border border-black/10 text-[9px] font-bold text-zinc-400 hover:text-poly-black transition-colors" aria-label="What is the fire feed?">?</button>
+                      <button className="ml-1 inline-flex h-4 w-4 items-center justify-center border border-black/10 text-[11px] font-bold text-zinc-400 hover:text-poly-black transition-colors" aria-label="What is the fire feed?">?</button>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[260px]">
                       <p className="text-xs">The Fire Feed surfaces the highest-signal trades from across Polymarket&#39;s tracked traders, scored by our algorithm based on conviction, timing, and trader performance.</p>
@@ -4373,10 +4373,10 @@ export default function FeedPage() {
                         }}
                       >
                         <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="truncate max-w-[140px] text-[10px] font-black uppercase tracking-widest text-poly-black group-hover:text-[#FDB022] transition-colors">
+                          <span className="truncate max-w-[140px] text-xs font-black uppercase tracking-widest text-poly-black group-hover:text-[#FDB022] transition-colors">
                             {trade.trader.displayName}
                           </span>
-                          <span className="shrink-0 text-[9px] font-bold text-zinc-300 uppercase">
+                          <span className="shrink-0 text-[11px] font-bold text-zinc-300 uppercase">
                             {getRelativeTime(trade.trade.timestamp)}
                           </span>
                         </div>
@@ -4385,12 +4385,12 @@ export default function FeedPage() {
                         </p>
                         <div className="flex items-center justify-between pt-3 border-t border-black/5">
                           <div className="flex flex-col">
-                            <span className="text-[9px] font-black text-zinc-300 uppercase tracking-widest">PNL</span>
+                            <span className="text-[11px] font-black text-zinc-300 uppercase tracking-widest">PNL</span>
                             <span className="text-sm font-black font-sans">${Math.abs(trade.trade.size * trade.trade.price).toFixed(0)}</span>
                           </div>
                           <div className="text-right">
                             <p className="text-[11px] font-black">${(trade.trade.price * 100).toFixed(0)}¢</p>
-                            <p className={cn("text-[9px] font-bold", isPositive ? "text-[#10B981]" : "text-[#EF4444]")}>
+                            <p className={cn("text-[11px] font-bold", isPositive ? "text-[#10B981]" : "text-[#EF4444]")}>
                               {isPositive ? '+' : ''}{pnl}
                             </p>
                           </div>
@@ -4415,10 +4415,10 @@ export default function FeedPage() {
                         className="w-[260px] min-w-[260px] max-w-[260px] shrink-0 border border-black/5 bg-white p-4 shadow-sm"
                       >
                         <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="truncate max-w-[140px] text-[10px] font-black uppercase tracking-widest text-poly-black">
+                          <span className="truncate max-w-[140px] text-xs font-black uppercase tracking-widest text-poly-black">
                             {card.name}
                           </span>
-                          <span className="shrink-0 text-[9px] font-bold text-zinc-300 uppercase">
+                          <span className="shrink-0 text-[11px] font-bold text-zinc-300 uppercase">
                             {card.time}
                           </span>
                         </div>
@@ -4427,12 +4427,12 @@ export default function FeedPage() {
                         </p>
                         <div className="flex items-center justify-between pt-3 border-t border-black/5">
                           <div className="flex flex-col">
-                            <span className="text-[9px] font-black text-zinc-300 uppercase tracking-widest">SIZE</span>
+                            <span className="text-[11px] font-black text-zinc-300 uppercase tracking-widest">SIZE</span>
                             <span className="text-sm font-black font-sans">{card.size}</span>
                           </div>
                           <div className="text-right">
                             <p className="text-[11px] font-black">{card.price}</p>
-                            <p className={cn("text-[9px] font-bold", card.positive ? "text-[#10B981]" : "text-[#EF4444]")}>
+                            <p className={cn("text-[11px] font-bold", card.positive ? "text-[#10B981]" : "text-[#EF4444]")}>
                               {card.pnl}
                             </p>
                           </div>
@@ -4456,7 +4456,7 @@ export default function FeedPage() {
                       </div>
                       <button
                         onClick={upgrade}
-                        className="mt-1 inline-flex items-center gap-2 bg-[#FDB022] px-5 py-2 font-sans text-[10px] font-black uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-[#FDB022]"
+                        className="mt-1 inline-flex items-center gap-2 bg-[#FDB022] px-5 py-2 font-sans text-xs font-black uppercase tracking-widest text-poly-black transition-all hover:bg-poly-black hover:text-[#FDB022]"
                       >
                         <Crown className="h-3 w-3" />
                         Upgrade to Premium
@@ -4503,7 +4503,7 @@ export default function FeedPage() {
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <span
-                                className="inline-flex h-4 w-4 items-center justify-center border border-loss-red/30 bg-loss-red/10 text-[10px] font-bold text-loss-red"
+                                className="inline-flex h-4 w-4 items-center justify-center border border-loss-red/30 bg-loss-red/10 text-xs font-bold text-loss-red"
                                 aria-label="Low cash balance"
                               >
                                 !
@@ -4534,14 +4534,14 @@ export default function FeedPage() {
             <div className="bg-white border border-black/5 p-6 space-y-6 shadow-sm">
               <div className="space-y-4">
                 <div className="space-y-1 border-b border-black/5 pb-4">
-                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Portfolio Balance</p>
+                  <p className="text-xs font-black text-zinc-400 uppercase tracking-widest">Portfolio Balance</p>
                   <p className="text-2xl font-black font-sans tracking-tighter text-poly-black">{loadingBalance ? '...' : portfolioValue !== null ? `$${portfolioValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Cash Balance</p>
+                  <p className="text-xs font-black text-zinc-400 uppercase tracking-widest">Cash Balance</p>
                   <p className="text-2xl font-black font-sans tracking-tighter text-green-600">{loadingBalance ? '...' : cashBalance !== null ? `$${cashBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$0.00'}</p>
                 </div>
-                <Link href="/v2/portfolio" className="block w-full py-4 bg-poly-black text-[#FDB022] font-black text-[10px] uppercase tracking-[0.3em] text-center hover:bg-[#FDB022] hover:text-poly-black transition-all shadow-lg">Go To Portfolio</Link>
+                <Link href="/v2/portfolio" className="block w-full py-4 bg-poly-black text-[#FDB022] font-black text-xs uppercase tracking-[0.3em] text-center hover:bg-[#FDB022] hover:text-poly-black transition-all shadow-lg">Go To Portfolio</Link>
               </div>
             </div>
             <div className="space-y-4">
@@ -4549,13 +4549,13 @@ export default function FeedPage() {
               <div className="bg-white border border-black/5 p-5 shadow-sm space-y-4">
                 {topBots.length > 0 ? topBots.map((bot) => (
                   <Link key={bot.id} href={`/v2/bots/${bot.id}`} className="flex items-center justify-between border-b border-black/5 last:border-0 pb-3 last:pb-0 group cursor-pointer">
-                    <div><p className="text-[10px] font-black text-poly-black uppercase tracking-tight group-hover:text-[#FDB022] transition-colors">{bot.name}</p><p className="text-[8px] font-bold text-zinc-400 uppercase">{bot.strategy}</p></div>
-                    <p className={cn("text-[10px] font-black", bot.roi >= 0 ? "text-green-600" : "text-red-500")}>{bot.roi >= 0 ? '+' : ''}{bot.roi.toFixed(1)}%</p>
+                    <div><p className="text-xs font-black text-poly-black uppercase tracking-tight group-hover:text-[#FDB022] transition-colors">{bot.name}</p><p className="text-xs font-bold text-zinc-400 uppercase">{bot.strategy}</p></div>
+                    <p className={cn("text-xs font-black", bot.roi >= 0 ? "text-green-600" : "text-red-500")}>{bot.roi >= 0 ? '+' : ''}{bot.roi.toFixed(1)}%</p>
                   </Link>
                 )) : [1,2,3].map((i) => (
                   <div key={i} className="flex items-center justify-between pb-3 animate-pulse"><div className="space-y-1"><div className="h-3 w-20 bg-gray-200" /><div className="h-2 w-14 bg-gray-100" /></div><div className="h-3 w-10 bg-gray-200" /></div>
                 ))}
-                <Link href="/v2/bots" className="block w-full py-3 bg-[#F9F8F1] border border-black/5 text-poly-black font-black text-[9px] uppercase tracking-widest text-center hover:bg-poly-black hover:text-[#FDB022] transition-all">View All Bots</Link>
+                <Link href="/v2/bots" className="block w-full py-3 bg-[#F9F8F1] border border-black/5 text-poly-black font-black text-[11px] uppercase tracking-widest text-center hover:bg-poly-black hover:text-[#FDB022] transition-all">View All Bots</Link>
               </div>
             </div>
           </aside>
@@ -4568,7 +4568,7 @@ export default function FeedPage() {
                 <button
                   onClick={filtersOpen ? closeFilters : openFilters}
                   className={cn(
-                    "flex items-center gap-1.5 border border-black/10 px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground transition-all hover:border-poly-black hover:text-poly-black",
+                    "flex items-center gap-1.5 border border-black/10 px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-all hover:border-poly-black hover:text-poly-black",
                     activeFiltersCount > 0 && "bg-poly-yellow text-poly-black border-poly-yellow"
                   )}
                   aria-label="Open filters"

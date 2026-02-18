@@ -273,7 +273,7 @@ export default function V2FollowingPage() {
                     >
                       {formatUSD(trader.pnl)}
                     </p>
-                    <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                       PnL
                     </p>
                   </div>
@@ -281,7 +281,7 @@ export default function V2FollowingPage() {
                     <p className="font-body text-sm font-semibold tabular-nums text-poly-black">
                       {trader.winRate}%
                     </p>
-                    <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                       Win Rate
                     </p>
                   </div>
@@ -289,7 +289,7 @@ export default function V2FollowingPage() {
                     <p className="font-body text-sm font-semibold tabular-nums text-poly-black">
                       {trader.totalTrades}
                     </p>
-                    <p className="font-sans text-[9px] font-medium uppercase tracking-widest text-muted-foreground">
+                    <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                       Trades
                     </p>
                   </div>
