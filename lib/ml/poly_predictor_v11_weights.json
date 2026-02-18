@@ -1,0 +1,535 @@
+[
+  {
+    "processed_input": "global_win_rate",
+    "weight": 1.5095969298297902,
+    "category_weights": []
+  },
+  {
+    "processed_input": "D30_win_rate",
+    "weight": 0.6547875652191892,
+    "category_weights": []
+  },
+  {
+    "processed_input": "D7_win_rate",
+    "weight": 0.6653226118823284,
+    "category_weights": []
+  },
+  {
+    "processed_input": "niche_win_rate_history",
+    "weight": 0.024821175605250517,
+    "category_weights": []
+  },
+  {
+    "processed_input": "lifetime_roi_pct",
+    "weight": 0.47877435590289286,
+    "category_weights": []
+  },
+  {
+    "processed_input": "D30_roi_pct",
+    "weight": 0.14739304471732648,
+    "category_weights": []
+  },
+  {
+    "processed_input": "D7_roi_pct",
+    "weight": 0.0009596784560245451,
+    "category_weights": []
+  },
+  {
+    "processed_input": "win_rate_trend_short",
+    "weight": -0.22841035631796092,
+    "category_weights": []
+  },
+  {
+    "processed_input": "win_rate_trend_long",
+    "weight": -1.109253985976226,
+    "category_weights": []
+  },
+  {
+    "processed_input": "roi_trend_short",
+    "weight": -0.008428791864484073,
+    "category_weights": []
+  },
+  {
+    "processed_input": "roi_trend_long",
+    "weight": -0.10964101028137704,
+    "category_weights": []
+  },
+  {
+    "processed_input": "performance_regime",
+    "weight": null,
+    "category_weights": [
+      {
+        "category": "COLD_STREAK",
+        "weight": 0.07209572834796864
+      },
+      {
+        "category": "HOT_STREAK",
+        "weight": -0.02328615003819734
+      },
+      {
+        "category": "IMPROVING",
+        "weight": -0.0018703852141256161
+      },
+      {
+        "category": "DECLINING",
+        "weight": 0.004463026028427915
+      },
+      {
+        "category": "STABLE",
+        "weight": -0.0006999326390678814
+      }
+    ]
+  },
+  {
+    "processed_input": "total_lifetime_trades",
+    "weight": -6.777228028809755e-10,
+    "category_weights": []
+  },
+  {
+    "processed_input": "trader_experience_bucket",
+    "weight": null,
+    "category_weights": [
+      {
+        "category": "EXPERIENCED",
+        "weight": 0.057132612349065345
+      },
+      {
+        "category": "NOVICE",
+        "weight": 0.07316955642796162
+      },
+      {
+        "category": "EXPERT",
+        "weight": -0.0003421400937016158
+      },
+      {
+        "category": "INTERMEDIATE",
+        "weight": 0.09305759531266296
+      }
+    ]
+  },
+  {
+    "processed_input": "niche_experience_pct",
+    "weight": -0.042794370051668924,
+    "category_weights": []
+  },
+  {
+    "processed_input": "is_in_best_niche",
+    "weight": 0.01888540737788946,
+    "category_weights": []
+  },
+  {
+    "processed_input": "trader_selectivity",
+    "weight": 0.2330816324925934,
+    "category_weights": []
+  },
+  {
+    "processed_input": "price_vs_trader_avg",
+    "weight": 0.44292101725855737,
+    "category_weights": []
+  },
+  {
+    "processed_input": "conviction_z_score",
+    "weight": -0.020392036452826952,
+    "category_weights": []
+  },
+  {
+    "processed_input": "trade_sequence",
+    "weight": -0.000007741925599433873,
+    "category_weights": []
+  },
+  {
+    "processed_input": "total_exposure_log",
+    "weight": -0.006198627102874981,
+    "category_weights": []
+  },
+  {
+    "processed_input": "trader_tempo_seconds",
+    "weight": 0.0000016064904489705084,
+    "category_weights": []
+  },
+  {
+    "processed_input": "is_chasing_price_up",
+    "weight": -0.03786307060971115,
+    "category_weights": []
+  },
+  {
+    "processed_input": "is_averaging_down",
+    "weight": 0.04431801319166187,
+    "category_weights": []
+  },
+  {
+    "processed_input": "stddev_bet_size",
+    "weight": 0.000009048094195435381,
+    "category_weights": []
+  },
+  {
+    "processed_input": "is_hedging",
+    "weight": 0.009317554231341658,
+    "category_weights": []
+  },
+  {
+    "processed_input": "trader_sells_ratio",
+    "weight": 0.01965473612065838,
+    "category_weights": []
+  },
+  {
+    "processed_input": "is_with_crowd",
+    "weight": 0.23624987075594914,
+    "category_weights": []
+  },
+  {
+    "processed_input": "trade_size_tier",
+    "weight": null,
+    "category_weights": [
+      {
+        "category": "SMALL",
+        "weight": -0.0028089636684615524
+      },
+      {
+        "category": "WHALE",
+        "weight": 0.05631239327169388
+      },
+      {
+        "category": "MEDIUM",
+        "weight": 0.03753824988713357
+      },
+      {
+        "category": "LARGE",
+        "weight": 0.05060452690421951
+      }
+    ]
+  },
+  {
+    "processed_input": "trade_size_log",
+    "weight": 0.022301897761504194,
+    "category_weights": []
+  },
+  {
+    "processed_input": "final_niche",
+    "weight": null,
+    "category_weights": [
+      {
+        "category": "NBA",
+        "weight": -0.00904696089329202
+      },
+      {
+        "category": "BIDEN",
+        "weight": 0.08087728954251683
+      },
+      {
+        "category": "FINANCE",
+        "weight": -0.09756041929337435
+      },
+      {
+        "category": "AUSTRALIAN_OPEN",
+        "weight": 0.228265693773803
+      },
+      {
+        "category": "MUSIC",
+        "weight": 0.09966834424306065
+      },
+      {
+        "category": "STARCRAFT",
+        "weight": 1.1891768456576512
+      },
+      {
+        "category": "WTA_TOUR",
+        "weight": 0.013219812961394541
+      },
+      {
+        "category": "CLIMATE",
+        "weight": 0.15246346689563428
+      },
+      {
+        "category": "US_OPEN_TENNIS",
+        "weight": 0.040912702679550744
+      },
+      {
+        "category": "DOGECOIN",
+        "weight": 0.029157554051791365
+      },
+      {
+        "category": "MOVIES",
+        "weight": 0.19110628621469403
+      },
+      {
+        "category": "NCAA_FOOTBALL",
+        "weight": -0.018543645703363205
+      },
+      {
+        "category": "LA_LIGA",
+        "weight": -0.060276635162700126
+      },
+      {
+        "category": "CRYPTO",
+        "weight": 0.08197426053721418
+      },
+      {
+        "category": "COUNTER_STRIKE",
+        "weight": -0.03888065832760665
+      },
+      {
+        "category": "UFC",
+        "weight": -0.05782023502773422
+      },
+      {
+        "category": "TECH",
+        "weight": -0.2138892345687069
+      },
+      {
+        "category": "CULTURE",
+        "weight": 0.0860610748342773
+      },
+      {
+        "category": "BOXING",
+        "weight": -0.05323667572061485
+      },
+      {
+        "category": "WIMBLEDON",
+        "weight": -0.009995939983630776
+      },
+      {
+        "category": "BITCOIN",
+        "weight": 0.0021622509151410065
+      },
+      {
+        "category": "BUNDESLIGA",
+        "weight": -0.04030539153893733
+      },
+      {
+        "category": "MLB",
+        "weight": -0.0544193841077194
+      },
+      {
+        "category": "ATP_TOUR",
+        "weight": -0.05111583041688264
+      },
+      {
+        "category": "SPORTS",
+        "weight": 0.05094845617103842
+      },
+      {
+        "category": "POLITICS",
+        "weight": -0.017040091081752667
+      },
+      {
+        "category": "OTHER",
+        "weight": 0.01633552198127339
+      },
+      {
+        "category": "PREMIER_LEAGUE",
+        "weight": 0.04815837844498727
+      },
+      {
+        "category": "ESPORTS",
+        "weight": 0.21977517933465598
+      },
+      {
+        "category": "CHAMPIONS_LEAGUE",
+        "weight": 0.007944757956155495
+      },
+      {
+        "category": "ENTERTAINMENT",
+        "weight": 0.30915789047336606
+      },
+      {
+        "category": "NHL",
+        "weight": -0.020312563060618537
+      },
+      {
+        "category": "ETHEREUM",
+        "weight": -0.013800545560555854
+      },
+      {
+        "category": "RIPPLE",
+        "weight": 0.0028484940282407466
+      },
+      {
+        "category": "ELECTION",
+        "weight": 0.0075224337841553485
+      },
+      {
+        "category": "SOCCER",
+        "weight": 0.020397848388947634
+      },
+      {
+        "category": "DOTA_2",
+        "weight": 0.006619487290940196
+      },
+      {
+        "category": "MLS",
+        "weight": -0.17659905538607593
+      },
+      {
+        "category": "HONOR_OF_KINGS",
+        "weight": -0.4971022628164752
+      },
+      {
+        "category": "SOLANA",
+        "weight": 0.007684542132163375
+      },
+      {
+        "category": "VALORANT",
+        "weight": -0.13094931566010812
+      },
+      {
+        "category": "LEAGUE_OF_LEGENDS",
+        "weight": 0.023893435357573954
+      },
+      {
+        "category": "WEATHER",
+        "weight": 0.014703959854508997
+      },
+      {
+        "category": "NFL",
+        "weight": -0.005481920451374009
+      },
+      {
+        "category": "NCAA_BASKETBALL",
+        "weight": 0.008906003294162449
+      },
+      {
+        "category": "TEMPERATURE",
+        "weight": 0.18028298695918407
+      },
+      {
+        "category": "SERIE_A",
+        "weight": -0.06248698942312744
+      },
+      {
+        "category": "WNBA",
+        "weight": 0.0441307177878645
+      },
+      {
+        "category": "DOTA",
+        "weight": -0.31352839655021286
+      },
+      {
+        "category": "ELON_MUSK",
+        "weight": 0.11214820922616209
+      },
+      {
+        "category": "TENNIS",
+        "weight": -0.14878591189948606
+      },
+      {
+        "category": "HARRIS",
+        "weight": 0.017169247021965817
+      },
+      {
+        "category": "TRUMP",
+        "weight": 0.1469012278729097
+      },
+      {
+        "category": "FRENCH_OPEN",
+        "weight": -0.01760226423021585
+      },
+      {
+        "category": "EUROPA_LEAGUE",
+        "weight": -0.02419931909035526
+      }
+    ]
+  },
+  {
+    "processed_input": "bet_structure",
+    "weight": null,
+    "category_weights": [
+      {
+        "category": "HEAD_TO_HEAD",
+        "weight": 0.04030338811630408
+      },
+      {
+        "category": "STANDARD",
+        "weight": -0.0022953144552328476
+      },
+      {
+        "category": "YES_NO",
+        "weight": 0.05667324550382563
+      },
+      {
+        "category": "SPREAD",
+        "weight": 0.031048565095229522
+      },
+      {
+        "category": "PROP",
+        "weight": -1.3760088807995898
+      },
+      {
+        "category": "OVER_UNDER",
+        "weight": -0.0011826903743729009
+      }
+    ]
+  },
+  {
+    "processed_input": "position_direction",
+    "weight": null,
+    "category_weights": [
+      {
+        "category": "LONG",
+        "weight": 0.0010825959981384443
+      }
+    ]
+  },
+  {
+    "processed_input": "entry_price",
+    "weight": 2.220315089890628,
+    "category_weights": []
+  },
+  {
+    "processed_input": "volume_momentum_ratio",
+    "weight": 0.00013347817758093813,
+    "category_weights": []
+  },
+  {
+    "processed_input": "liquidity_impact_ratio",
+    "weight": 0.0017501114584459964,
+    "category_weights": []
+  },
+  {
+    "processed_input": "market_duration_days",
+    "weight": -0.00004219853933774276,
+    "category_weights": []
+  },
+  {
+    "processed_input": "market_age_bucket",
+    "weight": null,
+    "category_weights": [
+      {
+        "category": "DAY_1",
+        "weight": 0.007221512101174915
+      },
+      {
+        "category": "MONTH_1",
+        "weight": 0.011294912081448252
+      },
+      {
+        "category": "OLDER",
+        "weight": -0.00003947783829628742
+      },
+      {
+        "category": "WEEK_1",
+        "weight": 0.007544214024510439
+      }
+    ]
+  },
+  {
+    "processed_input": "minutes_to_start",
+    "weight": 1.1274003255858412e-7,
+    "category_weights": []
+  },
+  {
+    "processed_input": "hours_to_close",
+    "weight": 0.0000034183575251020655,
+    "category_weights": []
+  },
+  {
+    "processed_input": "market_age_days",
+    "weight": -0.0001674871976932731,
+    "category_weights": []
+  },
+  {
+    "processed_input": "__INTERCEPT__",
+    "weight": -2.602267605080973,
+    "category_weights": []
+  }
+]

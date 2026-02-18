@@ -492,17 +492,20 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Initialize BigQuery
-    const serviceAccountJson = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')
-    if (!serviceAccountJson) {
-      throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON environment variable is required')
+    // Initialize BigQuery only when not using local ML API
+    const mlPredictUrl = (Deno.env.get('POLYCOPY_ML_PREDICT_URL') || '').replace(/\/$/, '')
+    let bqClient: InstanceType<typeof BigQuery> | null = null
+    if (!mlPredictUrl) {
+      const serviceAccountJson = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+      if (!serviceAccountJson) {
+        throw new Error('Either set POLYCOPY_ML_PREDICT_URL (app URL) or GOOGLE_SERVICE_ACCOUNT_JSON for BigQuery')
+      }
+      const serviceAccount = JSON.parse(serviceAccountJson)
+      bqClient = new BigQuery({
+        projectId: serviceAccount.project_id,
+        credentials: serviceAccount,
+      })
     }
-    
-    const serviceAccount = JSON.parse(serviceAccountJson)
-    const bqClient = new BigQuery({
-      projectId: serviceAccount.project_id,
-      credentials: serviceAccount,
-    })
 
     const wallet = walletAddress.toLowerCase();
     const tradeTotal = price * size;
@@ -1031,19 +1034,81 @@ serve(async (req) => {
       ))
     `;
 
-    // Get winProb from BigQuery
+    // Get winProb: prefer local ML API (no BigQuery), else BigQuery, else 0.5
     let winProb = 0.5;
-    try {
-      const [job] = await bqClient.createQueryJob({ query });
-      const [rows] = await job.getQueryResults();
-      
-      if (rows && rows.length > 0 && rows[0].predicted_outcome_probs) {
-        const p = rows[0].predicted_outcome_probs.find((p: any) => p.label === 'WON');
-        if (p) winProb = p.prob;
+    const features = {
+      global_win_rate: dna_global_win_rate ?? 0.5,
+      D30_win_rate: d30_win_rate ?? dna_global_win_rate ?? 0.5,
+      D7_win_rate: d7_win_rate ?? d30_win_rate ?? dna_global_win_rate ?? 0.5,
+      niche_win_rate_history: niche_win_rate ?? dna_global_win_rate ?? 0.5,
+      lifetime_roi_pct: lifetime_roi_pct ?? 0,
+      D30_roi_pct: d30_roi_pct ?? lifetime_roi_pct ?? 0,
+      D7_roi_pct: d7_roi_pct ?? d30_roi_pct ?? 0,
+      win_rate_trend_short: win_rate_trend_short ?? 0,
+      win_rate_trend_long: win_rate_trend_long ?? 0,
+      roi_trend_short: roi_trend_short ?? 0,
+      roi_trend_long: roi_trend_long ?? 0,
+      performance_regime: performance_regime ?? 'STABLE',
+      total_lifetime_trades: dna_trades ?? 0,
+      trader_experience_bucket: trader_experience_bucket ?? 'INTERMEDIATE',
+      niche_experience_pct: niche_experience_pct ?? 0,
+      is_in_best_niche: is_in_best_niche ?? 0,
+      trader_selectivity: trader_selectivity ?? 0.5,
+      price_vs_trader_avg: price_vs_trader_avg ?? 0,
+      conviction_z_score: z_score ?? 0,
+      trade_sequence: trade_sequence ?? 1,
+      total_exposure_log: Math.log(exposure + 1),
+      trader_tempo_seconds: tempo ?? 300,
+      is_chasing_price_up: is_chasing ?? 0,
+      is_averaging_down: is_avg_down_num ?? 0,
+      stddev_bet_size: dna_stddev ?? 0,
+      is_hedging: is_hedging ?? 0,
+      trader_sells_ratio: trader_sells_ratio ?? 0,
+      is_with_crowd: is_with_crowd ?? 0,
+      trade_size_tier: trade_size_tier ?? 'MEDIUM',
+      trade_size_log: Math.log(tradeTotal + 1),
+      final_niche: finalNiche ?? 'OTHER',
+      bet_structure: betStructure ?? 'STANDARD',
+      position_direction: positionDirection ?? 'LONG',
+      entry_price: entryPrice ?? 0.5,
+      volume_momentum_ratio: volumeMomentumRatio ?? 0,
+      liquidity_impact_ratio: liquidityImpactRatio ?? 0,
+      market_duration_days: marketDurationDays ?? 30,
+      market_age_bucket: market_age_bucket ?? 'WEEK_1',
+      minutes_to_start: minutes_to_start ?? 0,
+      hours_to_close: hoursToClose ?? 24,
+      market_age_days: marketAgeDays ?? 0,
+    };
+
+    if (mlPredictUrl) {
+      try {
+        const res = await fetch(`${mlPredictUrl}/api/ml/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ features }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.winProb === 'number' && Number.isFinite(data.winProb)) {
+            winProb = data.winProb;
+          }
+        }
+      } catch (apiError: any) {
+        console.error('[predict-trade] Local ML API failed:', apiError?.message ?? apiError);
+        winProb = 0.5;
       }
-    } catch (bqError: any) {
-      console.error('[predict-trade] BigQuery ML.PREDICT failed:', bqError);
-      winProb = 0.5;
+    } else if (bqClient) {
+      try {
+        const [job] = await bqClient.createQueryJob({ query });
+        const [rows] = await job.getQueryResults();
+        if (rows && rows.length > 0 && rows[0].predicted_outcome_probs) {
+          const p = rows[0].predicted_outcome_probs.find((p: any) => p.label === 'WON');
+          if (p) winProb = p.prob;
+        }
+      } catch (bqError: any) {
+        console.error('[predict-trade] BigQuery ML.PREDICT failed:', bqError);
+        winProb = 0.5;
+      }
     }
 
     // ============================================================================

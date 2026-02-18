@@ -59,3 +59,4 @@ top5_ml_full.csv
 !tsconfig.json
 !vercel.json
 !**/supabase/**/*.json
+!lib/ml/poly_predictor_v11_weights.json
