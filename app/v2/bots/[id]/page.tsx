@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   ChevronLeft,
@@ -11,6 +11,7 @@ import {
   Loader2,
   TrendingUp,
   TrendingDown,
+  RefreshCw,
 } from "lucide-react"
 import { TopNav } from "@/components/polycopy-v2/top-nav"
 import { BottomNav } from "@/components/polycopy-v2/bottom-nav"
@@ -239,6 +240,7 @@ export default function BotDetailPage() {
   const [categories, setCategories] = useState<CategoryPerf[]>([])
   const [showCopyBotModal, setShowCopyBotModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [refreshingSnapshot, setRefreshingSnapshot] = useState(false)
 
   // User auth + premium state
   const { user } = useAuthState({ requireAuth: false })
@@ -291,6 +293,43 @@ export default function BotDetailPage() {
 
     if (botId) fetchBotData()
   }, [botId])
+
+  const refreshSnapshot = useCallback(async () => {
+    if (!wallet?.wallet_id || refreshingSnapshot) return
+    setRefreshingSnapshot(true)
+    try {
+      const res = await fetch('/api/ft/snapshot-refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet_id: wallet.wallet_id }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.snapshot) {
+          setStats((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  total_pnl: data.snapshot.total_pnl,
+                  realized_pnl: data.snapshot.realized_pnl,
+                  unrealized_pnl: data.snapshot.unrealized_pnl,
+                }
+              : prev,
+          )
+        }
+      }
+    } catch (err) {
+      console.error('[bot-detail] Snapshot refresh failed:', err)
+    } finally {
+      setRefreshingSnapshot(false)
+    }
+  }, [wallet?.wallet_id, refreshingSnapshot])
+
+  useEffect(() => {
+    if (wallet?.wallet_id) {
+      refreshSnapshot()
+    }
+  }, [wallet?.wallet_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived data
   const roiPct = useMemo(() => {
@@ -481,6 +520,14 @@ export default function BotDetailPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-4">
+                    <button
+                      onClick={refreshSnapshot}
+                      disabled={refreshingSnapshot}
+                      className="rounded p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                      title="Refresh snapshot"
+                    >
+                      <RefreshCw className={cn("h-4 w-4", refreshingSnapshot && "animate-spin")} />
+                    </button>
                     <span
                       className={cn(
                         "font-sans text-xl font-bold tabular-nums",

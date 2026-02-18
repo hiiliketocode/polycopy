@@ -2,6 +2,10 @@
 'use strict'
 
 /**
+ * @deprecated — Replaced by polymarket-trade-stream worker which writes to trades_public
+ * via WebSocket in real-time. This polling-based worker should be stopped on Fly.io once
+ * trade-stream is confirmed writing to trades_public.
+ *
  * Hot worker: Polls actively followed traders every 1-3 seconds
  * Always-on process running on Fly.io
  */

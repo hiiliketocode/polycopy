@@ -16,6 +16,10 @@ export const config = {
   /** Auth: Bearer token for CRON_SECRET when calling sync-trade */
   cronSecret: process.env.CRON_SECRET || '',
 
+  /** Supabase credentials for direct DB writes (trades_public, follows) */
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+
   /** Reconnect delay (ms) after WebSocket disconnect */
   reconnectDelayMs: 5000,
 

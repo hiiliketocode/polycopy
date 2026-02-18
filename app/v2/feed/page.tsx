@@ -2491,18 +2491,36 @@ export default function FeedPage() {
       
       const uniqueConditionIds = Array.from(new Set(conditionIds));
       
-      // STEP 2: Batch fetch ALL market data from database (tags, market_subtype, bet_structure, etc.)
-      // Use single query with timeout to avoid blocking
+      // STEP 2: Build market data map — use server-provided enrichment when available,
+      // fall back to a Supabase query for trades from non-enriched sources (e.g. fire feed)
       const marketDataMap = new Map<string, any>();
       const missingConditionIds: string[] = [];
+
+      // Pre-populate from API-enriched trades (from /api/v2/feed/trades)
+      for (const t of rawTrades) {
+        const cid = t.conditionId || t.condition_id;
+        if (!cid || marketDataMap.has(cid)) continue;
+        if (t._dbTags || t._dbMarketSubtype || t._dbBetStructure) {
+          marketDataMap.set(cid, {
+            tags: t._dbTags || null,
+            market_subtype: t._dbMarketSubtype || null,
+            final_niche: t._dbMarketSubtype || null,
+            bet_structure: t._dbBetStructure || null,
+            market_type: null,
+            title: t.title || t.market_title || null,
+          });
+        }
+      }
+
+      // IDs still missing enrichment — fetch from Supabase
+      const unenrichedIds = uniqueConditionIds.filter((id) => !marketDataMap.has(id));
       
-      if (uniqueConditionIds.length > 0) {
+      if (unenrichedIds.length > 0) {
         try {
-          // Single query for all markets with timeout (Supabase supports up to 1000 items in .in())
           const queryPromise = supabase
             .from('markets')
             .select('condition_id, tags, market_subtype, final_niche, bet_structure, market_type, title, raw_dome')
-            .in('condition_id', uniqueConditionIds.slice(0, 1000)); // Limit to 1000 for safety
+            .in('condition_id', unenrichedIds.slice(0, 1000));
           
           const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) => 
             setTimeout(() => resolve({ data: null, error: { message: 'Timeout' } }), 5000)
@@ -2512,7 +2530,6 @@ export default function FeedPage() {
           
           if (!error && markets && Array.isArray(markets)) {
             const foundIds = new Set<string>();
-            // Helper to normalize tags (same as in Step 3)
             const normalizeTagsForMap = (source: any): string[] => {
               if (!source) return [];
               if (Array.isArray(source)) {
@@ -2543,7 +2560,6 @@ export default function FeedPage() {
                 foundIds.add(market.condition_id);
                 let tags: string[] | null = null;
                 
-                // Extract and normalize tags from tags column
                 if (Array.isArray(market.tags) && market.tags.length > 0) {
                   const normalized = normalizeTagsForMap(market.tags);
                   if (normalized.length > 0) {
@@ -2551,7 +2567,6 @@ export default function FeedPage() {
                   }
                 }
                 
-                // Fallback to raw_dome if tags missing
                 if ((!tags || tags.length === 0) && market.raw_dome) {
                   try {
                     const rawDome = typeof market.raw_dome === 'string' ? JSON.parse(market.raw_dome) : market.raw_dome;
@@ -2561,28 +2576,23 @@ export default function FeedPage() {
                         tags = normalized;
                       }
                     }
-                  } catch (err) {
-                    // Silent fail - raw_dome parse error
+                  } catch {
+                    // raw_dome parse error
                   }
                 }
                 
                 marketDataMap.set(market.condition_id, {
-                  tags: tags && tags.length > 0 ? tags : null, // Store normalized lowercase tags
-                  market_subtype: market.market_subtype || market.final_niche || null, // Use final_niche as fallback
-                  final_niche: market.final_niche || market.market_subtype || null, // Use market_subtype as fallback
+                  tags: tags && tags.length > 0 ? tags : null,
+                  market_subtype: market.market_subtype || market.final_niche || null,
+                  final_niche: market.final_niche || market.market_subtype || null,
                   bet_structure: market.bet_structure || null,
                   market_type: market.market_type || null,
                   title: market.title || null,
                 });
-                
-                if (!tags || tags.length === 0) {
-                  console.warn(`[Feed] ⚠️ Market ${market.condition_id} has no tags after extraction`);
-                }
               }
             });
             
-            // Track missing markets (not in DB, missing tags, OR missing classification)
-            uniqueConditionIds.forEach((id) => {
+            unenrichedIds.forEach((id) => {
               if (!foundIds.has(id)) {
                 missingConditionIds.push(id);
               } else {
@@ -2590,20 +2600,17 @@ export default function FeedPage() {
                 if (!marketData?.tags || marketData.tags.length === 0) {
                   missingConditionIds.push(id);
                 } else if (!marketData.market_subtype && !marketData.final_niche) {
-                  // Market exists with tags but no classification - ensure it gets classified
                   missingConditionIds.push(id);
                 }
               }
             });
           } else {
-            // If query failed or timed out, mark all as missing but continue
             console.warn('[Feed] Market fetch failed or timed out, continuing without market data');
-            uniqueConditionIds.forEach((id) => missingConditionIds.push(id));
+            unenrichedIds.forEach((id) => missingConditionIds.push(id));
           }
         } catch (err) {
           console.error('[Feed] Error batch fetching market data:', err);
-          // Mark all as missing but continue - trades will show without tags
-          uniqueConditionIds.forEach((id) => missingConditionIds.push(id));
+          unenrichedIds.forEach((id) => missingConditionIds.push(id));
         }
       }
       
@@ -3062,114 +3069,27 @@ export default function FeedPage() {
     }
 
     try {
-        // 1. Fetch followed traders
-        const { data: follows, error: followsError } = await supabase
-          .from('follows')
-          .select('trader_wallet')
-          .eq('user_id', currentUser.id);
+        // Single API call to DB-backed endpoint (replaces per-trader Polymarket API polling)
+        const feedRes = await fetch('/api/v2/feed/trades?limit=200', { cache: 'no-store' });
+        if (!feedRes.ok) {
+          const errText = await feedRes.text().catch(() => '');
+          throw new Error(`Feed API ${feedRes.status}: ${errText.slice(0, 200)}`);
+        }
+        const feedData = await feedRes.json();
 
-        if (followsError) throw new Error('Failed to fetch follows');
-        if (!follows || follows.length === 0) {
+        const allTradesRaw: any[] = Array.isArray(feedData?.trades) ? feedData.trades : [];
+        const traderNames: Record<string, string> = feedData?.traderNames || {};
+        const followCount = feedData?.followingCount ?? 0;
+
+        setFollowingCount(followCount);
+
+        if (followCount === 0) {
           setAllTrades([]);
           setFollowingCount(0);
           setLastFeedFetchAt(Date.now());
           return;
         }
 
-        setFollowingCount(follows.length);
-
-        // 2. Fetch trades
-        const tradePromises = follows.map(async (follow) => {
-          const wallet = follow.trader_wallet;
-          
-          try {
-            const response = await fetch(
-              `https://data-api.polymarket.com/trades?limit=15&user=${wallet}`,
-              { cache: 'no-store' }
-            );
-            
-            if (!response.ok) return [];
-            
-            const walletTrades = await response.json();
-            
-            return walletTrades.map((trade: any) => ({
-              ...trade,
-              _followedWallet: wallet.toLowerCase(),
-            }));
-          } catch (error) {
-            console.warn(`Error fetching trades for ${wallet}:`, error);
-            return [];
-          }
-        });
-        
-        // 3. Fetch trader names in parallel
-        const traderNames: Record<string, string> = {};
-        const namePromise = (async () => {
-          try {
-            const leaderboardRes = await fetch('/api/polymarket/leaderboard?limit=100&orderBy=PNL&timePeriod=all');
-            if (leaderboardRes.ok) {
-              const leaderboardData = await leaderboardRes.json();
-              
-              for (const follow of follows) {
-                const walletKey = follow.trader_wallet.toLowerCase();
-                const trader = leaderboardData.traders?.find(
-                  (t: any) => t.wallet.toLowerCase() === walletKey
-                );
-                if (trader?.displayName) {
-                  traderNames[walletKey] = trader.displayName;
-                }
-              }
-            }
-
-            const walletsNeedingNames = follows
-              .filter(f => !traderNames[f.trader_wallet.toLowerCase()])
-              .map(f => f.trader_wallet.toLowerCase());
-            
-            if (walletsNeedingNames.length > 0) {
-              const batchSize = 10;
-              const batches = [];
-              
-              for (let i = 0; i < walletsNeedingNames.length; i += batchSize) {
-                const batch = walletsNeedingNames.slice(i, i + batchSize);
-                batches.push(
-                  Promise.allSettled(
-                    batch.map(async (wallet) => {
-                      try {
-                        const res = await fetch(
-                          `https://data-api.polymarket.com/trades?limit=1&user=${wallet}`,
-                          { cache: 'no-store' }
-                        );
-                        if (res.ok) {
-                          const trades = await res.json();
-                          if (Array.isArray(trades) && trades.length > 0) {
-                            const name = trades[0].name || trades[0].userName;
-                            if (name) {
-                              traderNames[wallet] = name;
-                            }
-                          }
-                        }
-                      } catch (err) {
-                        // Silent fail
-                      }
-                    })
-                  )
-                );
-              }
-              
-              await Promise.all(batches);
-            }
-          } catch (err) {
-            console.error('Failed to fetch trader names:', err);
-          }
-        })();
-        
-        const [allTradesArrays] = await Promise.all([
-          Promise.all(tradePromises),
-          namePromise
-        ]);
-        
-        const allTradesRaw = allTradesArrays.flat();
-        
         if (allTradesRaw.length === 0) {
           if (!merge) {
             setAllTrades([]);
