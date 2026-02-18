@@ -1,17 +1,20 @@
-// Proxy API for fetching Polymarket prices (bypasses CORS)
-// Uses CLOB API for accurate real-time prices
+// Proxy API for fetching Polymarket prices
+// Gamma-first with in-memory cache (2-3s TTL) for live pricing.
+// CLOB API is fallback only. Supabase markets table updated as side-effect.
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
-  fetchDomeMarketsByConditionIds,
-  mapDomeMarketToRow,
+  fetchGammaMarketsByConditionIds,
+  mapGammaMarketToRow,
+  enrichRowWithEvent,
+  fetchGammaEvent,
+  resolveGameStartTime,
   pickMarketEndTime,
   pickMarketStartTime,
-} from '@/lib/markets/dome';
+} from '@/lib/markets/gamma';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const DOME_API_KEY = process.env.DOME_API_KEY || null;
 
 const supabaseAdmin =
   SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
@@ -20,12 +23,92 @@ const supabaseAdmin =
       })
     : null;
 
+// ── In-memory price cache ──
+// Keyed by conditionId. Stores full response JSON + timestamp.
+// TTL: 3 seconds — keeps feed live while preventing duplicate API calls.
+const PRICE_CACHE_TTL_MS = 3_000;
+const MAX_CACHE_SIZE = 2000;
+
+type CachedPrice = { response: any; cachedAt: number };
+const priceCache = new Map<string, CachedPrice>();
+
+// Request coalescing: if another request for the same conditionId is in-flight,
+// await the same promise instead of making a duplicate API call.
+const inFlightRequests = new Map<string, Promise<Response>>();
+
+function getCachedPrice(key: string): any | null {
+  const entry = priceCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > PRICE_CACHE_TTL_MS) {
+    priceCache.delete(key);
+    return null;
+  }
+  return entry.response;
+}
+
+function setCachedPrice(key: string, response: any): void {
+  if (priceCache.size >= MAX_CACHE_SIZE) {
+    const oldest = priceCache.keys().next().value;
+    if (oldest) priceCache.delete(oldest);
+  }
+  priceCache.set(key, { response, cachedAt: Date.now() });
+}
+
+// Fire-and-forget: write prices to markets.outcome_prices for crons/snapshots
+function updateMarketsPriceCache(
+  conditionId: string,
+  outcomePrices: any,
+  outcomes: any,
+  closed?: boolean,
+  resolved?: boolean,
+) {
+  if (!supabaseAdmin || !conditionId) return;
+  const now = new Date().toISOString();
+  const pricePayload: Record<string, any> = {
+    outcome_prices: { outcomes, outcomePrices },
+    last_price_updated_at: now,
+    last_requested_at: now,
+  };
+  if (typeof closed === 'boolean') pricePayload.closed = closed;
+  if (typeof resolved === 'boolean' && resolved) {
+    pricePayload.resolved_outcome = 'resolved';
+  }
+  void supabaseAdmin
+    .from('markets')
+    .update(pricePayload)
+    .eq('condition_id', conditionId)
+    .then(({ error }) => {
+      if (error) console.warn('[Price API] Side-effect DB write failed:', error.message);
+    });
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const conditionId = searchParams.get('conditionId');
   const slug = searchParams.get('slug');
   const eventSlug = searchParams.get('eventSlug');
   const title = searchParams.get('title');
+
+  // ── Fast path: return from in-memory cache if fresh ──
+  const cacheKey = conditionId || slug || title || '';
+  if (cacheKey) {
+    const cached = getCachedPrice(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+
+    // Request coalescing: if another request for this market is in-flight, await it
+    const pending = inFlightRequests.get(cacheKey);
+    if (pending) {
+      try {
+        const result = await pending;
+        const body = await result.clone().json();
+        return NextResponse.json(body);
+      } catch {
+        // If the pending request failed, fall through to fetch fresh
+      }
+    }
+  }
 
   const normalizeEndDate = (value: any) => {
     if (!value) return null;
@@ -142,13 +225,25 @@ export async function GET(request: Request) {
     const cached = await loadCachedMarket();
     if (cached || !conditionId || !supabaseAdmin) return cached;
     try {
-      const markets = await fetchDomeMarketsByConditionIds([conditionId], {
-        apiKey: DOME_API_KEY,
-      });
+      const markets = await fetchGammaMarketsByConditionIds([conditionId]);
       const market = markets[0];
       if (!market) return null;
-      const row = mapDomeMarketToRow(market);
+      const row = mapGammaMarketToRow(market);
       if (!row.condition_id) return null;
+      if (market.slug) {
+        const event = await fetchGammaEvent(market.slug);
+        if (event) enrichRowWithEvent(row, event);
+      }
+      const gameStart = await resolveGameStartTime(
+        row.title,
+        row.tags,
+        row.condition_id,
+        row.market_slug,
+        row.end_time,
+      );
+      if (gameStart) {
+        row.game_start_time = gameStart;
+      }
       const { error } = await supabaseAdmin
         .from('markets')
         .upsert(row, { onConflict: 'condition_id' });
@@ -158,7 +253,7 @@ export async function GET(request: Request) {
       }
       return await loadCachedMarket();
     } catch (error) {
-      console.warn('[Price API] Failed to fetch Dome market:', error);
+      console.warn('[Price API] Failed to fetch Gamma market:', error);
       return null;
     }
   };
@@ -414,9 +509,99 @@ export async function GET(request: Request) {
       null;
     const cryptoPriceUsd = cryptoSymbol ? await fetchCryptoSpotPrice(cryptoSymbol) : null;
 
-    // Try 1: CLOB API with condition_id (most accurate for real-time prices)
+    // Try 1: Gamma API by condition_id (primary — no CLOB for display)
     if (conditionId && conditionId.startsWith('0x')) {
-      console.log(`[Price API] CLOB search by conditionId: ${conditionId}`);
+      try {
+        const gammaRes = await fetch(
+          `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`,
+          { cache: 'no-store' }
+        );
+        if (gammaRes.ok) {
+          const gammaData = await gammaRes.json();
+          const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
+          if (gammaMarket) {
+            let prices = gammaMarket.outcomePrices;
+            let outcomes = gammaMarket.outcomes;
+            if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
+            if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
+            if (outcomes && Array.isArray(outcomes) && prices && Array.isArray(prices)) {
+              const endDateIso = cachedEndTime
+                ? normalizeEndDate(cachedEndTime)
+                : normalizeEndDate(gammaMarket.end_date_iso || gammaMarket.end_date || gammaMarket.endDate || null);
+              const event = Array.isArray(gammaMarket?.events) && gammaMarket.events.length > 0 ? gammaMarket.events[0] : null;
+              const marketAvatarUrl = pickFirstString(
+                gammaMarket.icon,
+                gammaMarket.image,
+                event?.icon,
+                event?.image,
+                cachedMarketAvatar
+              );
+
+              const resolved =
+                typeof gammaMarket.resolved === 'boolean'
+                  ? gammaMarket.resolved
+                  : typeof gammaMarket.is_resolved === 'boolean'
+                    ? gammaMarket.is_resolved
+                    : undefined;
+
+              let gameStartTime = cachedStartTime || null;
+              let eventStatus = cachedEventStatus || null;
+              let score = null;
+              let homeTeam = null;
+              let awayTeam = null;
+              if (event) {
+                if (!eventStatus) {
+                  if (event.live) eventStatus = 'live';
+                  else if (event.ended) eventStatus = 'final';
+                }
+                if (event.score && (event.live || event.ended)) {
+                  const parsedScore = parseScoreLine(event.score);
+                  score = parsedScore ? parsedScore : event.score;
+                }
+                if (event.title) {
+                  const teams = extractTeamsFromTitle(event.title);
+                  if (teams) { homeTeam = teams.homeTeam; awayTeam = teams.awayTeam; }
+                }
+              }
+
+              const responseBody = {
+                success: true,
+                market: {
+                  question: gammaMarket.question,
+                  conditionId: gammaMarket.conditionId || conditionId,
+                  slug: gammaMarket.slug,
+                  eventSlug: gammaMarket.event_slug || event?.slug || cachedEventSlug,
+                  closed: gammaMarket.closed,
+                  resolved,
+                  outcomePrices: prices,
+                  outcomes: outcomes,
+                  endDateIso,
+                  gameStartTime,
+                  marketAvatarUrl,
+                  eventStatus,
+                  score,
+                  homeTeam,
+                  awayTeam,
+                  espnUrl: resolvedGameUrl,
+                  cryptoSymbol,
+                  cryptoPriceUsd,
+                }
+              };
+
+              if (cacheKey) setCachedPrice(cacheKey, responseBody);
+              updateMarketsPriceCache(conditionId, prices, outcomes, gammaMarket.closed, resolved);
+              return NextResponse.json(responseBody);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Price API] Gamma by condition_id failed, trying CLOB fallback:', err);
+      }
+    }
+
+    // Try 2: CLOB API fallback (only when Gamma fails)
+    if (conditionId && conditionId.startsWith('0x')) {
+      console.log(`[Price API] CLOB fallback for conditionId: ${conditionId}`);
       const response = await fetch(
         `https://clob.polymarket.com/markets/${conditionId}`,
         { cache: 'no-store' }
@@ -424,9 +609,7 @@ export async function GET(request: Request) {
       
       if (response.ok) {
         const market = await response.json();
-        console.log(`[Price API] CLOB found: ${market.question}`);
         
-        // CLOB API returns tokens array with outcome and price
         if (market.tokens && Array.isArray(market.tokens)) {
           const outcomes = market.tokens.map((t: any) => t.outcome);
           const prices = market.tokens.map((t: any) => t.price.toString());
@@ -604,7 +787,7 @@ export async function GET(request: Request) {
             }
           }
 
-          return NextResponse.json({
+          const clobResponseBody = {
             success: true,
             market: {
               question: market.question,
@@ -615,14 +798,12 @@ export async function GET(request: Request) {
               resolved,
               outcomePrices: prices,
               outcomes: outcomes,
-              // Sports/Event metadata
               description: resolvedDescription,
               tags: resolvedTags,
               category: market.category,
               endDateIso,
               gameStartTime,
               enableOrderBook: market.enable_order_book || false,
-              // Additional sports metadata if available
               eventStatus,
               score,
               homeTeam,
@@ -632,66 +813,18 @@ export async function GET(request: Request) {
               cryptoSymbol,
               cryptoPriceUsd,
             }
-          });
+          };
+
+          if (cacheKey) setCachedPrice(cacheKey, clobResponseBody);
+          updateMarketsPriceCache(conditionId, prices, outcomes, market.closed, resolved);
+          return NextResponse.json(clobResponseBody);
         }
       } else {
-        console.log(`[Price API] CLOB returned ${response.status}, trying Gamma by condition_id`);
+        console.log(`[Price API] CLOB fallback returned ${response.status}`);
       }
     }
 
-    // Try 2: Gamma API by condition_id (fallback when CLOB fails)
-    if (conditionId && conditionId.startsWith('0x')) {
-      try {
-        const gammaRes = await fetch(
-          `https://gamma-api.polymarket.com/markets?condition_id=${conditionId}`,
-          { cache: 'no-store' }
-        );
-        if (gammaRes.ok) {
-          const gammaData = await gammaRes.json();
-          const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
-          if (gammaMarket) {
-            let prices = gammaMarket.outcomePrices;
-            let outcomes = gammaMarket.outcomes;
-            if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
-            if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
-            if (outcomes && Array.isArray(outcomes) && prices && Array.isArray(prices)) {
-              const endDateIso = cachedEndTime
-                ? normalizeEndDate(cachedEndTime)
-                : normalizeEndDate(gammaMarket.end_date_iso || gammaMarket.end_date || gammaMarket.endDate || null);
-              const event = Array.isArray(gammaMarket?.events) && gammaMarket.events.length > 0 ? gammaMarket.events[0] : null;
-              const marketAvatarUrl = pickFirstString(
-                gammaMarket.icon,
-                gammaMarket.image,
-                event?.icon,
-                event?.image,
-                cachedMarketAvatar
-              );
-              return NextResponse.json({
-                success: true,
-                market: {
-                  question: gammaMarket.question,
-                  conditionId: gammaMarket.conditionId || conditionId,
-                  slug: gammaMarket.slug,
-                  eventSlug: gammaMarket.event_slug || event?.slug,
-                  closed: gammaMarket.closed,
-                  resolved: gammaMarket.resolved,
-                  outcomePrices: prices,
-                  outcomes: outcomes,
-                  endDateIso,
-                  marketAvatarUrl,
-                  cryptoSymbol,
-                  cryptoPriceUsd,
-                }
-              });
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('[Price API] Gamma by condition_id fallback failed:', err);
-      }
-    }
-
-    // Try 3: Gamma API by slug (fallback for older markets)
+    // Try 3: Gamma API by slug (for markets without condition_id)
     if (slug && !slug.startsWith('0x')) {
       console.log(`[Price API] Gamma search by slug: ${slug}`);
       const response = await fetch(
@@ -857,20 +990,29 @@ export async function GET(request: Request) {
                 : new Date(market.completed_time).toISOString())
             : null;
           
-          // If we found a market via Gamma API but it's not in our DB, sync it from Dome API
+          // If we found a market via Gamma API but it's not in our DB, sync it
           if (match.conditionId && match.conditionId.startsWith('0x') && supabaseAdmin && !market) {
             try {
-              const domeMarkets = await fetchDomeMarketsByConditionIds([match.conditionId], {
-                apiKey: DOME_API_KEY,
-              });
-              if (domeMarkets.length > 0) {
-                const domeMarket = domeMarkets[0];
-                const row = mapDomeMarketToRow(domeMarket);
+              const gammaMarkets = await fetchGammaMarketsByConditionIds([match.conditionId]);
+              if (gammaMarkets.length > 0) {
+                const gammaMarket = gammaMarkets[0];
+                const row = mapGammaMarketToRow(gammaMarket);
                 if (row.condition_id) {
+                  if (gammaMarket.slug) {
+                    const ev = await fetchGammaEvent(gammaMarket.slug);
+                    if (ev) enrichRowWithEvent(row, ev);
+                  }
+                  const gst = await resolveGameStartTime(
+                    row.title,
+                    row.tags,
+                    row.condition_id,
+                    row.market_slug,
+                    row.end_time,
+                  );
+                  if (gst) row.game_start_time = gst;
                   await supabaseAdmin
                     .from('markets')
                     .upsert(row, { onConflict: 'condition_id' });
-                  // Reload from DB to get fresh data including game_start_time
                   const reloaded = await loadCachedMarket();
                   if (reloaded) {
                     const reloadedMarket = reloaded as Record<string, any>;
@@ -906,7 +1048,7 @@ export async function GET(request: Request) {
                 }
               }
             } catch (error) {
-              console.warn('[Price API] Failed to sync market from Dome:', error);
+              console.warn('[Price API] Failed to sync market from Gamma:', error);
             }
           }
 

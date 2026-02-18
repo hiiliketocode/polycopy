@@ -27,6 +27,21 @@ createServer((_req, res) => {
 
 let targetTraders = new Set<string>();
 let lastTargetFetch = 0;
+let inFlightSyncCalls = 0;
+const MAX_IN_FLIGHT = 20;
+
+// Heap monitoring — log every 60s so we can spot leaks before OOM
+setInterval(() => {
+  const mem = process.memoryUsage();
+  const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
+  const rssMB = Math.round(mem.rss / 1024 / 1024);
+  const pct = Math.round((mem.heapUsed / mem.heapTotal) * 100);
+  console.log(`[mem] heap=${heapUsedMB}/${heapTotalMB}MB (${pct}%) rss=${rssMB}MB inFlight=${inFlightSyncCalls}`);
+  if (pct > 85) {
+    console.warn(`[mem] WARNING: heap usage at ${pct}% — consider scaling memory`);
+  }
+}, 60_000);
 
 // Circuit breaker state
 type CircuitState = 'closed' | 'open' | 'half-open';
@@ -128,58 +143,67 @@ async function ensureTargetTraders(): Promise<Set<string>> {
 async function callSyncTrade(trade: Record<string, unknown>): Promise<void> {
   if (isCircuitOpen()) return;
 
-  const url = `${config.apiBaseUrl}/api/ft/sync-trade`;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (config.cronSecret) {
-    headers['Authorization'] = `Bearer ${config.cronSecret}`;
+  if (inFlightSyncCalls >= MAX_IN_FLIGHT) {
+    console.warn(`[worker] Backpressure: ${inFlightSyncCalls} in-flight sync calls, dropping trade`);
+    return;
   }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.circuitBreakerTimeoutMs);
+  inFlightSyncCalls++;
 
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ trade }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+    const url = `${config.apiBaseUrl}/api/ft/sync-trade`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (config.cronSecret) {
+      headers['Authorization'] = `Bearer ${config.cronSecret}`;
+    }
 
-    const data = await res.json().catch(() => ({}));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.circuitBreakerTimeoutMs);
 
-    if (res.status >= 500 || res.status === 408) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ trade }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status >= 500 || res.status === 408) {
+        recordFailure();
+        console.error(`[sync-trade] ${res.status} ${res.statusText}:`, data?.error || data?.message);
+        return;
+      }
+
+      recordSuccess();
+      if (!res.ok) {
+        console.error(`[sync-trade] ${res.status} ${res.statusText}:`, data?.error || data?.message);
+        return;
+      }
+      const proxyWallet = String(trade.proxyWallet || trade.proxy_wallet || '').toLowerCase();
+      const shortWallet = proxyWallet ? `${proxyWallet.slice(0, 10)}...` : '?';
+      if (data?.inserted > 0) {
+        console.log(`[sync-trade] Inserted ${data.inserted} ft_order(s) for trade ${trade.transactionHash || trade.id} (${shortWallet})`);
+        void triggerLTExecute();
+      } else {
+        const msg = data?.message || 'did not qualify';
+        console.log(`[worker] Forwarded trade from ${shortWallet} → ${msg}`);
+      }
+    } catch (err: unknown) {
+      clearTimeout(timeout);
+      const isTimeout = err instanceof Error && err.name === 'AbortError';
+      if (isTimeout) {
+        console.error('[sync-trade] Request timed out');
+      } else {
+        console.error('[sync-trade] Request failed:', err);
+      }
       recordFailure();
-      console.error(`[sync-trade] ${res.status} ${res.statusText}:`, data?.error || data?.message);
-      return;
     }
-
-    recordSuccess();
-    if (!res.ok) {
-      console.error(`[sync-trade] ${res.status} ${res.statusText}:`, data?.error || data?.message);
-      return;
-    }
-    const proxyWallet = String(trade.proxyWallet || trade.proxy_wallet || '').toLowerCase();
-    const shortWallet = proxyWallet ? `${proxyWallet.slice(0, 10)}...` : '?';
-    if (data?.inserted > 0) {
-      console.log(`[sync-trade] Inserted ${data.inserted} ft_order(s) for trade ${trade.transactionHash || trade.id} (${shortWallet})`);
-      void triggerLTExecute();
-    } else {
-      // Log forwarded-but-not-qualified so we can verify pipeline is receiving trades
-      const msg = data?.message || 'did not qualify';
-      console.log(`[worker] Forwarded trade from ${shortWallet} → ${msg}`);
-    }
-  } catch (err: unknown) {
-    clearTimeout(timeout);
-    const isTimeout = err instanceof Error && err.name === 'AbortError';
-    if (isTimeout) {
-      console.error('[sync-trade] Request timed out');
-    } else {
-      console.error('[sync-trade] Request failed:', err);
-    }
-    recordFailure();
+  } finally {
+    inFlightSyncCalls--;
   }
 }
 
