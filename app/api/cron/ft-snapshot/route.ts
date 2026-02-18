@@ -58,22 +58,22 @@ export async function GET(request: Request) {
       const walletId = wallet.wallet_id;
       const startingBalance = Number(wallet.starting_balance) || 1000;
 
-      // Get orders for realized + exposure + unrealized (need condition_id, token_label, entry_price, size for open)
-      const { data: orders } = await supabase
+      // wallet.total_pnl already tracks realized PnL — no need to re-sum all resolved orders.
+      // Only fetch OPEN orders (typically dozens, not thousands).
+      const realizedPnl = Number(wallet.total_pnl) || 0;
+
+      const { data: openOrders } = await supabase
         .from('ft_orders')
-        .select('outcome, pnl, size, condition_id, token_label, entry_price')
+        .select('size, condition_id, token_label, entry_price')
         .eq('wallet_id', walletId)
-        .limit(10000);
+        .eq('outcome', 'OPEN')
+        .limit(500);
 
-      const resolved = (orders || []).filter((o) => o.outcome === 'WON' || o.outcome === 'LOST');
-      const openOrders = (orders || []).filter((o) => o.outcome === 'OPEN');
-
-      const realizedPnl = resolved.reduce((s, o) => s + (o.pnl || 0), 0);
-      const openExposure = openOrders.reduce((s, o) => s + (o.size || 0), 0);
+      const openExposure = (openOrders || []).reduce((s, o) => s + (o.size || 0), 0);
 
       // Compute unrealized PnL from open positions (wallet.total_pnl only has realized)
       let unrealizedPnl = 0;
-      if (openOrders.length > 0) {
+      if (openOrders && openOrders.length > 0) {
         const conditionIds = [...new Set(openOrders.map((o: { condition_id?: string }) => o.condition_id).filter(Boolean))];
         const { data: markets } = await supabase
           .from('markets')
@@ -132,8 +132,8 @@ export async function GET(request: Request) {
             total_pnl: totalPnl,
             return_pct: returnPct,
             open_exposure: openExposure,
-            total_trades: wallet.total_trades ?? (orders?.length ?? 0),
-            open_positions: wallet.open_positions ?? openOrders.length,
+            total_trades: wallet.total_trades ?? 0,
+            open_positions: wallet.open_positions ?? (openOrders?.length ?? 0),
           },
           { onConflict: 'wallet_id,snapshot_at' }
         );

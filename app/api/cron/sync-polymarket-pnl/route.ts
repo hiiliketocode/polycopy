@@ -112,19 +112,20 @@ async function syncUserPositions(
     return { updated: 0 }
   }
 
-  // Get existing orders for this user
   const { data: orders } = await supabase
     .from('orders')
     .select('order_id, market_id, outcome, side, amount_invested')
     .eq('copy_user_id', userId)
+    .limit(1000)
 
   if (!orders || orders.length === 0) {
     return { updated: 0 }
   }
 
-  let updatedCount = 0
+  // Collect all updates, then execute in parallel batches instead of one-by-one
+  const pendingUpdates: { order_id: string; payload: Record<string, any> }[] = []
+  const now = new Date().toISOString()
 
-  // Match and update orders
   for (const position of allPositions) {
     const matchingOrders = orders.filter((o: any) => 
       o.market_id === position.conditionId && 
@@ -142,20 +143,30 @@ async function syncUserPositions(
         ? Number(order.amount_invested || 0) / totalInvested 
         : 1 / matchingOrders.length
 
-      const orderPnl = Number(position.realizedPnl || 0) * proportion
-
-      const { error } = await supabase
-        .from('orders')
-        .update({
-          polymarket_realized_pnl: orderPnl,
+      pendingUpdates.push({
+        order_id: order.order_id,
+        payload: {
+          polymarket_realized_pnl: Number(position.realizedPnl || 0) * proportion,
           polymarket_avg_price: Number(position.avgPrice || 0),
           polymarket_total_bought: Number(position.totalBought || 0),
-          polymarket_synced_at: new Date().toISOString()
-        })
-        .eq('order_id', order.order_id)
-
-      if (!error) updatedCount++
+          polymarket_synced_at: now,
+        },
+      })
     }
+  }
+
+  let updatedCount = 0
+  const BATCH_SIZE = 25
+  for (let i = 0; i < pendingUpdates.length; i += BATCH_SIZE) {
+    const batch = pendingUpdates.slice(i, i + BATCH_SIZE)
+    const results = await Promise.allSettled(
+      batch.map(({ order_id, payload }) =>
+        supabase.from('orders').update(payload).eq('order_id', order_id)
+      )
+    )
+    updatedCount += results.filter(
+      (r) => r.status === 'fulfilled' && !(r.value as any).error
+    ).length
   }
 
   return { updated: updatedCount }

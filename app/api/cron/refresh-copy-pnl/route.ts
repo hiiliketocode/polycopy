@@ -184,6 +184,11 @@ export async function GET(request: Request) {
     let updated = 0
     const now = new Date().toISOString()
 
+    // Group orders by (market_id, outcome) — all orders in a group share the
+    // same update payload, so we can batch them into a single UPDATE per group
+    // instead of one UPDATE per order (N+1 → M updates where M = unique markets×outcomes).
+    const updateGroups = new Map<string, { orderIds: string[]; payload: Record<string, any> }>()
+
     for (const order of openOrders as OpenOrder[]) {
       if (!order.market_id) continue
       const market = priceMap.get(order.market_id)
@@ -193,28 +198,32 @@ export async function GET(request: Request) {
       const isResolved = resolveIsResolved(market)
       if (outcomePrice === null && !isResolved) continue
 
-      const updatePayload: Record<string, any> = {
+      const payload: Record<string, any> = {
         last_checked_at: now,
         market_resolved: isResolved,
       }
+      if (outcomePrice !== null) payload.current_price = outcomePrice
+      if (isResolved) payload.market_resolved_at = now
 
-      if (outcomePrice !== null) {
-        updatePayload.current_price = outcomePrice
+      const key = `${order.market_id}:${normalize(order.outcome || '')}`
+      const group = updateGroups.get(key)
+      if (group) {
+        group.orderIds.push(order.order_id)
+      } else {
+        updateGroups.set(key, { orderIds: [order.order_id], payload })
       }
+    }
 
-      if (isResolved) {
-        updatePayload.market_resolved_at = now
-      }
-
+    for (const { orderIds, payload } of updateGroups.values()) {
       const { error: updateError } = await supabase
         .from(ordersTable)
-        .update(updatePayload)
-        .eq('order_id', order.order_id)
+        .update(payload)
+        .in('order_id', orderIds)
 
       if (updateError) {
-        console.error('Failed updating order', order.order_id, updateError)
+        console.error('Failed batch updating orders', orderIds.slice(0, 3), updateError)
       } else {
-        updated += 1
+        updated += orderIds.length
       }
     }
 
