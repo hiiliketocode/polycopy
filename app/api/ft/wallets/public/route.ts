@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient } from '@/lib/admin';
 
+let cachedResponse: { data: any; timestamp: number } | null = null;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 /**
  * GET /api/ft/wallets/public
  *
@@ -8,12 +11,18 @@ import { createAdminServiceClient } from '@/lib/admin';
  * Returns a lightweight summary of bot wallets for the landing page
  * and public bots listing. Computes stats from orders (same as admin route)
  * but skips sensitive data like order details, price maps, etc.
+ *
+ * Results are cached in-memory for 5 minutes to avoid repeated
+ * expensive pagination through ft_orders on every page load.
  */
 export async function GET() {
   try {
+    if (cachedResponse && Date.now() - cachedResponse.timestamp < CACHE_TTL_MS) {
+      return NextResponse.json(cachedResponse.data);
+    }
+
     const supabase = createAdminServiceClient();
 
-    // Fetch all wallets (select all columns to avoid guessing schema)
     const { data: wallets, error } = await supabase
       .from('ft_wallets')
       .select('*')
@@ -25,19 +34,18 @@ export async function GET() {
     }
 
     if (!wallets || wallets.length === 0) {
-      return NextResponse.json({ success: true, wallets: [] });
+      const empty = { success: true, wallets: [] };
+      cachedResponse = { data: empty, timestamp: Date.now() };
+      return NextResponse.json(empty);
     }
 
-    // For each wallet, count won/lost/total from ft_orders
     const walletIds = wallets.map((w: any) => w.wallet_id);
 
-    // Build per-wallet stats
     const statsMap = new Map<string, { total: number; won: number; lost: number }>();
     for (const wid of walletIds) {
       statsMap.set(wid, { total: 0, won: 0, lost: 0 });
     }
 
-    // Paginate through all orders (Supabase caps at 1000 rows per request)
     const PAGE_SIZE = 1000;
     let offset = 0;
     let hasMore = true;
@@ -93,11 +101,15 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({
+    const result = {
       success: true,
       wallets: summary,
       fetched_at: new Date().toISOString(),
-    });
+    };
+
+    cachedResponse = { data: result, timestamp: Date.now() };
+
+    return NextResponse.json(result);
   } catch (err) {
     console.error('[ft/wallets/public] Uncaught error:', err);
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
