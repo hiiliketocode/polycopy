@@ -53,6 +53,7 @@ import {
   ArrowUpRight,
   Share2,
   Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -3406,10 +3407,11 @@ function ProfilePageContent() {
                                             href={`https://polymarket.com/market/${trade.market_slug}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-sm font-semibold text-slate-900 hover:underline line-clamp-2"
+                                            className="inline-flex items-start gap-1 text-sm font-semibold text-slate-900 hover:text-blue-700 hover:underline line-clamp-2"
                                             onClick={(event) => event.stopPropagation()}
                                           >
                                             {trade.market_title}
+                                            <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
                                           </a>
                                         ) : (
                                           <span className="text-sm font-semibold text-slate-900 line-clamp-2">
@@ -4230,7 +4232,19 @@ function ProfilePageContent() {
                       <div key={trade.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 line-clamp-2">{trade.market_title}</p>
+                            {trade.market_slug ? (
+                              <a
+                                href={`https://polymarket.com/market/${trade.market_slug}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-start gap-1 text-sm font-semibold text-slate-900 hover:text-blue-700 hover:underline line-clamp-2"
+                              >
+                                {trade.market_title}
+                                <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
+                              </a>
+                            ) : (
+                              <p className="text-sm font-semibold text-slate-900 line-clamp-2">{trade.market_title}</p>
+                            )}
                             <p className="text-xs text-slate-500">{formatRelativeTime(trade.copied_at)}</p>
                           </div>
                           <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center sm:gap-4">
