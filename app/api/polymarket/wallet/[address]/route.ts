@@ -28,6 +28,7 @@ export async function GET(
     // 1. Get Cash Balance directly from Polygon RPC with retry logic
     let cashBalance = 0
     
+    let cashBalanceError: string | null = null
     try {
       const balanceData = await fetchUsdcBalance(
         address,
@@ -37,14 +38,10 @@ export async function GET(
       )
       
       cashBalance = balanceData.totalBalanceFormatted
-      console.log(`Cash balance for ${address}: $${cashBalance.toFixed(2)}`)
+      console.log(`Cash balance for ${address}: $${cashBalance.toFixed(2)} (native: $${balanceData.nativeBalanceFormatted.toFixed(2)}, bridged: $${balanceData.bridgedBalanceFormatted.toFixed(2)})`)
     } catch (balanceError: any) {
-      // Log but don't fail the entire request - return 0 balance
-      console.warn('Failed to fetch cash balance from Polygon RPC:', balanceError?.message || balanceError)
-      // If it's a rate limit error, we'll return 0 but log it for monitoring
-      if (balanceError?.message?.includes('rate limit') || balanceError?.message?.includes('Too many requests')) {
-        console.warn('Rate limit hit while fetching USDC balance - returning 0')
-      }
+      cashBalanceError = balanceError?.message || 'Unknown RPC error'
+      console.error('Failed to fetch cash balance from Polygon RPC:', cashBalanceError)
     }
     
     // 2. Get Open Positions from Polymarket
@@ -90,14 +87,20 @@ export async function GET(
     // 3. Calculate Portfolio = Cash + Positions
     const portfolioValue = cashBalance + positionsValue
     
-    return NextResponse.json({
+    const responseBody: Record<string, any> = {
       portfolioValue: parseFloat(portfolioValue.toFixed(2)),
       cashBalance: parseFloat(cashBalance.toFixed(2)),
-      positionsValue: parseFloat(positionsValue.toFixed(2))
-    }, {
+      positionsValue: parseFloat(positionsValue.toFixed(2)),
+    }
+    if (cashBalanceError) {
+      responseBody.cashBalanceError = cashBalanceError
+    }
+
+    return NextResponse.json(responseBody, {
       headers: {
-        // Cache for 60 seconds to reduce RPC load (increased from 30s)
-        'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=120'
+        'Cache-Control': cashBalanceError
+          ? 'public, s-maxage=10, stale-while-revalidate=30'
+          : 'public, s-maxage=60, stale-while-revalidate=120',
       }
     })
     

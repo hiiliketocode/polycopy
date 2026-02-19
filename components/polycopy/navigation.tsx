@@ -277,10 +277,15 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
 
         if (response.ok) {
           const data = await response.json()
-          // Reduced logging to prevent console spam
-          // console.log('Wallet data received:', data)
 
-          setCashBalance(data.cashBalance || 0)
+          // Only update cash balance if it wasn't an RPC error
+          // (avoids overwriting a previously valid balance with 0)
+          if (!data.cashBalanceError) {
+            setCashBalance(data.cashBalance ?? 0)
+          } else if (cashBalance === null) {
+            // First load failed — show null so UI can indicate an error
+            setCashBalance(null)
+          }
           setPortfolioValue(data.portfolioValue || 0)
         } else {
           console.warn('Failed to fetch wallet balance:', response.status)
@@ -417,7 +422,7 @@ export function Navigation({ user, isPremium = false, walletAddress = null, prof
                       )}
                     </div>
                     <div className="text-xs font-medium text-slate-600">
-                      {initialBalanceLoad ? "..." : cashBalance !== null ? formatUsd(cashBalance) : "$0.00"}
+                      {initialBalanceLoad ? "..." : cashBalance !== null ? formatUsd(cashBalance) : "—"}
                     </div>
                   </div>
                 </div>

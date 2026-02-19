@@ -724,7 +724,7 @@ function calculateSignal(
 // ============================================================================
 
 export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddress, tradeSize, marketSubtype, marketTitle, conditionId, outcome, serverRecommendation, serverScore, serverIndicators }: PolySignalProps) {
-  const [isOpen, setIsOpen] = useState(true) // Default expanded so full signal layout shows
+  const [isOpen, setIsOpen] = useState(false)
   const [traderStats, setTraderStats] = useState<TraderStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(false)
   const [fetchedSignal, setFetchedSignal] = useState<{ score: number; recommendation: Recommendation; indicators: Record<string, { value: unknown; label: string; status: string }> } | null>(null)

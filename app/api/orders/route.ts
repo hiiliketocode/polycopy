@@ -138,9 +138,20 @@ export async function GET(request: NextRequest) {
               try {
                 const fullOrder: any = await client.getOrder(order.id)
                 
-                // Extract market_id (condition_id) from tokenId
-                const tokenId = fullOrder.token_id || fullOrder.tokenId || fullOrder.asset_id || ''
-                const marketId = tokenId.length >= 66 ? tokenId.slice(0, 66) : tokenId
+                // Extract market_id (condition_id) — prefer the CLOB's `market` or
+                // `condition_id` field which is the actual hex condition_id.
+                // Fallback: derive from asset_id/token_id only as a last resort.
+                const rawConditionId =
+                  fullOrder.market ||
+                  fullOrder.condition_id ||
+                  fullOrder.conditionId ||
+                  fullOrder.market_id ||
+                  fullOrder.marketId ||
+                  null
+                const tokenId = fullOrder.asset_id || fullOrder.token_id || fullOrder.tokenId || ''
+                const marketId = rawConditionId
+                  ? String(rawConditionId).trim()
+                  : tokenId
                 
                 // Try to get outcome from order response
                 let outcome = fullOrder.outcome || fullOrder.token?.outcome || null
@@ -745,19 +756,17 @@ async function fetchTraderRecordsByWallets(
 }
 
 function extractRawMarketId(order: any): string | null {
+  // Only consider fields that represent condition_ids (market identifiers),
+  // NOT asset_id / token_id which are ERC-1155 token identifiers.
   const candidates = [
     order?.market_id,
-    order?.market,
-    order?.asset_id,
     order?.condition_id,
     order?.conditionId,
+    order?.market,
     order?.raw?.market_id,
-    order?.raw?.market,
-    order?.raw?.asset_id,
     order?.raw?.condition_id,
     order?.raw?.conditionId,
-    order?.raw?.token_id,
-    order?.raw?.tokenId,
+    order?.raw?.market,
     order?.raw?.market?.condition_id,
     order?.raw?.market?.conditionId,
   ]
@@ -770,19 +779,17 @@ function extractRawMarketId(order: any): string | null {
 }
 
 function resolveOrderMarketId(order: any): string {
+  // Prefer explicit condition_id / market fields (hex condition ids)
+  // over asset_id / token_id (ERC-1155 token identifiers) which are NOT condition ids.
   const normalized = deriveConditionIdFromCandidates([
     order?.market_id,
-    order?.market,
-    order?.asset_id,
     order?.condition_id,
     order?.conditionId,
+    order?.market,
     order?.raw?.market_id,
-    order?.raw?.market,
-    order?.raw?.asset_id,
     order?.raw?.condition_id,
     order?.raw?.conditionId,
-    order?.raw?.token_id,
-    order?.raw?.tokenId,
+    order?.raw?.market,
     order?.raw?.market?.condition_id,
     order?.raw?.market?.conditionId,
   ])
@@ -1361,6 +1368,17 @@ async function fetchMarketMetadataFromGamma(conditionIds: string[]) {
           }
           const market = Array.isArray(data) && data.length > 0 ? data[0] : null
           if (!market) return
+
+          // Validate: make sure the returned market actually matches the queried
+          // condition_id. Gamma API can return unrelated results for invalid IDs.
+          const returnedConditionId = (market.condition_id || market.conditionId || '').toLowerCase()
+          if (returnedConditionId && conditionId.toLowerCase() !== returnedConditionId) {
+            console.warn('[orders] Gamma API returned mismatched market', {
+              queried: conditionId,
+              returned: returnedConditionId,
+            })
+            return
+          }
 
           const image =
             typeof market?.image === 'string' && market.image.trim() ? market.image.trim() : null

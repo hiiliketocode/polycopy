@@ -1,5 +1,10 @@
 import { POLYGON_RPC_URL } from '@/lib/turnkey/config'
 
+const POLYGON_RPC_FALLBACKS = [
+  'https://polygon-bor-rpc.publicnode.com',
+  'https://rpc.ankr.com/polygon',
+]
+
 /**
  * RPC error codes that indicate rate limiting
  */
@@ -72,14 +77,15 @@ export interface RpcResponse {
  * Makes an RPC call to Polygon with retry logic and exponential backoff
  * Handles rate limit errors gracefully
  */
-export async function callPolygonRpc(
+async function callSingleRpc(
+  rpcUrl: string,
   options: RpcCallOptions
 ): Promise<RpcResponse> {
   const {
     method,
     params,
     id = 1,
-    maxRetries = 3,
+    maxRetries = 2,
     baseDelay = 1000,
     timeout = 10000,
   } = options
@@ -92,7 +98,7 @@ export async function callPolygonRpc(
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeout)
 
-      const response = await fetch(POLYGON_RPC_URL, {
+      const response = await fetch(rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -112,64 +118,62 @@ export async function callPolygonRpc(
 
       const data: RpcResponse = await response.json()
 
-      // If there's an RPC error, check if it's a rate limit error
       if (data.error) {
         if (isRateLimitError(data.error)) {
-          const retryDelay = extractRetryDelay(data.error)
-          
-          // If this is the last attempt, return the error
           if (attempt >= maxRetries) {
-            console.warn(
-              `[POLYGON-RPC] Rate limit error after ${maxRetries} retries:`,
-              data.error
-            )
-            return data
+            throw new Error(`Rate limited: ${data.error.message}`)
           }
 
-          console.warn(
-            `[POLYGON-RPC] Rate limit error (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${retryDelay}ms:`,
-            data.error.message
-          )
-
+          const retryDelay = extractRetryDelay(data.error)
           lastError = data.error
           await sleep(retryDelay)
           attempt++
           continue
         }
 
-        // Non-rate-limit error, return immediately
         return data
       }
 
-      // Success
       return data
     } catch (error: any) {
-      // Network errors or timeouts
       if (attempt >= maxRetries) {
-        console.error('[POLYGON-RPC] Max retries exceeded:', error)
         throw error
       }
 
-      // Check if it's a rate limit error from the fetch itself
       if (error.name === 'AbortError') {
         throw new Error('RPC request timeout')
       }
 
-      // For other errors, use exponential backoff
       const delay = baseDelay * Math.pow(2, attempt)
-      console.warn(
-        `[POLYGON-RPC] Error (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms:`,
-        error.message || error
-      )
-
       lastError = error
       await sleep(delay)
       attempt++
     }
   }
 
-  // Should never reach here, but TypeScript needs this
   throw lastError || new Error('RPC call failed after retries')
+}
+
+export async function callPolygonRpc(
+  options: RpcCallOptions
+): Promise<RpcResponse> {
+  const rpcUrls = [POLYGON_RPC_URL, ...POLYGON_RPC_FALLBACKS]
+
+  for (let i = 0; i < rpcUrls.length; i++) {
+    try {
+      return await callSingleRpc(rpcUrls[i], options)
+    } catch (error: any) {
+      console.warn(
+        `[POLYGON-RPC] RPC ${i + 1}/${rpcUrls.length} failed (${rpcUrls[i]}):`,
+        error.message || error
+      )
+      if (i === rpcUrls.length - 1) {
+        throw error
+      }
+    }
+  }
+
+  throw new Error('All Polygon RPC endpoints failed')
 }
 
 /**
