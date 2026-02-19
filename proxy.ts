@@ -6,6 +6,13 @@ import { NextResponse, type NextRequest } from 'next/server'
  * Protects against XSS, clickjacking, MITM, and other attacks
  */
 function applySecurityHeaders(response: NextResponse) {
+  // Optional: allow embedding in iframes from specific origins (e.g. Huddlekit, Ruttl).
+  // Set ALLOW_FRAME_ANCESTORS to a comma-separated list: https://app.huddlekit.com,https://huddlekit.com
+  const allowFrameAncestors = process.env.ALLOW_FRAME_ANCESTORS?.trim()
+  const frameAncestorsValue = allowFrameAncestors
+    ? `'self' ${allowFrameAncestors.split(',').map((o) => o.trim()).filter(Boolean).join(' ')}`
+    : "'none'"
+
   // Content Security Policy - Prevents XSS attacks
   // Allows resources only from trusted sources
   const cspDirectives = [
@@ -19,7 +26,7 @@ function applySecurityHeaders(response: NextResponse) {
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    `frame-ancestors ${frameAncestorsValue}`,
     "upgrade-insecure-requests",
   ].join('; ')
   
@@ -32,9 +39,11 @@ function applySecurityHeaders(response: NextResponse) {
     'max-age=31536000; includeSubDomains; preload'
   )
   
-  // X-Frame-Options - Prevents clickjacking
-  // Disallows embedding site in iframes
-  response.headers.set('X-Frame-Options', 'DENY')
+  // X-Frame-Options - Prevents clickjacking unless we allow specific frame ancestors
+  // When ALLOW_FRAME_ANCESTORS is set, omit X-Frame-Options so CSP frame-ancestors takes effect
+  if (!allowFrameAncestors) {
+    response.headers.set('X-Frame-Options', 'DENY')
+  }
   
   // X-Content-Type-Options - Prevents MIME sniffing
   // Stops browsers from guessing file types
