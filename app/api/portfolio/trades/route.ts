@@ -3,7 +3,9 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { getAppBaseUrl } from '@/lib/app-url'
 
-const PRICE_STALE_MS = 60_000
+const PRICE_STALE_MS = 15_000 // T2b: 15s — open positions need fresh price from Price API
+const PRICE_FETCH_BATCH = 8
+const PRICE_FETCH_MAX = 50
 const APP_BASE_URL = getAppBaseUrl()
 
 const toNumber = (value: number | string | null | undefined) => {
@@ -266,74 +268,58 @@ export async function GET(request: Request) {
       return !updatedAt || now - updatedAt > PRICE_STALE_MS
     })
     
-    console.log(`[portfolio/trades] Checking ${uniqueMarketIds.length} markets, ${refreshTargets.length} stale (refreshing in background)`)
-
-    // Fire-and-forget: refresh stale prices in background so the response isn't blocked
-    if (refreshTargets.length > 0) {
-      Promise.all(
-        refreshTargets.map(async (marketId) => {
-          try {
+    // Single source of truth: fetch from Price API (tier T2b) for stale/missing open markets and use in this response
+    const responsePriceMap = new Map<string, Record<string, number> | { outcomes: string[]; outcomePrices: number[] }>()
+    const toFetch = refreshTargets.slice(0, PRICE_FETCH_MAX)
+    if (toFetch.length > 0) {
+      for (let i = 0; i < toFetch.length; i += PRICE_FETCH_BATCH) {
+        const batch = toFetch.slice(i, i + PRICE_FETCH_BATCH)
+        const results = await Promise.allSettled(
+          batch.map(async (marketId) => {
             const controller = new AbortController()
             const timeout = setTimeout(() => controller.abort(), 8000)
-            const resp = await fetch(
-              `${APP_BASE_URL}/api/polymarket/price?conditionId=${encodeURIComponent(marketId)}&tier=T2b`,
-              { cache: 'no-store', signal: controller.signal }
-            )
-            clearTimeout(timeout)
-            if (!resp.ok) return
-            const payload = await resp.json()
-            const marketPayload = payload?.market ?? payload ?? null
-            if (!marketPayload) return
-
-            const outcomes = Array.isArray(marketPayload.outcomes)
-              ? marketPayload.outcomes
-              : []
-            const outcomePrices = Array.isArray(marketPayload.outcomePrices)
-              ? marketPayload.outcomePrices
-              : []
-
-            const priceMap: Record<string, number> = {}
-            outcomes.forEach((outcome: string, idx: number) => {
-              const price = Number(outcomePrices[idx])
-              if (Number.isFinite(price)) {
-                priceMap[outcome] = price
+            try {
+              const resp = await fetch(
+                `${APP_BASE_URL}/api/polymarket/price?conditionId=${encodeURIComponent(marketId)}&tier=T2b`,
+                { cache: 'no-store', signal: controller.signal }
+              )
+              clearTimeout(timeout)
+              if (!resp.ok) return
+              const payload = await resp.json()
+              const marketPayload = payload?.market ?? payload ?? null
+              if (!marketPayload) return
+              const outcomes = Array.isArray(marketPayload.outcomes) ? marketPayload.outcomes : []
+              const outcomePrices = Array.isArray(marketPayload.outcomePrices) ? marketPayload.outcomePrices : []
+              if (outcomes.length === 0 || outcomePrices.length === 0) return
+              const priceMap: Record<string, number> = {}
+              outcomes.forEach((outcome: string, idx: number) => {
+                const price = Number(outcomePrices[idx])
+                if (Number.isFinite(price)) priceMap[outcome] = price
+              })
+              if (Object.keys(priceMap).length > 0) {
+                responsePriceMap.set(marketId, { outcomes, outcomePrices })
               }
-            })
-
-            const resolvedOutcome =
-              marketPayload.resolvedOutcome ??
-              marketPayload.resolved_outcome ??
-              marketPayload.winner ??
-              marketPayload.winning_outcome ??
-              marketPayload.winningSide ??
-              marketPayload.winning_side ??
-              null
-
-            const closed =
-              Boolean(marketPayload.closed || marketPayload.resolved) ||
-              Boolean(resolvedOutcome)
-
-            const updatedMarket = {
-              condition_id: marketId,
-              outcome_prices: Object.keys(priceMap).length > 0 ? priceMap : null,
-              last_price_updated_at: new Date().toISOString(),
-              resolved_outcome: resolvedOutcome ?? null,
-              closed,
-              status: closed ? 'resolved' : marketPayload.status ?? null,
-              title: marketPayload.question ?? marketPayload.title ?? null,
-              image: marketPayload.icon ?? marketPayload.image ?? null,
-              market_slug: marketPayload.slug ?? marketPayload.market_slug ?? null,
-              updated_at: new Date().toISOString(),
+              const resolvedOutcome =
+                marketPayload.resolvedOutcome ?? marketPayload.resolved_outcome ?? marketPayload.winner ?? marketPayload.winning_outcome ?? marketPayload.winningSide ?? marketPayload.winning_side ?? null
+              const closed = Boolean(marketPayload.closed || marketPayload.resolved) || Boolean(resolvedOutcome)
+              await supabase.from('markets').upsert({
+                condition_id: marketId,
+                outcome_prices: Object.keys(priceMap).length > 0 ? priceMap : null,
+                last_price_updated_at: new Date().toISOString(),
+                resolved_outcome: resolvedOutcome ?? null,
+                closed,
+                status: closed ? 'resolved' : marketPayload.status ?? null,
+                title: marketPayload.question ?? marketPayload.title ?? null,
+                image: marketPayload.icon ?? marketPayload.image ?? null,
+                market_slug: marketPayload.slug ?? marketPayload.market_slug ?? null,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'condition_id' })
+            } catch {
+              clearTimeout(timeout)
             }
-
-            await supabase
-              .from('markets')
-              .upsert(updatedMarket, { onConflict: 'condition_id' })
-          } catch (err) {
-            console.warn(`[portfolio] background price refresh failed for ${marketId}`, err)
-          }
-        })
-      ).catch((err) => console.warn('[portfolio/trades] background price refresh batch failed', err))
+          })
+        )
+      }
     }
 
     const trades = (data || []).map((row: any) => {
@@ -353,7 +339,8 @@ export async function GET(request: Request) {
             : 0
           : null
 
-      const cachedPrice = pickOutcomePrice(market?.outcome_prices, row.outcome)
+      const priceSource = row.market_id ? responsePriceMap.get(row.market_id) ?? market?.outcome_prices : null
+      const cachedPrice = pickOutcomePrice(priceSource, row.outcome)
       const latestPrice =
         settlementPrice !== null
           ? settlementPrice

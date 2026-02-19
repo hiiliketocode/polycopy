@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createAdminServiceClient, getAdminSessionUser } from '@/lib/admin';
 import { requireAdmin } from '@/lib/ft-auth';
+import { getAppBaseUrl } from '@/lib/app-url';
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -122,34 +123,69 @@ export async function GET(request: Request, { params }: RouteParams) {
         if (openConditionIds.length > 0) {
             const { data: marketsData } = await supabase
                 .from('markets')
-                .select('condition_id, outcome_prices, outcomes')
+                .select('condition_id, outcome_prices, outcomes, last_price_updated_at')
                 .in('condition_id', openConditionIds);
+
+            const T2B_FRESH_MS = 15_000; // 15s — same as portfolio open positions
+            const nowMs = Date.now();
 
             if (marketsData) {
                 marketsData.forEach((m: any) => {
-                    let prices = m.outcome_prices;
-                    let outcomes = m.outcomes;
-
-                    if (typeof prices === 'string') {
-                        try { prices = JSON.parse(prices); } catch { prices = null; }
-                    }
+                    const op = m.outcome_prices;
+                    let outcomes = m.outcomes ?? op?.outcomes ?? op?.labels ?? op?.choices;
+                    let prices = Array.isArray(op?.outcomePrices) ? op.outcomePrices : op?.prices ?? op?.probabilities;
                     if (typeof outcomes === 'string') {
                         try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
                     }
-
-                    if (Array.isArray(prices) && Array.isArray(outcomes)) {
-                        const priceObj: Record<string, number> = {};
-                        outcomes.forEach((outcome: string, idx: number) => {
-                            priceObj[outcome.toUpperCase()] = Number(prices[idx]) || 0;
-                        });
-                        // Normalize 0-100 → 0-1 (some markets store prices as percentages)
-                        const maxVal = Math.max(...Object.values(priceObj));
-                        if (maxVal > 1) {
-                            for (const key of Object.keys(priceObj)) { priceObj[key] = priceObj[key] / 100; }
-                        }
-                        priceMap.set(m.condition_id, priceObj);
+                    if (typeof prices === 'string') {
+                        try { prices = JSON.parse(prices); } catch { prices = null; }
                     }
+                    if (!Array.isArray(outcomes) || !Array.isArray(prices)) return;
+                    const updatedAt = m.last_price_updated_at ? new Date(m.last_price_updated_at).getTime() : 0;
+                    const isFresh = updatedAt > 0 && nowMs - updatedAt <= T2B_FRESH_MS;
+                    const isPlaceholder = prices.length > 0 && prices.every((p: number) => p === 0.5);
+                    if (!isFresh || isPlaceholder) return; // will fetch from Price API below
+                    const priceObj: Record<string, number> = {};
+                    outcomes.forEach((outcome: string, idx: number) => {
+                        priceObj[String(outcome).toUpperCase()] = Number(prices[idx]) || 0;
+                    });
+                    const maxVal = Math.max(...Object.values(priceObj));
+                    if (maxVal > 1) {
+                        for (const key of Object.keys(priceObj)) { priceObj[key] = priceObj[key] / 100; }
+                    }
+                    priceMap.set(m.condition_id, priceObj);
                 });
+            }
+
+            // Single source of truth: fetch from Price API for missing or stale
+            const needingPrice = openConditionIds.filter((id) => !priceMap.has(id));
+            const baseUrl = getAppBaseUrl();
+            const BATCH = 8;
+            for (let i = 0; i < Math.min(needingPrice.length, 40); i += BATCH) {
+                const batch = needingPrice.slice(i, i + BATCH);
+                await Promise.allSettled(
+                    batch.map(async (conditionId) => {
+                        try {
+                            const res = await fetch(
+                                `${baseUrl}/api/polymarket/price?conditionId=${encodeURIComponent(conditionId)}&tier=T2b`,
+                                { cache: 'no-store', signal: AbortSignal.timeout(6000) }
+                            );
+                            if (!res.ok) return;
+                            const json = await res.json();
+                            const outcomes = json?.market?.outcomes ?? json?.market?.labels;
+                            const outcomePrices = json?.market?.outcomePrices ?? json?.market?.prices;
+                            if (!Array.isArray(outcomes) || !Array.isArray(outcomePrices)) return;
+                            const priceObj: Record<string, number> = {};
+                            outcomes.forEach((outcome: string, idx: number) => {
+                                const p = Number(outcomePrices[idx]);
+                                if (Number.isFinite(p)) priceObj[String(outcome).toUpperCase()] = p;
+                            });
+                            if (Object.keys(priceObj).length > 0) priceMap.set(conditionId, priceObj);
+                        } catch {
+                            /* ignore */
+                        }
+                    })
+                );
             }
         }
 

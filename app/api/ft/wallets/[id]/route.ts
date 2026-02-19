@@ -104,36 +104,40 @@ export async function GET(request: Request, { params }: RouteParams) {
         .in('condition_id', openConditionIds);
       
       const marketsWithPrices = new Set<string>();
-      
-      // Use cached prices whenever available (stale is better than nothing for PnL display)
+      const T3_FRESH_MS = 2 * 60 * 1000; // T3 = 2 min — same tier as dashboard
+      const nowMs = Date.now();
+
+      // Use cache only when fresh (within T3). Stale cache causes wrong prices; fetch from Price API (single source of truth).
       if (markets) {
         for (const market of markets) {
-          const outcomes = market.outcome_prices?.outcomes ?? 
-                          market.outcome_prices?.labels ?? 
+          const outcomes = market.outcome_prices?.outcomes ??
+                          market.outcome_prices?.labels ??
                           market.outcome_prices?.choices ?? null;
-          const outcomePrices = market.outcome_prices?.outcomePrices ?? 
-                               market.outcome_prices?.prices ?? 
+          const outcomePrices = market.outcome_prices?.outcomePrices ??
+                               market.outcome_prices?.prices ??
                                market.outcome_prices?.probabilities ?? null;
-          
-          if (outcomes && outcomePrices) {
+          if (!outcomes || !outcomePrices) continue;
+          const updatedAt = market.last_price_updated_at ? new Date(market.last_price_updated_at).getTime() : 0;
+          const isFresh = updatedAt > 0 && nowMs - updatedAt <= T3_FRESH_MS && !market.closed;
+          if (isFresh) {
             priceMap.set(market.condition_id, {
               currentPrice: null,
-              outcomes: outcomes,
-              outcomePrices: outcomePrices
+              outcomes,
+              outcomePrices,
             });
             marketsWithPrices.add(market.condition_id);
           }
         }
       }
-      
-      // Fetch fresh prices for markets without cached prices (batches of 30, up to 150 for single-wallet view)
-      const allNeedingPrices = openConditionIds.filter(id => !marketsWithPrices.has(id));
+
+      // Fetch from Price API for missing or stale (single source of truth)
+      const allNeedingPrices = openConditionIds.filter((id) => !marketsWithPrices.has(id));
       const PRICE_BATCH_SIZE = 30;
       const MAX_PRICE_FETCHES = 150;
 
       if (allNeedingPrices.length > 0) {
         console.log(`[ft/wallet/${walletId}] Fetching fresh prices for ${Math.min(allNeedingPrices.length, MAX_PRICE_FETCHES)} markets`);
-        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        const baseUrl = (await import('@/lib/app-url')).getAppBaseUrl();
 
         const parseOutcomes = (outcomes: unknown): string[] | null => {
           if (Array.isArray(outcomes)) return outcomes.map(o => typeof o === 'string' ? o : (o as { LABEL?: string; label?: string })?.LABEL ?? (o as { label?: string })?.label ?? String(o ?? ''));
