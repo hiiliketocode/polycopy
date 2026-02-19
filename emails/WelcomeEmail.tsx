@@ -61,7 +61,7 @@ export default function WelcomeEmail({
                     <tr>
                       <td align="center">
                         <div style={{ border: `1px solid ${COLORS.border}`, width: '64px', height: '64px', textAlign: 'center' as const }}>
-                          <Img src={`${ICON_BASE}/icon_expert_network.svg`} width="40" height="40" alt="Connect" style={{ margin: '12px auto' }} />
+                          <Img src={`${ICON_BASE}/icon-connect.png`} width="40" height="40" alt="Connect" style={{ margin: '12px auto 0 auto' }} />
                         </div>
                       </td>
                     </tr>
@@ -83,7 +83,7 @@ export default function WelcomeEmail({
                     <tr>
                       <td align="center">
                         <div style={{ border: `1px solid ${COLORS.border}`, width: '64px', height: '64px', textAlign: 'center' as const }}>
-                          <Img src={`${ICON_BASE}/icon_signal_feed.svg`} width="40" height="40" alt="Find" style={{ margin: '12px auto' }} />
+                          <Img src={`${ICON_BASE}/icon-find.png`} width="40" height="40" alt="Find" style={{ margin: '12px auto 0 auto' }} />
                         </div>
                       </td>
                     </tr>
@@ -105,7 +105,7 @@ export default function WelcomeEmail({
                     <tr>
                       <td align="center">
                         <div style={{ border: `1px solid ${COLORS.border}`, width: '64px', height: '64px', textAlign: 'center' as const }}>
-                          <Img src={`${ICON_BASE}/icon_classic_squares.svg`} width="40" height="40" alt="Copy" style={{ margin: '12px auto' }} />
+                          <Img src={`${ICON_BASE}/icon-copy.png`} width="40" height="40" alt="Copy" style={{ margin: '12px auto 0 auto' }} />
                         </div>
                       </td>
                     </tr>
@@ -137,7 +137,6 @@ export default function WelcomeEmail({
             $20 <span style={{ fontSize: '20px', fontWeight: '700' }}>/MONTH</span>
           </Text>
 
-          {/* Feature Checklist inside yellow */}
           {[
             'QUICK COPY TRADE EXECUTION',
             'AUTO-CLOSE POSITIONS',
@@ -160,7 +159,6 @@ export default function WelcomeEmail({
           ))}
         </Section>
 
-        {/* Upgrade Button - full width black */}
         <Section style={{ textAlign: 'center' as const }}>
           <Link
             href={`${profileUrl}?upgrade=true`}
