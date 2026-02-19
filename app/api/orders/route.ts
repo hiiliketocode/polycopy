@@ -1387,9 +1387,15 @@ async function fetchMarketMetadataFromGamma(conditionIds: string[]) {
           const rawOutcomes = typeof market?.outcomes === 'string'
             ? (() => { try { return JSON.parse(market.outcomes) } catch { return null } })()
             : market?.outcomes
-          const rawPrices = typeof market?.outcomePrices === 'string'
-            ? (() => { try { return JSON.parse(market.outcomePrices) } catch { return null } })()
-            : market?.outcomePrices
+          const rawPricesRaw =
+            market?.outcomePrices ??
+            market?.outcome_prices ??
+            (typeof market?.prices !== 'undefined' ? market.prices : undefined)
+          const rawPrices = typeof rawPricesRaw === 'string'
+            ? (() => { try { return JSON.parse(rawPricesRaw) } catch { return null } })()
+            : Array.isArray(rawPricesRaw)
+              ? rawPricesRaw
+              : null
           const rawTokenIds = typeof market?.clobTokenIds === 'string'
             ? (() => { try { return JSON.parse(market.clobTokenIds) } catch { return null } })()
             : market?.clobTokenIds
@@ -1451,7 +1457,16 @@ function isPlaceholderPrices(outcomePrices: number[]): boolean {
   return Boolean(allSame && allFifty)
 }
 
-/** Fetch live token prices from CLOB for a single market. Used when Gamma has no/placeholder prices. */
+/** True if we have at least one real price (not placeholder 0.5). Don't overwrite Gamma with CLOB when CLOB only has 50¢. */
+function hasRealPrices(outcomePrices: number[]): boolean {
+  if (!outcomePrices || outcomePrices.length === 0) return false
+  if (isPlaceholderPrices(outcomePrices)) return false
+  return outcomePrices.some(
+    (p) => Number.isFinite(p) && p > 0.01 && p < 0.99
+  )
+}
+
+/** Fetch live token prices from CLOB for a single market. */
 async function fetchClobMarketPrices(
   conditionId: string
 ): Promise<{ outcomes: string[]; outcomePrices: number[]; tokens: MarketMetadataToken[] } | null> {
@@ -1494,36 +1509,107 @@ async function fetchClobMarketPrices(
   }
 }
 
-/** When Gamma returns no prices or placeholder 50¢, fill from CLOB so current price is correct. */
+/** Fetch mid price from order book for a token. */
+async function fetchMidPriceFromBook(tokenId: string): Promise<number | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `https://clob.polymarket.com/book?token_id=${encodeURIComponent(tokenId)}`,
+      3000,
+      { cache: 'no-store' }
+    )
+    if (!response.ok) return null
+    const data = await response.json()
+    const bids = Array.isArray(data?.bids) ? data.bids : []
+    const asks = Array.isArray(data?.asks) ? data.asks : []
+    const bestBid = bids.length > 0 ? parseNumeric(bids[0]?.price) : null
+    const bestAsk = asks.length > 0 ? parseNumeric(asks[0]?.price) : null
+    if (bestBid != null && bestAsk != null && Number.isFinite(bestBid) && Number.isFinite(bestAsk)) {
+      const mid = (bestBid + bestAsk) / 2
+      return mid > 0 && mid < 1 ? mid : null
+    }
+    const onlyBid = bestBid != null && Number.isFinite(bestBid) ? bestBid : null
+    const onlyAsk = bestAsk != null && Number.isFinite(bestAsk) ? bestAsk : null
+    if (onlyBid != null && onlyBid > 0 && onlyBid < 1) return onlyBid
+    if (onlyAsk != null && onlyAsk > 0 && onlyAsk < 1) return onlyAsk
+    return null
+  } catch {
+    return null
+  }
+}
+
+const CLOB_ENRICH_CONCURRENCY = 8
+
+/** Prefer CLOB for prices (then order book per token when CLOB has no price). Overwrite Gamma when CLOB has real prices or when Gamma is placeholder. */
 async function enrichMetadataWithClobPricesWhenNeeded(
   metadataMap: Record<string, MarketMetadata>
 ): Promise<void> {
-  const idsToEnrich = Object.entries(metadataMap)
-    .filter(([, meta]) => isPlaceholderPrices(meta.outcomePrices))
-    .map(([id]) => id)
+  const idsToEnrich = Object.keys(metadataMap)
   if (idsToEnrich.length === 0) return
-  await Promise.allSettled(
-    idsToEnrich.map(async (conditionId) => {
-      const clob = await fetchClobMarketPrices(conditionId)
-      if (!clob || clob.outcomes.length === 0) return
+  for (let i = 0; i < idsToEnrich.length; i += CLOB_ENRICH_CONCURRENCY) {
+    const chunk = idsToEnrich.slice(i, i + CLOB_ENRICH_CONCURRENCY)
+    await Promise.allSettled(
+      chunk.map(async (conditionId) => {
       const existing = metadataMap[conditionId]
       if (!existing) return
+      const clob = await fetchClobMarketPrices(conditionId)
+      const useClob =
+        clob &&
+        clob.outcomes.length > 0 &&
+        (hasRealPrices(clob.outcomePrices) || isPlaceholderPrices(existing.outcomePrices))
+      if (useClob) {
+        metadataMap[conditionId] = {
+          ...existing,
+          outcomes: clob.outcomes.length ? clob.outcomes : existing.outcomes,
+          outcomePrices: clob.outcomePrices,
+          tokens: clob.tokens,
+          metadataPayload: existing.metadataPayload
+            ? {
+                ...existing.metadataPayload,
+                outcomes: clob.outcomes.length ? clob.outcomes : existing.outcomes,
+                outcomePrices: clob.outcomePrices,
+                tokens: clob.tokens,
+              }
+            : null,
+        }
+        return
+      }
+      if (!clob || !clob.tokens.length || hasRealPrices(existing.outcomePrices)) return
+      const tokensWithBookPrice: MarketMetadataToken[] = []
+      for (const token of clob.tokens) {
+        const tokenId = token.tokenId ?? null
+        if (!tokenId) {
+          tokensWithBookPrice.push(token)
+          continue
+        }
+        const bookPrice = await fetchMidPriceFromBook(tokenId)
+        const price = token.price != null && Number.isFinite(token.price) ? token.price : bookPrice
+        tokensWithBookPrice.push({
+          ...token,
+          price: price ?? null,
+          winner: price === 1 ? true : price === 0 ? false : null,
+        })
+      }
+      const outcomePricesFromTokens = tokensWithBookPrice.map((t) => (t.price != null && Number.isFinite(t.price) ? t.price : 0))
+      if (!hasRealPrices(outcomePricesFromTokens)) return
+      const outcomesOrder = existing.outcomes.length ? existing.outcomes : clob.outcomes
+      const outcomePrices = outcomesOrder.length === tokensWithBookPrice.length
+        ? outcomesOrder.map((outcome) => {
+            const idx = tokensWithBookPrice.findIndex((t) => String(t.outcome).toLowerCase() === String(outcome).toLowerCase())
+            return idx >= 0 ? outcomePricesFromTokens[idx] : 0
+          })
+        : outcomePricesFromTokens
+      if (!hasRealPrices(outcomePrices)) return
       metadataMap[conditionId] = {
         ...existing,
-        outcomes: clob.outcomes.length ? clob.outcomes : existing.outcomes,
-        outcomePrices: clob.outcomePrices,
-        tokens: clob.tokens,
+        outcomePrices,
+        tokens: tokensWithBookPrice,
         metadataPayload: existing.metadataPayload
-          ? {
-              ...existing.metadataPayload,
-              outcomes: clob.outcomes.length ? clob.outcomes : existing.outcomes,
-              outcomePrices: clob.outcomePrices,
-              tokens: clob.tokens,
-            }
+          ? { ...existing.metadataPayload, outcomePrices, tokens: tokensWithBookPrice }
           : null,
       }
     })
-  )
+    )
+  }
 }
 
 function extractTokenIdFromOrderRecord(order: any): string | null {
