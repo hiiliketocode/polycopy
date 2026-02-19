@@ -207,45 +207,50 @@ export async function GET(request: Request) {
 
             if (marketsData) {
                 marketsData.forEach((m: any) => {
-                    let prices = m.outcome_prices;
-                    let outcomes = m.outcomes;
-                    if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
-                    if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
-                    if (Array.isArray(prices) && Array.isArray(outcomes)) {
-                        const obj: Record<string, number> = {};
-                        outcomes.forEach((out: string, idx: number) => {
-                            obj[out.toUpperCase()] = Number(prices[idx]) || 0;
-                        });
-                        // Normalize 0-100 → 0-1 (same as resolve route)
-                        const maxVal = Math.max(...Object.values(obj));
-                        if (maxVal > 1) {
-                            for (const key of Object.keys(obj)) { obj[key] = obj[key] / 100; }
-                        }
-                        priceMap.set(m.condition_id, obj);
+                    const op = m.outcome_prices;
+                    if (!op || typeof op !== 'object') return;
+                    let outcomes = op.outcomes ?? op.labels ?? op.choices ?? m.outcomes;
+                    let prices = op.outcomePrices ?? op.prices ?? op.probabilities;
+                    if (!Array.isArray(outcomes) && typeof outcomes === 'string') {
+                        try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
                     }
+                    if (!Array.isArray(prices) && typeof prices === 'string') {
+                        try { prices = JSON.parse(prices); } catch { prices = null; }
+                    }
+                    if (!Array.isArray(outcomes) || !Array.isArray(prices) || outcomes.length === 0) return;
+                    const obj: Record<string, number> = {};
+                    outcomes.forEach((out: string, idx: number) => {
+                        const p = Number(prices[idx]);
+                        obj[String(out).toUpperCase()] = Number.isFinite(p) ? p : 0;
+                    });
+                    const maxVal = Math.max(...Object.values(obj));
+                    if (maxVal > 1) {
+                        for (const key of Object.keys(obj)) { obj[key] = obj[key] / 100; }
+                    }
+                    priceMap.set(m.condition_id, obj);
                 });
             }
 
-            // 2. Gamma API fallback for missing markets
+            // 2. CLOB API fallback for missing markets (CLOB always returns correct data)
             const missingIds = conditionIds.filter(cid => !priceMap.has(cid));
             if (missingIds.length > 0) {
                 await Promise.all(missingIds.map(async (conditionId) => {
                     try {
                         const resp = await fetch(
-                            `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
+                            `https://clob.polymarket.com/markets/${conditionId}`,
                             { cache: 'no-store', signal: AbortSignal.timeout(3000) }
                         );
                         if (resp.ok) {
-                            const data = await resp.json();
-                            const gm = Array.isArray(data) && data.length > 0 ? data[0] : null;
-                            if (gm?.outcomePrices && gm?.outcomes) {
-                                const outcomes = typeof gm.outcomes === 'string' ? JSON.parse(gm.outcomes) : gm.outcomes;
-                                const prices = typeof gm.outcomePrices === 'string' ? JSON.parse(gm.outcomePrices) : gm.outcomePrices;
-                                if (Array.isArray(outcomes) && Array.isArray(prices)) {
-                                    const obj: Record<string, number> = {};
-                                    outcomes.forEach((o: string, i: number) => { obj[o.toUpperCase()] = Number(prices[i]) || 0.5; });
-                                    priceMap.set(conditionId, obj);
-                                }
+                            const clob = await resp.json();
+                            const tokens = Array.isArray(clob?.tokens) ? clob.tokens : [];
+                            if (tokens.length > 0) {
+                                const obj: Record<string, number> = {};
+                                tokens.forEach((t: any) => {
+                                    const outcome = String(t?.outcome ?? '').toUpperCase();
+                                    const p = typeof t?.price === 'number' ? t.price : parseFloat(t?.price);
+                                    if (outcome && Number.isFinite(p)) obj[outcome] = p;
+                                });
+                                if (Object.keys(obj).length > 0) priceMap.set(conditionId, obj);
                             }
                         }
                     } catch { /* ignore timeout/network errors */ }

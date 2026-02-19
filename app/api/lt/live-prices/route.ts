@@ -57,64 +57,65 @@ export async function GET(request: Request) {
 
     if (markets) {
       markets.forEach((market: any) => {
-        let prices = market.outcome_prices;
-        let outcomes = market.outcomes;
+        const op = market.outcome_prices;
+        if (!op || typeof op !== 'object') return;
 
-        // Parse if stringified
-        if (typeof prices === 'string') {
-          try { prices = JSON.parse(prices); } catch { prices = null; }
-        }
-        if (typeof outcomes === 'string') {
+        // Handle structured format: { outcomes: [...], outcomePrices: [...] }
+        let outcomes = op.outcomes ?? op.labels ?? op.choices ?? market.outcomes;
+        let prices = op.outcomePrices ?? op.prices ?? op.probabilities;
+
+        // Fallback: plain arrays (legacy format)
+        if (!Array.isArray(outcomes) && typeof outcomes === 'string') {
           try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; }
         }
+        if (!Array.isArray(prices) && typeof prices === 'string') {
+          try { prices = JSON.parse(prices); } catch { prices = null; }
+        }
 
-        if (Array.isArray(prices) && Array.isArray(outcomes)) {
-          priceMap[market.condition_id] = {};
-          outcomes.forEach((outcome: string, idx: number) => {
-            priceMap[market.condition_id][outcome.toUpperCase()] = Number(prices[idx]) || 0.5;
-          });
-          // Normalize 0-100 → 0-1 (some markets store prices as percentages)
-          const maxVal = Math.max(...Object.values(priceMap[market.condition_id]));
-          if (maxVal > 1) {
-            for (const key of Object.keys(priceMap[market.condition_id])) {
-              priceMap[market.condition_id][key] = priceMap[market.condition_id][key] / 100;
-            }
+        if (!Array.isArray(outcomes) || !Array.isArray(prices) || outcomes.length === 0) return;
+
+        priceMap[market.condition_id] = {};
+        outcomes.forEach((outcome: string, idx: number) => {
+          const p = Number(prices[idx]);
+          priceMap[market.condition_id][String(outcome).toUpperCase()] = Number.isFinite(p) ? p : 0;
+        });
+        // Normalize 0-100 → 0-1 (some markets store prices as percentages)
+        const maxVal = Math.max(...Object.values(priceMap[market.condition_id]));
+        if (maxVal > 1) {
+          for (const key of Object.keys(priceMap[market.condition_id])) {
+            priceMap[market.condition_id][key] = priceMap[market.condition_id][key] / 100;
           }
         }
       });
     }
 
-    // FALLBACK: Fetch from Gamma API for missing markets
+    // FALLBACK: Fetch from CLOB API for missing markets (CLOB always returns correct data)
     const missingConditionIds = conditionIds.filter(cid => !priceMap[cid]);
     
     if (missingConditionIds.length > 0) {
-      console.log(`[live-prices] Fetching ${missingConditionIds.length} markets from Gamma API`);
+      console.log(`[live-prices] Fetching ${missingConditionIds.length} markets from CLOB API`);
       
       await Promise.all(missingConditionIds.map(async (conditionId) => {
         try {
           const resp = await fetch(
-            `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
+            `https://clob.polymarket.com/markets/${conditionId}`,
             { cache: 'no-store', signal: AbortSignal.timeout(3000) }
           );
           
           if (resp.ok) {
-            const data = await resp.json();
-            const gammaMarket = Array.isArray(data) && data.length > 0 ? data[0] : null;
-            if (gammaMarket?.outcomePrices && gammaMarket?.outcomes) {
-              const outcomes = typeof gammaMarket.outcomes === 'string'
-                ? JSON.parse(gammaMarket.outcomes) : gammaMarket.outcomes;
-              const prices = typeof gammaMarket.outcomePrices === 'string'
-                ? JSON.parse(gammaMarket.outcomePrices) : gammaMarket.outcomePrices;
-              if (Array.isArray(outcomes) && Array.isArray(prices)) {
-                priceMap[conditionId] = {};
-                outcomes.forEach((outcome: string, idx: number) => {
-                  priceMap[conditionId][outcome.toUpperCase()] = Number(prices[idx]) || 0.5;
-                });
-              }
+            const clob = await resp.json();
+            const tokens = Array.isArray(clob?.tokens) ? clob.tokens : [];
+            if (tokens.length > 0) {
+              priceMap[conditionId] = {};
+              tokens.forEach((t: any) => {
+                const outcome = String(t?.outcome ?? '').toUpperCase();
+                const p = typeof t?.price === 'number' ? t.price : parseFloat(t?.price);
+                if (outcome && Number.isFinite(p)) priceMap[conditionId][outcome] = p;
+              });
             }
           }
         } catch (error: any) {
-          console.error(`[live-prices] Failed to fetch ${conditionId} from Gamma:`, error.message);
+          console.error(`[live-prices] Failed to fetch ${conditionId} from CLOB:`, error.message);
         }
       }));
     }
