@@ -1215,7 +1215,7 @@ function ProfilePageContent() {
 
     copiedTrades.forEach(trade => {
       // Categorize based on market title keywords with comprehensive patterns
-      const title = trade.market_title.toLowerCase();
+      const title = (trade.market_title ?? '').toLowerCase();
       let category = 'Other';
       
       // Politics - elections, government, political figures
