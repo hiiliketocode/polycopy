@@ -14,9 +14,7 @@ export async function GET(request: Request, { params }: RouteParams) {
   const { id } = await params;
 
   const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'http://localhost:3000';
+    (await import('@/lib/app-url')).getAppBaseUrl();
 
   try {
     // Forward to the admin route using an internal fetch.

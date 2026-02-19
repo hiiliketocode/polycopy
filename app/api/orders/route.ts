@@ -1616,15 +1616,20 @@ async function enrichMetadataWithClobPricesWhenNeeded(
 
 const PRICE_API_FALLBACK_BATCH = 5
 
-/** When Gamma/CLOB left us with placeholder (50¢) or no prices, use our Price API (single source of truth). */
+/** Use Price API as single source of truth for current price: when Gamma/CLOB gave placeholder/no prices, or when market is open (stale Gamma data often wrong). */
 async function enrichMetadataFromPriceApiWhenPlaceholder(
   metadataMap: Record<string, MarketMetadata>
 ): Promise<void> {
   const idsToFix = Object.keys(metadataMap).filter((conditionId) => {
     const existing = metadataMap[conditionId]
-    if (!existing?.outcomePrices?.length) return true
+    if (!existing) return false
+    // Always fix when missing/placeholder/bad prices
+    if (!existing.outcomePrices?.length) return true
     if (isPlaceholderPrices(existing.outcomePrices)) return true
     if (!hasRealPrices(existing.outcomePrices)) return true
+    // For open markets, always use Price API so "current" is correct (Gamma is often stale)
+    const isOpen = existing.closed !== true && existing.resolved !== true
+    if (isOpen) return true
     return false
   })
   if (idsToFix.length === 0) return

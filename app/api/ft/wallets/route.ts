@@ -146,7 +146,7 @@ export async function GET() {
     const STALE_PRICE_MS = 2 * 60 * 1000;
     const PRICE_BATCH_SIZE = 25;
     const MAX_PRICE_FETCHES = 200; // Higher limit since we're now fetching for all wallets combined
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const baseUrl = (await import('@/lib/app-url')).getAppBaseUrl();
     const nowMs = Date.now();
     
     if (allConditionIds.length > 0) {

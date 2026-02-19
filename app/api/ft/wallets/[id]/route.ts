@@ -117,6 +117,8 @@ export async function GET(request: Request, { params }: RouteParams) {
                                market.outcome_prices?.prices ??
                                market.outcome_prices?.probabilities ?? null;
           if (!outcomes || !outcomePrices) continue;
+          const isPlaceholder = outcomePrices.length > 0 && outcomePrices.every((p: unknown) => Number(p) === 0.5);
+          if (isPlaceholder) continue; // never use 50¢ placeholder as cache — fetch from Price API
           const updatedAt = market.last_price_updated_at ? new Date(market.last_price_updated_at).getTime() : 0;
           const isFresh = updatedAt > 0 && nowMs - updatedAt <= T3_FRESH_MS && !market.closed;
           if (isFresh) {

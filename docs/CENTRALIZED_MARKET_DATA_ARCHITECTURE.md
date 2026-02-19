@@ -6,6 +6,8 @@
 
 **Rigorous companion doc:** See **`docs/MARKET_DATA_RIGOROUS_ANALYSIS.md`** for: (1) when we use CLOB vs Gamma vs Dome and where Dome can improve, (2) every component that needs live prices and how it uses them, (3) break risks and calculation accuracy, (4) faster tiers (15–30 s for feed/portfolio), (5) response-shape contract and implementation safety checklist.
 
+**Main vs v2:** There are no separate v2 API routes for portfolio or orders. Both **main** (`/portfolio`) and **v2** (`/v2/portfolio`) call the same backend: `/api/portfolio/trades`, `/api/orders`, `/api/ft/wallets/[id]`, etc. Any fix to those APIs applies to both UIs once deployed.
+
 ---
 
 ## 1. Problem Statement

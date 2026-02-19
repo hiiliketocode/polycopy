@@ -135,10 +135,7 @@ const refreshMarketPrices = async (
 ) => {
   if (marketIds.length === 0) return
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'http://localhost:3000'
+  const baseUrl = (await import('@/lib/app-url')).getAppBaseUrl()
 
   for (let i = 0; i < marketIds.length; i += PRICE_FETCH_BATCH_SIZE) {
     const chunk = marketIds.slice(i, i + PRICE_FETCH_BATCH_SIZE)

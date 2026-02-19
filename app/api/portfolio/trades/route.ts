@@ -288,15 +288,19 @@ export async function GET(request: Request) {
               const payload = await resp.json()
               const marketPayload = payload?.market ?? payload ?? null
               if (!marketPayload) return
+              // Safety: verify the Price API returned data for the right market
+              const returnedId = (marketPayload.conditionId || '').toLowerCase()
+              if (returnedId && returnedId !== marketId.toLowerCase()) {
+                console.warn('[portfolio/trades] Price API returned wrong conditionId, skipping', { queried: marketId.slice(0, 20), returned: returnedId.slice(0, 20) })
+                return
+              }
               const outcomes = Array.isArray(marketPayload.outcomes) ? marketPayload.outcomes : []
               const outcomePrices = Array.isArray(marketPayload.outcomePrices) ? marketPayload.outcomePrices : []
               if (outcomes.length === 0 || outcomePrices.length === 0) return
-              const priceMap: Record<string, number> = {}
-              outcomes.forEach((outcome: string, idx: number) => {
-                const price = Number(outcomePrices[idx])
-                if (Number.isFinite(price)) priceMap[outcome] = price
-              })
-              if (Object.keys(priceMap).length > 0) {
+              // Skip all-zero prices (likely from a resolved/wrong Gamma response)
+              const numPrices = outcomePrices.map((p: any) => Number(p))
+              if (numPrices.every((p: number) => p === 0)) return
+              if (outcomes.length > 0) {
                 responsePriceMap.set(marketId, { outcomes, outcomePrices })
               }
               const resolvedOutcome =
@@ -304,7 +308,7 @@ export async function GET(request: Request) {
               const closed = Boolean(marketPayload.closed || marketPayload.resolved) || Boolean(resolvedOutcome)
               await supabase.from('markets').upsert({
                 condition_id: marketId,
-                outcome_prices: Object.keys(priceMap).length > 0 ? priceMap : null,
+                outcome_prices: { outcomes, outcomePrices: numPrices },
                 last_price_updated_at: new Date().toISOString(),
                 resolved_outcome: resolvedOutcome ?? null,
                 closed,

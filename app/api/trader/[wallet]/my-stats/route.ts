@@ -88,10 +88,7 @@ const fetchMarketPrices = async (
 
   if (needsRefresh.length === 0) return priceMap
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.NEXT_PUBLIC_APP_URL ||
-    'http://localhost:3000'
+  const baseUrl = (await import('@/lib/app-url')).getAppBaseUrl()
 
   for (let i = 0; i < needsRefresh.length; i += PRICE_FETCH_BATCH_SIZE) {
     const chunk = needsRefresh.slice(i, i + PRICE_FETCH_BATCH_SIZE)

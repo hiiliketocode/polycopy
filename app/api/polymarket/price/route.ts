@@ -297,6 +297,44 @@ export async function GET(request: Request) {
       const markets = await fetchGammaMarketsByConditionIds([conditionId]);
       const market = markets[0];
       if (!market) return null;
+      // VALIDATE: Gamma can return a completely different market for newer condition_ids
+      const returnedId = (market.conditionId || market.condition_id || '').toLowerCase();
+      if (returnedId && returnedId !== conditionId.toLowerCase()) {
+        console.warn('[Price API ensureCachedMarket] Gamma returned wrong market, trying CLOB', {
+          queried: conditionId.slice(0, 20),
+          returned: returnedId.slice(0, 20),
+        });
+        // Try CLOB instead for basic metadata
+        try {
+          const clobRes = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' });
+          if (clobRes.ok) {
+            const clob = await clobRes.json();
+            if (clob && clob.condition_id) {
+              const tokens = Array.isArray(clob.tokens) ? clob.tokens : [];
+              const outcomes = tokens.map((t: any) => t?.outcome ?? '').filter(Boolean);
+              const outcomePrices = tokens.map((t: any) => {
+                const p = t?.price;
+                return typeof p === 'number' ? p : (typeof p === 'string' ? parseFloat(p) : 0);
+              });
+              const clobRow = {
+                condition_id: conditionId,
+                title: clob.question ?? null,
+                market_slug: clob.market_slug ?? null,
+                image: clob.icon ?? clob.image ?? null,
+                description: clob.description ?? null,
+                status: clob.closed ? 'closed' : clob.active ? 'active' : 'unknown',
+                closed: Boolean(clob.closed),
+                outcome_prices: outcomes.length > 0 ? { outcomes, outcomePrices } : null,
+                last_price_updated_at: new Date().toISOString(),
+                end_time: clob.end_date_iso ?? null,
+              };
+              await supabaseAdmin.from('markets').upsert(clobRow, { onConflict: 'condition_id' });
+              return await loadCachedMarket();
+            }
+          }
+        } catch { /* CLOB fallback failed */ }
+        return null;
+      }
       const row = mapGammaMarketToRow(market);
       if (!row.condition_id) return null;
       if (market.slug) {
@@ -578,7 +616,10 @@ export async function GET(request: Request) {
       null;
     const cryptoPriceUsd = cryptoSymbol ? await fetchCryptoSpotPrice(cryptoSymbol) : null;
 
-    // Try 1: Gamma API by condition_id (primary)
+    // Try 1: Gamma API by condition_id (primary), then CLOB for real prices
+    // CRITICAL: Gamma sometimes returns a COMPLETELY WRONG market for newer condition_ids.
+    // We MUST validate the returned conditionId matches what we queried.
+    let gammaValid = false;
     if (conditionId && conditionId.startsWith('0x')) {
       try {
         const gammaRes = await fetch(
@@ -589,29 +630,45 @@ export async function GET(request: Request) {
           const gammaData = await gammaRes.json();
           const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
           if (gammaMarket) {
+            // VALIDATE: Gamma must return a market whose conditionId matches what we queried
+            const returnedConditionId = (gammaMarket.conditionId || gammaMarket.condition_id || '').toLowerCase();
+            if (returnedConditionId && returnedConditionId !== conditionId.toLowerCase()) {
+              console.warn('[Price API] Gamma returned WRONG market — skipping to CLOB', {
+                queried: conditionId.slice(0, 20),
+                returned: returnedConditionId.slice(0, 20),
+                wrongTitle: (gammaMarket.question || '').slice(0, 60),
+              });
+              // Don't use Gamma data at all — fall through to CLOB
+            } else {
+            gammaValid = true;
             let pricesRaw = gammaMarket.outcomePrices ?? gammaMarket.outcome_prices ?? gammaMarket.prices;
             let outcomes = gammaMarket.outcomes;
             if (typeof pricesRaw === 'string') { try { pricesRaw = JSON.parse(pricesRaw); } catch { pricesRaw = null; } }
             if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
             let prices = Array.isArray(pricesRaw) ? pricesRaw.map((p: any) => Number(p)) : null;
             const isPlaceholderPrices = prices && prices.length > 0 && prices.every((p: number) => p === 0.5);
-            if (isPlaceholderPrices && conditionId) {
+            const isZeroPrices = prices && prices.length > 0 && prices.every((p: number) => p === 0);
+            // When Gamma returns placeholder (0.5) or all-zero prices, try CLOB for real data
+            if ((isPlaceholderPrices || isZeroPrices) && conditionId) {
               try {
                 const clobRes = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' });
                 if (clobRes.ok) {
                   const clob = await clobRes.json();
                   if (Array.isArray(clob?.tokens) && clob.tokens.length > 0) {
+                    const clobOutcomes = clob.tokens.map((t: any) => t?.outcome ?? '').filter(Boolean);
                     const clobPrices = clob.tokens.map((t: any) => {
                       const p = t?.price;
                       return typeof p === 'number' ? p : (typeof p === 'string' ? parseFloat(p) : NaN);
                     });
                     if (clobPrices.some((p: number) => Number.isFinite(p) && p > 0.01 && p < 0.99)) {
                       prices = clobPrices;
+                      // Also use CLOB outcomes if they differ from Gamma (Gamma may have "Yes"/"No" for multi-outcome)
+                      if (clobOutcomes.length > 0) outcomes = clobOutcomes;
                     }
                   }
                 }
               } catch {
-                /* keep Gamma placeholder if CLOB fails */
+                /* keep Gamma data if CLOB fails */
               }
             }
             if (outcomes && Array.isArray(outcomes) && prices && Array.isArray(prices)) {
@@ -682,6 +739,7 @@ export async function GET(request: Request) {
               updateMarketsPriceCache(conditionId, prices, outcomes, gammaMarket.closed, resolved);
               return NextResponse.json(responseBody);
             }
+            } // close: else (gammaValid)
           }
         }
       } catch (err) {
@@ -689,7 +747,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Try 2: CLOB API fallback (only when Gamma fails)
+    // Try 2: CLOB API fallback (when Gamma failed, returned wrong market, or had bad prices)
     if (conditionId && conditionId.startsWith('0x')) {
       console.log(`[Price API] CLOB fallback for conditionId: ${conditionId}`);
       const response = await fetch(

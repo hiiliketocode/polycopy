@@ -119,7 +119,17 @@ export const fetchGammaMarketsByConditionIds = async (
       if (!res.ok) continue;
       const data = await res.json();
       const markets = Array.isArray(data) ? data : [];
-      if (markets.length > 0) results.push(markets[0]);
+      if (markets.length > 0) {
+        const market = markets[0];
+        // Gamma sometimes returns a completely wrong market for newer condition_ids.
+        // Validate the returned conditionId matches what we queried.
+        const returnedId = (market.conditionId || market.condition_id || '').toLowerCase();
+        if (returnedId && id.toLowerCase() !== returnedId) {
+          console.warn('[Gamma] Returned wrong market', { queried: id.slice(0, 20), returned: returnedId.slice(0, 20) });
+          continue;
+        }
+        results.push(market);
+      }
     } catch {
       continue;
     }
