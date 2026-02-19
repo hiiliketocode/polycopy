@@ -333,7 +333,7 @@ export async function GET(request: Request) {
         row.resolved_outcome ?? market?.resolved_outcome ?? market?.winning_side ?? null
       const marketResolved =
         row.market_resolved ||
-        Boolean(market?.closed || market?.status === 'resolved') ||
+        Boolean(market?.closed) ||
         Boolean(resolvedOutcome)
 
       const settlementPrice =
