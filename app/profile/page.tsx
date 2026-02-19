@@ -1,4 +1,4 @@
-image.png'use client';
+'use client';
 
 import React, { useState, useEffect, useRef, useMemo, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
