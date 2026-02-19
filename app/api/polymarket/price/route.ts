@@ -31,7 +31,7 @@ const supabaseAdmin =
 // ── Freshness tiers (contextual per use case) ──
 // Callers pass tier= or maxAgeMs=; DB and in-memory cache use this to decide "fresh enough".
 // See docs/PRICE_FRESHNESS_TIERS.md for every caller and tier.
-export const PRICE_FRESHNESS_TIERS_MS: Record<string, number> = {
+const PRICE_FRESHNESS_TIERS_MS: Record<string, number> = {
   T1: 30_000,       // Execution: trade-execute, LT/FT when placing orders, bots when trading (market price for sizing)
   T2a: 250,         // Feed (live): feed table + cards; 250ms so display feels real-time
   T2b: 15_000,      // Portfolio / profile / trader / discover
