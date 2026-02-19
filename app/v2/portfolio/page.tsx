@@ -518,13 +518,16 @@ export default function PortfolioPage() {
     })
 
     const mapOrderTrade = (o: any): CopiedTrade => {
-      // Determine resolved status from multiple signals in the orders response
       const closedActivities = new Set(["redeemed", "lost", "canceled", "expired", "failed"])
       const isResolved =
         Boolean(o.marketResolved) ||
         o.marketIsOpen === false ||
         o.positionState === "closed" ||
         closedActivities.has(o.activity)
+
+      // Detect user-initiated sells from CLOB data
+      const isSold = o.activity === "sold" || (o.side?.toLowerCase() === "sell" && Number(o.filledSize) > 0)
+      const soldAt = isSold ? (o.updatedAt || o.createdAt || new Date().toISOString()) : null
 
       return {
         id: o.orderId,
@@ -541,9 +544,10 @@ export default function PortfolioPage() {
             : undefined,
         created_at: o.createdAt,
         current_price: o.currentPrice != null ? Number(o.currentPrice) : null,
-        market_resolved: isResolved,
+        market_resolved: isResolved && !isSold,
         roi: null,
-        user_closed_at: null,
+        user_closed_at: soldAt,
+        user_exit_price: isSold ? Number(o.priceOrAvgPrice || 0) : undefined,
         pnl_usd: o.pnlUsd != null ? Number(o.pnlUsd) : null,
         side: o.side,
         trader_wallet: o.copiedTraderWallet || o.traderWallet,
@@ -602,13 +606,16 @@ export default function PortfolioPage() {
       setLoadingTrades(false) // Unblock trades section early
 
       // Fetch remaining pages in background to get complete enriched data
+      // Use larger page size for background loads (200 instead of 50) and load up to 10K trades
       if (firstPageResult.hasMore) {
         let page = 2
         let hasMore = true
-        while (hasMore && page <= 10) {
+        const BG_PAGE_SIZE = 200
+        const MAX_BG_PAGES = 50
+        while (hasMore && page <= MAX_BG_PAGES) {
           try {
             const res = await fetch(
-              `/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=50`,
+              `/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=${BG_PAGE_SIZE}`,
               { cache: "no-store", signal: controller.signal }
             )
             if (!res.ok) break

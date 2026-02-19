@@ -644,12 +644,13 @@ function ProfilePageContent() {
         const allTrades: CopiedTrade[] = [];
         let page = 1;
         let hasMore = true;
-        const MAX_PAGES = 10; // cap to avoid runaway fetch
+        const PAGE_SIZE = 200;
+        const MAX_PAGES = 50;
         let totalTradesFromApi: number | null = null;
 
         while (hasMore && page <= MAX_PAGES) {
           const response = await fetch(
-            `/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=50`,
+            `/api/portfolio/trades?userId=${user.id}&page=${page}&pageSize=${PAGE_SIZE}`,
             { cache: 'no-store' }
           );
           if (!response.ok) {
