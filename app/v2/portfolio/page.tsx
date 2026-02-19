@@ -1412,7 +1412,7 @@ export default function PortfolioPage() {
 
                           {/* Price & detail row + Sell button */}
                           <div className="mt-2 flex items-center gap-4 font-body text-xs text-muted-foreground">
-                            <span className="tabular-nums">
+                            <span className="tabular-nums whitespace-nowrap">
                               ${entryPrice.toFixed(2)}{" "}
                               <span className="text-muted-foreground/60">→</span>{" "}
                               ${(currentPrice ?? 0).toFixed(2)}
