@@ -1,16 +1,7 @@
-import {
-  Body,
-  Container,
-  Head,
-  Heading,
-  Html,
-  Img,
-  Link,
-  Preview,
-  Section,
-  Text,
-  Hr,
-} from '@react-email/components'
+import React from 'react'
+import { Text, Link, Hr } from '@react-email/components'
+import { COLORS, FONTS } from './_styles'
+import { EmailLayout, EmailBanner, EmailButton, EmailSection } from './_layout'
 
 interface AutoCloseFailedEmailProps {
   userName: string
@@ -26,244 +17,68 @@ export default function AutoCloseFailedEmail({
   marketTitle,
   outcome,
   reason,
-  tradeUrl,
   polymarketUrl,
-  unsubscribeUrl,
 }: AutoCloseFailedEmailProps) {
   return (
-    <Html>
-      <Head />
-      <Preview>Auto-close could not complete for "{marketTitle}"</Preview>
-      <Body style={main}>
-        <Container style={container}>
-          <Section style={logoSection}>
-            <Img
-              src="https://polycopy.app/logos/polycopy-logo-primary.png"
-              width="120"
-              height="auto"
-              alt="Polycopy"
-              style={logo}
-            />
-          </Section>
+    <EmailLayout previewText={`AUTO_CLOSE_FAILURE // ${marketTitle}`}>
+      <EmailBanner title="AUTO-CLOSE FAILED" subtitle="ORDER FILL REJECTED" />
+      <Hr style={{ borderColor: COLORS.red, borderWidth: '4px', margin: '0' }} />
 
-          <Section style={headerBanner}>
-            <Heading style={h1}>Auto-Close Unsuccessful</Heading>
-          </Section>
+      <EmailSection title="FAILURE_ANALYSIS">
+        <Text style={{ fontSize: '16px', lineHeight: '26px', margin: '0 0 48px 0', color: COLORS.black }}>
+          We attempted to execute an automated close order, but the order failed to fill within your
+          specified parameters. Manual intervention may be required.
+        </Text>
 
-          <Section style={contentSection}>
-            <Text style={text}>
-              We tried to close your position automatically but the order did not fill.
-            </Text>
+        {/* Market Asset */}
+        <div style={{ padding: '0 0 16px 0' }}>
+          <Text style={{ color: COLORS.secondary, fontSize: '10px', fontWeight: '900', letterSpacing: '3px', margin: '0 0 8px 0', textTransform: 'uppercase' as const, fontFamily: FONTS.mono }}>
+            MARKET ASSET
+          </Text>
+          <Text style={{ fontFamily: FONTS.header, fontSize: '20px', fontWeight: '900', margin: '0 0 16px 0', lineHeight: '1.3', textTransform: 'uppercase' as const }}>
+            {marketTitle}
+          </Text>
+          <div style={{ backgroundColor: COLORS.red, color: COLORS.white, display: 'inline-block', fontSize: '12px', fontWeight: '900', padding: '8px 16px', lineHeight: '1', letterSpacing: '2px', textTransform: 'uppercase' as const }}>
+            {outcome}
+          </div>
+        </div>
 
-            <Section style={marketCard}>
-              <Text style={sectionLabel}>MARKET</Text>
-              <Text style={marketTitle_style}>{marketTitle}</Text>
-              <Text style={positionBadge}>{outcome}</Text>
-            </Section>
+        {/* Rejection Reason */}
+        <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+          <Text style={{ color: COLORS.red, fontSize: '10px', fontWeight: '900', letterSpacing: '3px', margin: '0 0 8px 0', textTransform: 'uppercase' as const, fontFamily: FONTS.mono }}>
+            REJECTION REASON
+          </Text>
+          <Text style={{ fontSize: '15px', lineHeight: '24px', margin: '0', color: COLORS.black, fontFamily: FONTS.mono, textTransform: 'uppercase' as const }}>
+            {reason || 'The limit price was not hit.'}
+          </Text>
+        </div>
 
-            <Section style={reasonBox}>
-              <Text style={reasonLabel}>What happened</Text>
-              <Text style={reasonText}>{reason || 'The limit price was not hit.'}</Text>
-            </Section>
+        <EmailButton href="https://polycopy.app/v2/portfolio" text="CLOSE POSITION MANUALLY" />
 
-            <Section style={buttonContainer}>
-              <Link href="https://polycopy.app/portfolio" style={primaryButton}>
-                Go to Portfolio to close manually
-              </Link>
-            </Section>
+        {/* Secondary Link */}
+        <div style={{ textAlign: 'center' as const, paddingBottom: '24px' }}>
+          <Link
+            href={polymarketUrl}
+            style={{
+              fontFamily: FONTS.header,
+              fontSize: '12px',
+              fontWeight: '900',
+              color: COLORS.black,
+              textDecoration: 'underline',
+              letterSpacing: '1px',
+              textTransform: 'uppercase' as const,
+            }}
+          >
+            VIEW SOURCE ON POLYMARKET →
+          </Link>
+        </div>
 
-            <Section style={buttonContainerSecondary}>
-              <Link href={polymarketUrl} style={secondaryButton}>
-                View on Polymarket →
-              </Link>
-            </Section>
-
-            <Text style={footnote}>
-              Tip: if the market moved past your slippage/limit, try closing manually at the current price.
-            </Text>
-          </Section>
-
-          <Hr style={divider} />
-
-          <Section style={footerSection}>
-            <Text style={footerText}>
-              You received this email because you have notifications enabled for copied trades on Polycopy.
-            </Text>
-            <Link href={unsubscribeUrl} style={unsubscribeLink}>
-              Manage notification settings
-            </Link>
-          </Section>
-        </Container>
-      </Body>
-    </Html>
+        {/* Advisory */}
+        <Text style={{ fontSize: '12px', lineHeight: '18px', color: COLORS.secondary, fontFamily: FONTS.mono, fontStyle: 'italic', margin: '0', letterSpacing: '0.3px' }}>
+          ADVISORY: If the market has moved beyond your slippage tolerance, consider adjusting your limit
+          price or executing a market order.
+        </Text>
+      </EmailSection>
+    </EmailLayout>
   )
-}
-
-const main = {
-  backgroundColor: '#f3f4f6',
-  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-  padding: '40px 20px',
-}
-
-const container = {
-  margin: '0 auto',
-  maxWidth: '520px',
-  backgroundColor: '#ffffff',
-  borderRadius: '16px',
-  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-  overflow: 'hidden',
-}
-
-const logoSection = {
-  textAlign: 'center' as const,
-  padding: '32px 0 16px',
-}
-
-const logo = {
-  margin: '0 auto',
-}
-
-const headerBanner = {
-  backgroundColor: '#fee2e2',
-  padding: '24px 32px',
-  textAlign: 'center' as const,
-}
-
-const h1 = {
-  color: '#991b1b',
-  fontSize: '22px',
-  fontWeight: '700' as const,
-  margin: '0',
-  letterSpacing: '-0.5px',
-}
-
-const contentSection = {
-  padding: '32px',
-}
-
-const text = {
-  color: '#4b5563',
-  fontSize: '15px',
-  lineHeight: '24px',
-  margin: '0 0 20px',
-}
-
-const marketCard = {
-  backgroundColor: '#f9fafb',
-  borderRadius: '12px',
-  padding: '16px 20px',
-  marginBottom: '16px',
-  border: '1px solid #e5e7eb',
-}
-
-const sectionLabel = {
-  fontSize: '11px',
-  fontWeight: '700' as const,
-  color: '#6b7280',
-  letterSpacing: '1px',
-  margin: '0 0 8px',
-}
-
-const marketTitle_style = {
-  fontSize: '16px',
-  fontWeight: '700' as const,
-  color: '#111827',
-  margin: '0 0 8px',
-}
-
-const positionBadge = {
-  display: 'inline-block',
-  backgroundColor: '#fee2e2',
-  color: '#991b1b',
-  fontWeight: '700' as const,
-  borderRadius: '9999px',
-  padding: '6px 12px',
-  fontSize: '12px',
-  letterSpacing: '0.3px',
-}
-
-const reasonBox = {
-  backgroundColor: '#fff7ed',
-  border: '1px solid #fed7aa',
-  borderRadius: '12px',
-  padding: '16px',
-  margin: '0 0 16px',
-}
-
-const reasonLabel = {
-  fontSize: '12px',
-  fontWeight: '700' as const,
-  color: '#9a3412',
-  margin: '0 0 6px',
-  letterSpacing: '0.5px',
-}
-
-const reasonText = {
-  fontSize: '14px',
-  color: '#7c2d12',
-  margin: 0,
-  lineHeight: '22px',
-}
-
-const buttonContainer = {
-  textAlign: 'center' as const,
-  margin: '12px 0 8px',
-}
-
-const buttonContainerSecondary = {
-  textAlign: 'center' as const,
-  margin: '4px 0 16px',
-}
-
-const primaryButton = {
-  display: 'inline-block',
-  padding: '12px 18px',
-  backgroundColor: '#f97316',
-  color: '#111827',
-  fontWeight: '700' as const,
-  fontSize: '14px',
-  textDecoration: 'none',
-  borderRadius: '10px',
-  letterSpacing: '0.2px',
-}
-
-const secondaryButton = {
-  display: 'inline-block',
-  padding: '10px 16px',
-  backgroundColor: '#111827',
-  color: '#ffffff',
-  fontWeight: '600' as const,
-  fontSize: '13px',
-  textDecoration: 'none',
-  borderRadius: '10px',
-}
-
-const footnote = {
-  fontSize: '13px',
-  color: '#6b7280',
-  lineHeight: '20px',
-  margin: '0',
-}
-
-const divider = {
-  borderColor: '#e5e7eb',
-  margin: '12px 0 0',
-}
-
-const footerSection = {
-  padding: '20px 24px 28px',
-  textAlign: 'center' as const,
-}
-
-const footerText = {
-  fontSize: '12px',
-  color: '#9ca3af',
-  lineHeight: '18px',
-  margin: '0 0 10px',
-}
-
-const unsubscribeLink = {
-  fontSize: '12px',
-  color: '#6b7280',
-  textDecoration: 'underline',
 }
