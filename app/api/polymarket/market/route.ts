@@ -79,17 +79,22 @@ export async function GET(request: Request) {
         }))
       : []
 
-    // If CLOB tokens are empty but Gamma has prices, build synthetic tokens
+    // If CLOB tokens are empty but Gamma has prices, build synthetic tokens.
+    // Do not default missing prices to 0.5 — that would show wrong "50¢" for all positions.
     if (tokens.length === 0 && gammaMarket) {
       const outcomes = parseJsonField(gammaMarket.outcomes)
       const prices = parseJsonField(gammaMarket.outcomePrices)
       const clobTokenIds = parseJsonField(gammaMarket.clobTokenIds)
-      if (Array.isArray(outcomes) && Array.isArray(prices)) {
+      if (Array.isArray(outcomes)) {
+        const priceArr = Array.isArray(prices) ? prices : []
         outcomes.forEach((outcome: string, idx: number) => {
+          const raw = priceArr[idx]
+          const num = raw != null ? Number(raw) : NaN
+          const price = Number.isFinite(num) ? num : null
           tokens.push({
             token_id: Array.isArray(clobTokenIds) ? clobTokenIds[idx] ?? null : null,
             outcome,
-            price: String(prices[idx] ?? '0.5'),
+            price,
           })
         })
       }

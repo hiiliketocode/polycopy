@@ -192,7 +192,30 @@ export async function GET(request: Request, { params }: RouteParams) {
                   if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
                   const parsedOutcomes = parseOutcomes(outcomes);
                   const parsedPrices = parsePrices(prices);
-                  if (parsedOutcomes && parsedPrices) {
+                  const isPlaceholder = parsedPrices && parsedPrices.length > 0 && parsedPrices.every((p: number) => p === 0.5);
+                  if (isPlaceholder) {
+                    // Gamma returned 50¢ for all outcomes — try CLOB for real prices
+                    try {
+                      const clobRes = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' });
+                      if (clobRes.ok) {
+                        const clob = await clobRes.json();
+                        const tokens = Array.isArray(clob?.tokens) ? clob.tokens : [];
+                        if (tokens.length > 0) {
+                          const co = tokens.map((t: any) => t?.outcome ?? t?.outcomeName ?? '').filter(Boolean);
+                          const cp = tokens.map((t: any) => {
+                            const p = t?.price;
+                            return typeof p === 'number' && Number.isFinite(p) ? p : (typeof p === 'string' ? parseFloat(p) : NaN);
+                          });
+                          if (co.length && cp.some((p: number) => Number.isFinite(p))) {
+                            const outcomePrices = cp.map((p: number) => Number.isFinite(p) ? p : 0);
+                            priceMap.set(conditionId, { currentPrice: null, outcomes: co, outcomePrices });
+                          }
+                        }
+                      }
+                    } catch {
+                      /* ignore CLOB failure */
+                    }
+                  } else if (parsedOutcomes && parsedPrices) {
                     await supabase.from('markets').upsert({
                       condition_id: conditionId,
                       outcome_prices: { outcomes: parsedOutcomes, outcomePrices: parsedPrices },

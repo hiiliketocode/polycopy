@@ -403,6 +403,7 @@ export async function GET(request: NextRequest) {
     const marketMetadataMap = await fetchMarketMetadataFromGamma(
       (marketIdsNeedingMetadata.length > 0 ? marketIdsNeedingMetadata : marketIds).filter(Boolean)
     )
+    await enrichMetadataWithClobPricesWhenNeeded(marketMetadataMap)
 
     const traderProfileMap = new Map<string, TraderProfileRow>()
     traderRows.forEach((row) => {
@@ -1440,6 +1441,89 @@ async function fetchMarketMetadataFromGamma(conditionIds: string[]) {
   }
 
   return metadataMap
+}
+
+/** Returns true if outcome prices look like a placeholder (missing or all 0.5). */
+function isPlaceholderPrices(outcomePrices: number[]): boolean {
+  if (!outcomePrices || outcomePrices.length === 0) return true
+  const allSame = outcomePrices.every((p) => p === outcomePrices[0])
+  const allFifty = outcomePrices[0] === 0.5
+  return Boolean(allSame && allFifty)
+}
+
+/** Fetch live token prices from CLOB for a single market. Used when Gamma has no/placeholder prices. */
+async function fetchClobMarketPrices(
+  conditionId: string
+): Promise<{ outcomes: string[]; outcomePrices: number[]; tokens: MarketMetadataToken[] } | null> {
+  try {
+    const response = await fetchWithTimeout(
+      `https://clob.polymarket.com/markets/${conditionId}`,
+      MARKET_METADATA_REQUEST_TIMEOUT_MS,
+      { cache: 'no-store' }
+    )
+    if (!response.ok) return null
+    const data = await response.json()
+    const rawTokens = Array.isArray(data?.tokens) ? data.tokens : []
+    if (rawTokens.length === 0) return null
+    const outcomes: string[] = []
+    const outcomePrices: number[] = []
+    const tokens: MarketMetadataToken[] = []
+    for (const t of rawTokens) {
+      const outcome = t?.outcome ?? t?.outcomeName ?? null
+      if (!outcome) continue
+      const rawPrice = t?.price
+      const price =
+        typeof rawPrice === 'number' && Number.isFinite(rawPrice)
+          ? rawPrice
+          : typeof rawPrice === 'string'
+            ? parseNumeric(rawPrice)
+            : null
+      outcomes.push(String(outcome))
+      outcomePrices.push(price ?? 0)
+      tokens.push({
+        tokenId: t?.token_id ?? t?.tokenId ?? null,
+        outcome: String(outcome),
+        price: price ?? null,
+        winner: price === 1 ? true : price === 0 ? false : null,
+      })
+    }
+    if (outcomes.length === 0) return null
+    return { outcomes, outcomePrices, tokens }
+  } catch (error) {
+    return null
+  }
+}
+
+/** When Gamma returns no prices or placeholder 50¢, fill from CLOB so current price is correct. */
+async function enrichMetadataWithClobPricesWhenNeeded(
+  metadataMap: Record<string, MarketMetadata>
+): Promise<void> {
+  const idsToEnrich = Object.entries(metadataMap)
+    .filter(([, meta]) => isPlaceholderPrices(meta.outcomePrices))
+    .map(([id]) => id)
+  if (idsToEnrich.length === 0) return
+  await Promise.allSettled(
+    idsToEnrich.map(async (conditionId) => {
+      const clob = await fetchClobMarketPrices(conditionId)
+      if (!clob || clob.outcomes.length === 0) return
+      const existing = metadataMap[conditionId]
+      if (!existing) return
+      metadataMap[conditionId] = {
+        ...existing,
+        outcomes: clob.outcomes.length ? clob.outcomes : existing.outcomes,
+        outcomePrices: clob.outcomePrices,
+        tokens: clob.tokens,
+        metadataPayload: existing.metadataPayload
+          ? {
+              ...existing.metadataPayload,
+              outcomes: clob.outcomes.length ? clob.outcomes : existing.outcomes,
+              outcomePrices: clob.outcomePrices,
+              tokens: clob.tokens,
+            }
+          : null,
+      }
+    })
+  )
 }
 
 function extractTokenIdFromOrderRecord(order: any): string | null {
