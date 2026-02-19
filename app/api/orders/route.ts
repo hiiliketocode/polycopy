@@ -389,7 +389,7 @@ export async function GET(request: NextRequest) {
       return !hasTitle || !hasImage
     })
 
-    const marketMetadataMap = await fetchMarketMetadataFromClob(
+    const marketMetadataMap = await fetchMarketMetadataFromGamma(
       (marketIdsNeedingMetadata.length > 0 ? marketIdsNeedingMetadata : marketIds).filter(Boolean)
     )
 
@@ -1328,7 +1328,7 @@ async function fetchWithTimeout(url: string, timeoutMs = MARKET_METADATA_REQUEST
   }
 }
 
-async function fetchMarketMetadataFromClob(conditionIds: string[]) {
+async function fetchMarketMetadataFromGamma(conditionIds: string[]) {
   const metadataMap: Record<string, MarketMetadata> = {}
   const uniqueIds = Array.from(new Set(conditionIds.filter(Boolean)))
     .map((id) =>
@@ -1347,98 +1347,56 @@ async function fetchMarketMetadataFromClob(conditionIds: string[]) {
         if (!conditionId) return
         try {
           const response = await fetchWithTimeout(
-            `https://clob.polymarket.com/markets/${conditionId}`,
+            `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`,
             MARKET_METADATA_REQUEST_TIMEOUT_MS,
-            { cache: 'no-store' }
+            { headers: { Accept: 'application/json' }, cache: 'no-store' }
           )
           if (!response.ok) return
-          let market: any
+          let data: any
           try {
-            market = await response.json()
+            data = await response.json()
           } catch (error) {
             console.warn('[orders] market metadata parse failed', conditionId, error)
             return
           }
+          const market = Array.isArray(data) && data.length > 0 ? data[0] : null
+          if (!market) return
 
-          const icon =
-            typeof market?.icon === 'string' && market.icon.trim()
-              ? market.icon.trim()
-              : typeof market?.image === 'string' && market.image.trim()
-              ? market.image.trim()
-              : null
           const image =
             typeof market?.image === 'string' && market.image.trim() ? market.image.trim() : null
 
-          const tokens = Array.isArray(market?.tokens) ? market.tokens : []
-          const metadataTokens: MarketMetadataToken[] = tokens
-            .map((token: any) => {
-              const tokenId =
-                typeof token?.token_id === 'string'
-                  ? token.token_id
-                  : typeof token?.tokenId === 'string'
-                    ? token.tokenId
-                    : null
-              const outcome =
-                token?.outcome ??
-                token?.name ??
-                token?.label ??
-                token?.market ??
-                token?.token ??
-                null
-              const price = parseNumeric(token?.price ?? token?.execution_price ?? token?.avg_price)
-              const winner =
-                typeof token?.winner === 'boolean'
-                  ? token.winner
-                  : token?.winner !== undefined
-                    ? Boolean(token.winner)
-                    : null
-              return {
-                tokenId,
-                outcome: outcome ? String(outcome) : null,
-                price: price,
-                winner,
-              }
-            })
-            .filter((entry: MarketMetadataToken) => entry.tokenId || entry.outcome || entry.price !== null)
+          const rawOutcomes = typeof market?.outcomes === 'string'
+            ? (() => { try { return JSON.parse(market.outcomes) } catch { return null } })()
+            : market?.outcomes
+          const rawPrices = typeof market?.outcomePrices === 'string'
+            ? (() => { try { return JSON.parse(market.outcomePrices) } catch { return null } })()
+            : market?.outcomePrices
+          const rawTokenIds = typeof market?.clobTokenIds === 'string'
+            ? (() => { try { return JSON.parse(market.clobTokenIds) } catch { return null } })()
+            : market?.clobTokenIds
 
-          const outcomePairs = metadataTokens.filter(
-            (entry: MarketMetadataToken) => entry.outcome && entry.price !== null
-          )
-          const outcomes = outcomePairs.map((entry: any) => entry.outcome!)
-          const outcomePrices = outcomePairs.map((entry: any) => entry.price!)
-          const closedValue = market?.closed
-          const closed =
-            typeof closedValue === 'boolean'
-              ? closedValue
-              : closedValue === null
-                ? null
-                : closedValue !== undefined
-                  ? Boolean(closedValue)
-                  : null
-          const resolvedValue = market?.resolved
-          const resolved =
-            typeof resolvedValue === 'boolean'
-              ? resolvedValue
-              : resolvedValue === null
-                ? null
-                : resolvedValue !== undefined
-                  ? Boolean(resolvedValue)
-                  : null
-          const acceptingValue = market?.accepting_orders
-          const acceptingOrders =
-            typeof acceptingValue === 'boolean'
-              ? acceptingValue
-              : acceptingValue === null
-                ? null
-                : acceptingValue !== undefined
-                  ? Boolean(acceptingValue)
-                  : null
+          const outcomes: string[] = Array.isArray(rawOutcomes) ? rawOutcomes : []
+          const outcomePrices: number[] = Array.isArray(rawPrices)
+            ? rawPrices.map((p: any) => parseNumeric(p) ?? 0)
+            : []
+          const tokenIds: string[] = Array.isArray(rawTokenIds) ? rawTokenIds : []
+
+          const metadataTokens: MarketMetadataToken[] = outcomes.map((outcome, idx) => ({
+            tokenId: tokenIds[idx] ?? null,
+            outcome: outcome ? String(outcome) : null,
+            price: idx < outcomePrices.length ? outcomePrices[idx] : null,
+            winner: outcomePrices[idx] === 1 ? true : outcomePrices[idx] === 0 ? false : null,
+          }))
+
+          const closed = market?.closed != null ? Boolean(market.closed) : null
+          const resolved = market?.resolvedBy ? true : market?.resolved != null ? Boolean(market.resolved) : null
+          const acceptingOrders = market?.active != null ? Boolean(market.active) : null
 
           metadataMap[conditionId] = {
-            icon,
+            icon: image,
             image,
-            question: market?.question ?? market?.market_title ?? null,
-            slug: market?.market_slug ?? null,
+            question: market?.question ?? null,
+            slug: market?.slug ?? null,
             outcomes,
             outcomePrices,
             tokens: metadataTokens,
@@ -1447,7 +1405,7 @@ async function fetchMarketMetadataFromClob(conditionIds: string[]) {
             acceptingOrders,
             metadataPayload: {
               question: market?.question ?? null,
-              slug: market?.market_slug ?? null,
+              slug: market?.slug ?? null,
               closed,
               resolved,
               acceptingOrders,

@@ -241,6 +241,70 @@ async function flushTradeBuffer(): Promise<void> {
 
 setInterval(() => void flushTradeBuffer(), BUFFER_FLUSH_INTERVAL_MS);
 
+// --- Pending LT order tracking (for WebSocket fill detection) ---
+type PendingLtOrder = { lt_order_id: string; strategy_id: string; user_id: string };
+let pendingLtOrders = new Map<string, PendingLtOrder>();
+let lastPendingFetch = 0;
+const PENDING_REFRESH_MS = 60_000;
+
+async function refreshPendingLtOrders(): Promise<void> {
+  if (!supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from('lt_orders')
+      .select('lt_order_id, strategy_id, user_id, order_id')
+      .in('status', ['PENDING', 'PARTIAL'])
+      .not('order_id', 'is', null);
+    if (error) {
+      console.error('[worker] Failed to fetch pending LT orders:', error.message);
+      return;
+    }
+    pendingLtOrders = new Map();
+    for (const row of data || []) {
+      if (row.order_id) {
+        pendingLtOrders.set(row.order_id, {
+          lt_order_id: row.lt_order_id,
+          strategy_id: row.strategy_id,
+          user_id: row.user_id,
+        });
+      }
+    }
+    lastPendingFetch = Date.now();
+    if (pendingLtOrders.size > 0) {
+      console.log(`[worker] Tracking ${pendingLtOrders.size} pending LT orders for fill detection`);
+    }
+  } catch (err) {
+    console.error('[worker] Error refreshing pending LT orders:', err);
+  }
+}
+
+async function ensurePendingLtOrders(): Promise<void> {
+  if (Date.now() - lastPendingFetch > PENDING_REFRESH_MS) {
+    await refreshPendingLtOrders();
+  }
+}
+
+async function notifyWsFill(orderId: string): Promise<void> {
+  try {
+    const url = `${config.apiBaseUrl}/api/lt/ws-fill`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (config.cronSecret) headers['Authorization'] = `Bearer ${config.cronSecret}`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ order_id: orderId }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data?.updated) {
+      console.log(`[ws-fill] Real-time fill: ${orderId} → ${data.new_status} (fill_rate=${data.fill_rate})`);
+      pendingLtOrders.delete(orderId);
+    }
+  } catch (err) {
+    console.error(`[ws-fill] Notification failed for ${orderId}:`, err);
+  }
+}
+
 // --- Target traders management ---
 
 async function fetchTargetTraders(): Promise<Set<string>> {
@@ -377,11 +441,41 @@ function start(): void {
       if (!conditionId) return;
 
       const proxyWallet = String(payload.proxyWallet || payload.proxy_wallet || '').toLowerCase();
-      if (!proxyWallet) return;
 
       const side = String(payload.side || '').toUpperCase();
 
       void (async () => {
+        // --- LT fill detection: check orders_matched for our pending orders ---
+        if (message.type === 'orders_matched') {
+          await ensurePendingLtOrders();
+          if (pendingLtOrders.size > 0) {
+            const matchedOrderIds: string[] = [];
+            const takerOrderId = payload.takerOrderId || payload.taker_order_id;
+            if (typeof takerOrderId === 'string' && pendingLtOrders.has(takerOrderId)) {
+              matchedOrderIds.push(takerOrderId);
+            }
+            const makerOrderId = payload.makerOrderId || payload.maker_order_id;
+            if (typeof makerOrderId === 'string' && pendingLtOrders.has(makerOrderId)) {
+              matchedOrderIds.push(makerOrderId);
+            }
+            const makerOrders = payload.makerOrders || payload.maker_orders;
+            if (Array.isArray(makerOrders)) {
+              for (const mo of makerOrders) {
+                const moId = (mo as any)?.orderId || (mo as any)?.order_id;
+                if (typeof moId === 'string' && pendingLtOrders.has(moId)) {
+                  matchedOrderIds.push(moId);
+                }
+              }
+            }
+            for (const oid of matchedOrderIds) {
+              void notifyWsFill(oid);
+            }
+          }
+        }
+
+        // --- Feed + FT execution ---
+        if (!proxyWallet) return;
+
         const traders = await ensureTargetTraders();
         await ensureFollowedTraders();
 
@@ -389,10 +483,8 @@ function start(): void {
         const isFollowed = followedTraders.has(proxyWallet);
         if (!isTarget && !isFollowed) return;
 
-        // Write ALL trades (BUY + SELL) to trades_public for the feed
         queueTradeWrite(payload);
 
-        // Only forward BUY trades from target traders to sync-trade for FT execution
         if (isTarget && side === 'BUY') {
           await callSyncTrade(payload);
         }
@@ -400,7 +492,7 @@ function start(): void {
     },
     onConnect: (c: { subscribe: (opts: { subscriptions: Array<{ topic: string; type: string }> }) => void }) => {
       console.log('[worker] Connected to Polymarket WebSocket');
-      void Promise.all([ensureTargetTraders(), ensureFollowedTraders()]).then(() => {
+      void Promise.all([ensureTargetTraders(), ensureFollowedTraders(), refreshPendingLtOrders()]).then(() => {
         c.subscribe({
           subscriptions: [
             { topic: 'activity', type: 'trades' },

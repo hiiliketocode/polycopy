@@ -1,18 +1,17 @@
 'use strict'
 
 /**
- * Backfill realized PnL (daily) and wallet metrics using the Dome API.
+ * Backfill realized PnL (daily) and wallet metrics using free Polymarket APIs.
+ *
+ * Uses:
+ * - Polymarket closed-positions API for daily realized P&L
+ * - Polymarket leaderboard API for trader metrics (volume, total_trades)
  *
  * Wallet list: traders + follows (active) + distinct trader_wallet from trades_public
  * + distinct copied_trader_wallet from orders. Ensures we don't miss realized PnL
  * for discover/feed/trader-page or copy-trade wallets.
  *
- * - Fetches daily cumulative realized PnL (`pnl_to_date`) and derives per-day deltas (`realized_pnl`).
- * - Uses a baseline day before the current data to compute the first delta.
- * - Upserts into public.wallet_realized_pnl_daily and updates trader metrics (volume, total_trades, markets_traded).
- *
  * Env:
- *   DOME_API_KEY
  *   NEXT_PUBLIC_SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
  *
@@ -38,11 +37,9 @@ if (dotenv && fs.existsSync(envPath)) {
   dotenv.config({ path: envPath })
 }
 
-const DOME_API_KEY = process.env.DOME_API_KEY
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-if (!DOME_API_KEY) throw new Error('Missing DOME_API_KEY')
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
 }
@@ -51,12 +48,11 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false }
 })
 
-const BASE_URL = 'https://api.domeapi.io/v1'
-const SLEEP_MS = 250 // tune if hitting rate limits
+const POLYMARKET_DATA_API = 'https://data-api.polymarket.com'
+const SLEEP_MS = 250
 const UPSERT_BATCH = 500
 const TRADER_PAGE_SIZE = 1000
 const MAX_RETRIES = 3
-const HISTORICAL_BASELINE = Date.UTC(2023, 0, 1) / 1000 // Jan 1 2023 UTC, adjust if you want deeper history
 const FETCH_TIMEOUT_MS = Number.parseInt(process.env.FETCH_TIMEOUT_MS, 10) || 60000
 const SKIP_EXISTING_WALLETS = ['1', 'true', 'yes'].includes(
   String(process.env.SKIP_EXISTING_WALLETS || '').toLowerCase()
@@ -103,25 +99,9 @@ async function fetchWithRetry(url, options, attempt = 1) {
   }
 }
 
-function toDateString(tsSeconds) {
-  // Dome API gives today's date timestamp for yesterday's data
-  // Example: If today is Feb 3, Dome returns Feb 3 00:00 UTC timestamp for Feb 2's data
-  // So we subtract 1 day to get the correct date
-  const date = new Date(tsSeconds * 1000)
-  date.setUTCDate(date.getUTCDate() - 1)
+function toDateString(tsMs) {
+  const date = new Date(tsMs)
   return date.toISOString().slice(0, 10) // YYYY-MM-DD in UTC
-}
-
-function addDays(dateStr, days) {
-  const date = new Date(`${dateStr}T00:00:00Z`)
-  date.setUTCDate(date.getUTCDate() + days)
-  return date.toISOString().slice(0, 10)
-}
-
-function diffDays(startDate, endDate) {
-  const start = Date.parse(`${startDate}T00:00:00Z`)
-  const end = Date.parse(`${endDate}T00:00:00Z`)
-  return Math.floor((end - start) / (24 * 3600 * 1000))
 }
 
 function isUpToDate(latestDate) {
@@ -152,79 +132,77 @@ async function fetchLatestDateForWallet(wallet) {
   return data && data.length > 0 ? data[0].date : null
 }
 
-async function fetchPnlSeries(wallet, startTime, endTime) {
-  // Correct endpoint format per https://docs.domeapi.io/api-reference/endpoint/get-wallet-pnl
-  // Wallet address goes in the path, not as query parameter
-  const url = new URL(`${BASE_URL}/polymarket/wallet/pnl/${wallet}`)
-  url.searchParams.set('granularity', 'day')
-  url.searchParams.set('start_time', String(startTime))
-  url.searchParams.set('end_time', String(endTime))
+async function fetchAllClosedPositions(wallet) {
+  const PAGE_SIZE = 50
+  const MAX_OFFSET = 5000
+  const BATCH_SIZE = 6
+  const allPositions = []
+  let exhausted = false
 
-  try {
-    const res = await fetchWithRetry(url.toString(), {
-      headers: {
-        'Authorization': `Bearer ${DOME_API_KEY}`
+  for (let batchStart = 0; batchStart <= MAX_OFFSET && !exhausted; batchStart += PAGE_SIZE * BATCH_SIZE) {
+    const offsets = Array.from(
+      { length: BATCH_SIZE },
+      (_, i) => batchStart + i * PAGE_SIZE
+    ).filter((o) => o <= MAX_OFFSET)
+
+    const results = await Promise.all(
+      offsets.map(async (offset) => {
+        const url = `${POLYMARKET_DATA_API}/closed-positions?user=${wallet}&limit=${PAGE_SIZE}&offset=${offset}&sortBy=TIMESTAMP&sortDirection=DESC`
+        try {
+          const res = await fetchWithRetry(url, {})
+          const data = await res.json()
+          return { offset, data: Array.isArray(data) ? data : [] }
+        } catch {
+          return { offset, data: [] }
+        }
+      })
+    )
+
+    results.sort((a, b) => a.offset - b.offset)
+    for (const { data } of results) {
+      if (data.length === 0) {
+        exhausted = true
+        break
       }
-    })
-
-    const json = await res.json()
-    const series = Array.isArray(json?.pnl_over_time) ? json.pnl_over_time : []
-    // Each item expected: { timestamp: number, pnl_to_date: number }
-    return series
-  } catch (err) {
-    // If endpoint doesn't exist (404) or other errors, return empty array
-    // This allows the script to continue with metrics updates
-    if (err.message?.includes('404') || err.message?.includes('route not found')) {
-      return []
+      allPositions.push(...data)
+      if (data.length < PAGE_SIZE) {
+        exhausted = true
+        break
+      }
     }
-    throw err
   }
+
+  return allPositions
 }
 
-function deriveRows(wallet, series) {
-  const rows = []
-  const sorted = [...series].sort((a, b) => Number(a.timestamp) - Number(b.timestamp))
-  let prev = null
-  let prevDate = null
+function deriveRows(wallet, closedPositions) {
+  if (closedPositions.length === 0) return []
 
-  for (const point of sorted) {
-    const ts = Number(point.timestamp)
-    const cumulative = Number(point.pnl_to_date ?? point.pnlToDate ?? NaN)
-    if (!Number.isFinite(ts) || !Number.isFinite(cumulative)) {
-      continue
-    }
-    if (prev === null) {
-      prev = cumulative // baseline; no delta row yet
-      prevDate = toDateString(ts)
-      continue
-    }
-    const realized = cumulative - prev
-    prev = cumulative
+  const dailyMap = new Map()
+  for (const pos of closedPositions) {
+    let ts = Number(pos.timestamp)
+    if (!Number.isFinite(ts)) continue
+    if (ts < 10000000000) ts = ts * 1000
     const date = toDateString(ts)
-    if (prevDate && date !== prevDate) {
-      const gapDays = diffDays(prevDate, date) - 1
-      if (gapDays > 0) {
-        for (let i = 1; i <= gapDays; i += 1) {
-          const gapDate = addDays(prevDate, i)
-          rows.push({
-            wallet_address: wallet,
-            date: gapDate,
-            realized_pnl: 0,
-            pnl_to_date: cumulative - realized,
-            source: 'dome'
-          })
-        }
-      }
-    }
-    if (!Number.isFinite(realized)) continue
+    const pnl = Number(pos.realizedPnl ?? 0)
+    if (!Number.isFinite(pnl)) continue
+    dailyMap.set(date, (dailyMap.get(date) ?? 0) + pnl)
+  }
+
+  const sortedDates = Array.from(dailyMap.keys()).sort()
+  const rows = []
+  let cumulative = 0
+
+  for (const date of sortedDates) {
+    const dailyPnl = dailyMap.get(date) ?? 0
+    cumulative += dailyPnl
     rows.push({
       wallet_address: wallet,
       date,
-      realized_pnl: realized,
+      realized_pnl: dailyPnl,
       pnl_to_date: cumulative,
-      source: 'dome'
+      source: 'polymarket'
     })
-    prevDate = date
   }
 
   return rows
@@ -262,55 +240,132 @@ async function updateTraderMetrics(wallet, metrics) {
 }
 
 async function fetchMetrics(wallet) {
-  const url = new URL(`${BASE_URL}/polymarket/wallet`)
-  url.searchParams.set('eoa', wallet)
-  url.searchParams.set('with_metrics', 'true')
-
+  const url = `${POLYMARKET_DATA_API}/leaderboard?window=all&limit=1&address=${wallet}`
   try {
-    const res = await fetchWithRetry(url.toString(), {
-      headers: { 'Authorization': `Bearer ${DOME_API_KEY}` }
-    })
-    const json = await res.json()
-    
-    // If wallet not found, return null (don't throw)
-    if (json?.error && (json.message?.includes('No wallet mapping') || json.message?.includes('Not Found'))) {
-      return null
+    const res = await fetchWithRetry(url, {})
+    const data = await res.json()
+    const entry = Array.isArray(data) && data.length > 0 ? data[0] : null
+    if (!entry) return null
+    return {
+      volume: entry.vol ?? entry.volume ?? null,
+      total_trades: entry.numTrades ?? entry.total_trades ?? null,
+      markets_traded: entry.marketsTraded ?? entry.markets_traded ?? null,
     }
-    
-    return json?.metrics ?? null
-  } catch (err) {
-    // If 404 or "not found" errors, return null instead of throwing
-    if (err.message?.includes('404') || err.message?.includes('Not Found') || err.message?.includes('No wallet mapping')) {
-      return null
-    }
-    throw err
+  } catch {
+    return null
   }
+}
+
+/**
+ * Sync per-order realized PnL in the `orders` table using closed positions.
+ * Replaces the separate sync-polymarket-pnl cron job.
+ */
+async function syncOrderPnl(wallet, closedPositions) {
+  if (closedPositions.length === 0) return 0
+
+  const { data: orders } = await supabase
+    .from('orders')
+    .select('order_id, market_id, outcome, side, amount_invested, copy_user_id')
+    .or(`copied_trader_wallet.eq.${wallet},copied_trader_wallet.eq.${wallet.toLowerCase()}`)
+    .limit(1000)
+
+  // Also check orders owned by users whose polymarket_account_address matches
+  const { data: credRows } = await supabase
+    .from('clob_credentials')
+    .select('user_id')
+    .eq('polymarket_account_address', wallet)
+    .limit(1)
+
+  let allOrders = orders || []
+  if (credRows && credRows.length > 0) {
+    const userId = credRows[0].user_id
+    const { data: userOrders } = await supabase
+      .from('orders')
+      .select('order_id, market_id, outcome, side, amount_invested, copy_user_id')
+      .eq('copy_user_id', userId)
+      .limit(1000)
+    if (userOrders && userOrders.length > 0) {
+      const seen = new Set(allOrders.map((o) => o.order_id))
+      for (const o of userOrders) {
+        if (!seen.has(o.order_id)) allOrders.push(o)
+      }
+    }
+  }
+
+  if (allOrders.length === 0) return 0
+
+  const normalize = (v) => (v || '').trim().toLowerCase()
+  const now = new Date().toISOString()
+  const pendingUpdates = []
+
+  for (const position of closedPositions) {
+    const matchingOrders = allOrders.filter((o) =>
+      o.market_id === position.conditionId &&
+      normalize(o.outcome) === normalize(position.outcome) &&
+      (o.side || '').toLowerCase() === 'buy'
+    )
+    if (matchingOrders.length === 0) continue
+
+    const totalInvested = matchingOrders.reduce((sum, o) =>
+      sum + Number(o.amount_invested || 0), 0)
+
+    for (const order of matchingOrders) {
+      const proportion = totalInvested > 0
+        ? Number(order.amount_invested || 0) / totalInvested
+        : 1 / matchingOrders.length
+
+      pendingUpdates.push({
+        order_id: order.order_id,
+        payload: {
+          polymarket_realized_pnl: Number(position.realizedPnl || 0) * proportion,
+          polymarket_avg_price: Number(position.avgPrice || 0),
+          polymarket_total_bought: Number(position.totalBought || 0),
+          polymarket_synced_at: now,
+        },
+      })
+    }
+  }
+
+  let updatedCount = 0
+  const ORDER_BATCH = 25
+  for (let i = 0; i < pendingUpdates.length; i += ORDER_BATCH) {
+    const batch = pendingUpdates.slice(i, i + ORDER_BATCH)
+    const results = await Promise.allSettled(
+      batch.map(({ order_id, payload }) =>
+        supabase.from('orders').update(payload).eq('order_id', order_id)
+      )
+    )
+    updatedCount += results.filter(
+      (r) => r.status === 'fulfilled' && !r.value?.error
+    ).length
+  }
+
+  return updatedCount
 }
 
 async function backfillWallet(wallet, options = {}) {
   const lower = wallet.toLowerCase()
   const latestDate = await fetchLatestDateForWallet(lower)
   if (options.skipIfExisting && latestDate) {
-    return { upserted: 0, hadData: false, skipped: true, reason: 'has-data', latestDate }
+    return { upserted: 0, hadData: false, skipped: true, reason: 'has-data', latestDate, ordersSynced: 0 }
   }
   if (options.skipIfUpToDate && latestDate && isUpToDate(latestDate)) {
-    return { upserted: 0, hadData: false, skipped: true, reason: 'up-to-date', latestDate }
+    return { upserted: 0, hadData: false, skipped: true, reason: 'up-to-date', latestDate, ordersSynced: 0 }
   }
-  const startTime = latestDate
-    ? Math.floor((new Date(latestDate).getTime() - 24 * 3600 * 1000) / 1000) // one day before latest to get baseline
-    : HISTORICAL_BASELINE
-  const endTime = Math.floor(Date.now() / 1000)
 
-  const series = await fetchPnlSeries(lower, startTime, endTime)
-  const rows = deriveRows(lower, series)
+  const closedPositions = await fetchAllClosedPositions(lower)
+  const rows = deriveRows(lower, closedPositions)
   const upserted = rows.length ? await upsertRows(rows) : 0
+
+  // Sync per-order PnL using the same closed positions data (replaces sync-polymarket-pnl)
+  const ordersSynced = await syncOrderPnl(lower, closedPositions)
 
   const metrics = await fetchMetrics(lower)
   if (metrics) {
     await updateTraderMetrics(lower, metrics)
   }
 
-  return { upserted, hadData: rows.length > 0, skipped: false }
+  return { upserted, hadData: rows.length > 0, skipped: false, ordersSynced }
 }
 
 /** Load all trader wallet_addresses (no is_active filter). */
@@ -428,15 +483,17 @@ async function runBackfillWalletPnl() {
   console.log(`Found ${wallets.length} wallets (traders + follows + trades_public + orders); starting backfill...`)
 
   let totalRows = 0
+  let totalOrdersSynced = 0
   let processed = 0
 
   for (const wallet of wallets) {
     try {
-      const { upserted, hadData, skipped, reason, latestDate } = await backfillWallet(wallet, {
+      const { upserted, hadData, skipped, reason, latestDate, ordersSynced } = await backfillWallet(wallet, {
         skipIfExisting: SKIP_EXISTING_WALLETS,
         skipIfUpToDate: SKIP_UP_TO_DATE_WALLETS
       })
       totalRows += upserted
+      totalOrdersSynced += ordersSynced || 0
       processed += 1
       if (skipped) {
         if (reason === 'up-to-date') {
@@ -445,7 +502,8 @@ async function runBackfillWalletPnl() {
           console.log(`[${processed}/${wallets.length}] ${wallet} -> skipped (already has PnL history)`)
         }
       } else {
-        console.log(`[${processed}/${wallets.length}] ${wallet} -> upserted ${upserted} rows${hadData ? '' : ' (no new data)'}`)
+        const orderNote = ordersSynced > 0 ? `, ${ordersSynced} orders synced` : ''
+        console.log(`[${processed}/${wallets.length}] ${wallet} -> upserted ${upserted} rows${hadData ? '' : ' (no new data)'}${orderNote}`)
       }
     } catch (err) {
       console.error(`[${wallet}] failed:`, err.message || err)
@@ -453,10 +511,9 @@ async function runBackfillWalletPnl() {
     await sleep(SLEEP_MS)
   }
 
-  console.log(`Backfill complete. Wallets processed: ${processed}, rows upserted: ${totalRows}.`)
-  console.log('Reminder: run the 90d PnL/rank SQL to refresh ranks after backfill.')
+  console.log(`Backfill complete. Wallets: ${processed}, PnL rows: ${totalRows}, orders synced: ${totalOrdersSynced}.`)
 
-  return { processed, totalRows }
+  return { processed, totalRows, totalOrdersSynced }
 }
 
 module.exports = { runBackfillWalletPnl }
