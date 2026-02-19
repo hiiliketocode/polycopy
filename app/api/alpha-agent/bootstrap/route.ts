@@ -5,7 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAllBotSnapshots, buildStrategyComparison, buildObservationSummary } from '@/lib/alpha-agent';
 import { createMemories } from '@/lib/alpha-agent/memory-system';
 import { getTableDescriptions } from '@/lib/alpha-agent/bigquery-tool';
-import { MODEL_CONFIGS } from '@/lib/alpha-agent/types';
+import { MODEL_CONFIGS, getModelId } from '@/lib/alpha-agent/types';
 
 export const maxDuration = 120;
 
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     // 2. Ask Gemini to design initial strategies
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const model = genAI.getGenerativeModel({
-      model: MODEL_CONFIGS.strategist.model,
+      model: getModelId('strategist'),
       generationConfig: {
         temperature: 0.7,
         maxOutputTokens: 8192,

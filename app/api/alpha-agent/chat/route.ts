@@ -15,7 +15,7 @@ import { executeChatAction, type ActionResult, type ChatAction } from '@/lib/alp
 import { SCHEMA_REFERENCE } from '@/lib/alpha-agent/schema-reference';
 import { buildNotesContext } from '@/lib/alpha-agent/notes';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { MODEL_CONFIGS } from '@/lib/alpha-agent/types';
+import { MODEL_CONFIGS, getModelId } from '@/lib/alpha-agent/types';
 import type { ChatMessage, BotPerformanceSnapshot } from '@/lib/alpha-agent/types';
 
 export const maxDuration = 60;
@@ -198,12 +198,13 @@ export async function POST(request: Request) {
     // ================================================================
     // STRATEGIST AGENT: LLM reasoning
     // ================================================================
-    steps.push(step('strategist', `Thinking with ${MODEL_CONFIGS.conversational.model}`, `Temperature: ${MODEL_CONFIGS.conversational.temperature}, context: ${Math.round(fullContext.length / 1000)}k chars`));
+    const conversationalModel = getModelId('conversational');
+    steps.push(step('strategist', `Thinking with ${conversationalModel}`, `Temperature: ${MODEL_CONFIGS.conversational.temperature}, context: ${Math.round(fullContext.length / 1000)}k chars`));
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const config = MODEL_CONFIGS.conversational;
     const model = genAI.getGenerativeModel({
-      model: config.model,
+      model: conversationalModel,
       generationConfig: { temperature: config.temperature, maxOutputTokens: config.maxOutputTokens, responseMimeType: 'application/json' },
     });
 
@@ -257,10 +258,15 @@ export async function POST(request: Request) {
       llmDuration = Date.now() - llmStart;
     } catch (llmErr) {
       llmDuration = Date.now() - llmStart;
-      steps.push(step('strategist', `LLM error after ${(llmDuration / 1000).toFixed(1)}s`, llmErr instanceof Error ? llmErr.message : 'Unknown'));
+      const errMsg = llmErr instanceof Error ? llmErr.message : 'Unknown';
+      steps.push(step('strategist', `LLM error after ${(llmDuration / 1000).toFixed(1)}s`, errMsg));
+      const isQuotaError = /429|quota|rate limit|Too Many Requests/i.test(errMsg);
+      const reply = isQuotaError
+        ? `**Gemini API rate limit or quota exceeded.** The free tier for this model may be exhausted.\n\n**Quick fix:** Add to your \`.env.local\`:\n\`ALPHA_AGENT_MODEL=gemini-2.0-flash\`\nThen restart the app. Gemini 2.0 Flash has higher free-tier limits. You can also retry in a few minutes or check [Gemini rate limits](https://ai.google.dev/gemini-api/docs/rate-limits).`
+        : `I encountered an error processing your request. Please try again.\n\nError: ${errMsg}`;
       return NextResponse.json({
         success: true,
-        reply: `I encountered an error processing your request. Please try again.\n\nError: ${llmErr instanceof Error ? llmErr.message : 'Unknown LLM error'}`,
+        reply,
         thinking_steps: steps,
         tokens_used: 0,
         duration_ms: Date.now() - t0,
@@ -461,6 +467,7 @@ When the admin asks you to change something, do something, or you determine an a
 
 10. **query_supabase** - Query the live Supabase database
     parameters: { table, select (optional), filters: {}, order_by, ascending, limit: 50 }
+    Filters: use direct operator keys. Examples: filters: { "outcome": "WON" }, { "order_time": { "lt": "2026-02-19T00:00:00Z" } }, { "edge_pct": { "gte": 0.05 } }. Supported: eq, lt, lte, gt, gte, neq, in (array), ilike. For timestamps use ISO strings.
     Tables: ft_orders, ft_wallets, lt_orders, lt_strategies, markets, traders, trader_global_stats, trader_profile_stats, ft_seen_trades, alpha_agent_bots, alpha_agent_memory, alpha_agent_runs, alpha_agent_snapshots, alpha_agent_hypotheses, alpha_agent_notes
     CRITICAL SCHEMA: ft_wallets has total_pnl (NOT pnl). For "top by PnL" use order_by: "total_pnl", ascending: false. ft_orders has pnl per trade.
 

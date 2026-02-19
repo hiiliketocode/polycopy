@@ -27,7 +27,7 @@ import type {
   MetaLearningInsight,
   ChatMessage,
 } from './types';
-import { MODEL_CONFIGS } from './types';
+import { MODEL_CONFIGS, getModelId } from './types';
 
 // ============================================================================
 // System Prompt - The Agent's Identity and Operating Manual
@@ -361,7 +361,7 @@ Respond with ONLY valid JSON matching this schema:
 function getModel(genAI: GoogleGenerativeAI, role: ModelRole, jsonMode: boolean = false) {
   const config = MODEL_CONFIGS[role];
   return genAI.getGenerativeModel({
-    model: config.model,
+    model: getModelId(role),
     generationConfig: {
       temperature: config.temperature,
       topP: 0.9,

@@ -135,10 +135,34 @@ async function executeSupabaseQuery(supabase: SupabaseClient, action: ChatAction
       // Coerce numeric strings
       if (typeof value === 'string' && /^-?\d+\.?\d*$/.test(value)) value = Number(value);
 
-      // Handle nested operator objects: {"in": [...]}, {"ilike": "%x%"}, {"gte": 5}, etc.
+      // Handle nested operator objects: {"in": [...]}, {"ilike": "%x%"}, {"gte": 5}, or {"op":"lt","val":"..."}
       if (value && typeof value === 'object' && !Array.isArray(value)) {
         const op = value as Record<string, unknown>;
-        if ('in' in op && Array.isArray(op.in)) {
+        // Normalize {"op":"lt","val":"..."} into the same shape we use below
+        const opName = 'op' in op && 'val' in op ? String(op.op).toLowerCase() : null;
+        const opVal = opName !== null ? op.val : null;
+        if (opName !== null && opVal !== null && opVal !== undefined) {
+          if (opName === 'lt') {
+            query = query.lt(key, opVal as string | number);
+          } else if (opName === 'lte') {
+            query = query.lte(key, opVal as string | number);
+          } else if (opName === 'gt') {
+            query = query.gt(key, opVal as string | number);
+          } else if (opName === 'gte') {
+            query = query.gte(key, opVal as string | number);
+          } else if (opName === 'eq') {
+            query = query.eq(key, opVal as string | number);
+          } else if (opName === 'neq' || opName === 'ne') {
+            query = query.neq(key, opVal as string | number);
+          } else if (opName === 'in' && Array.isArray(opVal)) {
+            query = query.in(key, opVal as unknown[]);
+          } else if (opName === 'like' || opName === 'ilike') {
+            query = opName === 'ilike' ? query.ilike(key, String(opVal)) : query.like(key, String(opVal));
+          } else {
+            console.warn(`[query_supabase] Unknown op/val operator for ${key}:`, opName, opVal);
+            query = query.eq(key, opVal as string | number);
+          }
+        } else if ('in' in op && Array.isArray(op.in)) {
           query = query.in(key, op.in as unknown[]);
         } else if ('ilike' in op) {
           query = query.ilike(key, String(op.ilike));

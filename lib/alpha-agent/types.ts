@@ -441,6 +441,16 @@ export const MODEL_CONFIGS: Record<ModelRole, ModelConfig> = {
   },
 };
 
+/**
+ * Effective model ID for a role. Use this when calling the API so that
+ * ALPHA_AGENT_MODEL can override the default (e.g. when hitting free-tier
+ * quota on gemini-2.5-pro, set ALPHA_AGENT_MODEL=gemini-2.0-flash).
+ */
+export function getModelId(role: ModelRole): string {
+  const override = typeof process !== 'undefined' && process.env?.ALPHA_AGENT_MODEL?.trim();
+  return override || MODEL_CONFIGS[role].model;
+}
+
 // ============================================================================
 // Recursive Self-Improvement Types
 // ============================================================================
