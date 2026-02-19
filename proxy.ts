@@ -1,17 +1,23 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Origins allowed to embed the app in an iframe (feedback/review tools).
+// Override with ALLOW_FRAME_ANCESTORS env (comma-separated) if you need different or extra origins.
+const DEFAULT_FRAME_ANCESTORS =
+  'https://app.huddlekit.com https://huddlekit.com https://web.ruttl.com https://ruttl.com'
+
 /**
  * SECURITY: Apply security headers to all responses
  * Protects against XSS, clickjacking, MITM, and other attacks
  */
 function applySecurityHeaders(response: NextResponse) {
-  // Optional: allow embedding in iframes from specific origins (e.g. Huddlekit, Ruttl).
-  // Set ALLOW_FRAME_ANCESTORS to a comma-separated list: https://app.huddlekit.com,https://huddlekit.com
-  const allowFrameAncestors = process.env.ALLOW_FRAME_ANCESTORS?.trim()
-  const frameAncestorsValue = allowFrameAncestors
-    ? `'self' ${allowFrameAncestors.split(',').map((o) => o.trim()).filter(Boolean).join(' ')}`
-    : "'none'"
+  // Allow embedding in iframes from feedback tools (Huddlekit, Ruttl) or from ALLOW_FRAME_ANCESTORS.
+  const envList = process.env.ALLOW_FRAME_ANCESTORS?.trim()
+  const allowedOrigins = envList
+    ? envList.split(',').map((o) => o.trim()).filter(Boolean).join(' ')
+    : DEFAULT_FRAME_ANCESTORS
+  const frameAncestorsValue =
+    allowedOrigins.length > 0 ? `'self' ${allowedOrigins}` : "'none'"
 
   // Content Security Policy - Prevents XSS attacks
   // Allows resources only from trusted sources
@@ -39,9 +45,8 @@ function applySecurityHeaders(response: NextResponse) {
     'max-age=31536000; includeSubDomains; preload'
   )
   
-  // X-Frame-Options - Prevents clickjacking unless we allow specific frame ancestors
-  // When ALLOW_FRAME_ANCESTORS is set, omit X-Frame-Options so CSP frame-ancestors takes effect
-  if (!allowFrameAncestors) {
+  // X-Frame-Options - omit when we allow frame ancestors so CSP frame-ancestors takes effect
+  if (frameAncestorsValue === "'none'") {
     response.headers.set('X-Frame-Options', 'DENY')
   }
   
