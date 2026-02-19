@@ -10,6 +10,7 @@ import {
   normalizeTraderDisplayName,
 } from '@/lib/trader-name'
 import { getAuthedClobClientForUser } from '@/lib/polymarket/authed-client'
+import { getAppBaseUrl } from '@/lib/app-url'
 
 function normalizeOrderType(value: unknown): string {
   return String(value ?? '').trim().toLowerCase()
@@ -160,7 +161,7 @@ export async function GET(request: NextRequest) {
                 if (!outcome && marketId) {
                   try {
                     const marketResponse = await fetch(
-                      `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/polymarket/market?conditionId=${marketId}`,
+                      `${(await import('@/lib/app-url')).getAppBaseUrl()}/api/polymarket/market?conditionId=${marketId}`,
                       { cache: 'no-store' }
                     )
                     if (marketResponse.ok) {
@@ -404,6 +405,7 @@ export async function GET(request: NextRequest) {
       (marketIdsNeedingMetadata.length > 0 ? marketIdsNeedingMetadata : marketIds).filter(Boolean)
     )
     await enrichMetadataWithClobPricesWhenNeeded(marketMetadataMap)
+    await enrichMetadataFromPriceApiWhenPlaceholder(marketMetadataMap)
 
     const traderProfileMap = new Map<string, TraderProfileRow>()
     traderRows.forEach((row) => {
@@ -1612,6 +1614,65 @@ async function enrichMetadataWithClobPricesWhenNeeded(
   }
 }
 
+const PRICE_API_FALLBACK_BATCH = 5
+
+/** When Gamma/CLOB left us with placeholder (50¢) or no prices, use our Price API (single source of truth). */
+async function enrichMetadataFromPriceApiWhenPlaceholder(
+  metadataMap: Record<string, MarketMetadata>
+): Promise<void> {
+  const idsToFix = Object.keys(metadataMap).filter((conditionId) => {
+    const existing = metadataMap[conditionId]
+    if (!existing?.outcomePrices?.length) return true
+    if (isPlaceholderPrices(existing.outcomePrices)) return true
+    if (!hasRealPrices(existing.outcomePrices)) return true
+    return false
+  })
+  if (idsToFix.length === 0) return
+
+  const baseUrl = getAppBaseUrl()
+  for (let i = 0; i < idsToFix.length; i += PRICE_API_FALLBACK_BATCH) {
+    const chunk = idsToFix.slice(i, i + PRICE_API_FALLBACK_BATCH)
+    await Promise.allSettled(
+      chunk.map(async (conditionId) => {
+        const existing = metadataMap[conditionId]
+        if (!existing) return
+        try {
+          const res = await fetch(
+            `${baseUrl}/api/polymarket/price?conditionId=${encodeURIComponent(conditionId)}&tier=T2b`,
+            { cache: 'no-store', signal: AbortSignal.timeout(8000) }
+          )
+          if (!res.ok) return
+          const json = await res.json()
+          const market = json?.market
+          if (!market) return
+          const outcomes = Array.isArray(market.outcomes) ? market.outcomes : existing.outcomes ?? []
+          const outcomePrices = Array.isArray(market.outcomePrices)
+            ? market.outcomePrices.map((p: any) => Number(p)).filter((n: number) => Number.isFinite(n))
+            : []
+          if (outcomes.length === 0 || outcomePrices.length === 0 || !hasRealPrices(outcomePrices)) return
+          const tokens: MarketMetadataToken[] = outcomes.map((outcome: string, idx: number) => ({
+            tokenId: null,
+            outcome,
+            price: idx < outcomePrices.length ? outcomePrices[idx] : null,
+            winner: outcomePrices[idx] === 1 ? true : outcomePrices[idx] === 0 ? false : null,
+          }))
+          metadataMap[conditionId] = {
+            ...existing,
+            outcomes,
+            outcomePrices,
+            tokens,
+            metadataPayload: existing.metadataPayload
+              ? { ...existing.metadataPayload, outcomes, outcomePrices, tokens }
+              : existing.metadataPayload,
+          }
+        } catch {
+          // ignore
+        }
+      })
+    )
+  }
+}
+
 function extractTokenIdFromOrderRecord(order: any): string | null {
   const rawCandidates = [
     order?.token_id,
@@ -1665,16 +1726,22 @@ function resolveCurrentPrice(order: any, metadata?: MarketMetadata): number | nu
   if (metadata && metadata.outcomes.length > 0 && metadata.outcomePrices.length > 0) {
     if (normalizedOutcome) {
       const matchedIndex = metadata.outcomes.findIndex(
-        (outcome) => outcome.toLowerCase() === normalizedOutcome
+        (outcome) => String(outcome).trim().toLowerCase() === normalizedOutcome
       )
       const matchedPrice =
         matchedIndex >= 0 ? metadata.outcomePrices[matchedIndex] : undefined
       if (typeof matchedPrice === 'number' && Number.isFinite(matchedPrice)) {
+        // Don't show 50¢ placeholder as "current price" — treat as missing so caller can try Price API
+        if (matchedPrice === 0.5 && metadata.outcomePrices.every((p) => p === 0.5)) {
+          return null
+        }
         return matchedPrice
       }
+      // Outcome not found: do not use fallback (first outcome's price) — that would show wrong side's price (e.g. 1¢ for a No position)
+      return null
     }
     const fallbackPrice = metadata.outcomePrices.find((price) => Number.isFinite(price))
-    if (typeof fallbackPrice === 'number') {
+    if (typeof fallbackPrice === 'number' && fallbackPrice !== 0.5) {
       return fallbackPrice
     }
   }

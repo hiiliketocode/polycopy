@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
+import { getAppBaseUrl } from '@/lib/app-url'
 
 const PRICE_STALE_MS = 60_000
-const APP_BASE_URL =
-  process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || 'http://localhost:3000'
+const APP_BASE_URL = getAppBaseUrl()
 
 const toNumber = (value: number | string | null | undefined) => {
   if (value === null || value === undefined) return null
@@ -19,11 +19,27 @@ const pickOutcomePrice = (
   outcomePrices: Record<string, any> | null | undefined,
   outcome: string | null | undefined
 ) => {
-  if (!outcomePrices) return null
+  if (!outcomePrices || typeof outcomePrices !== 'object') return null
   const normalizedOutcome = normalizeOutcome(outcome)
   if (!normalizedOutcome) return null
 
+  // Handle { outcomes: string[], outcomePrices: number[] } (from price API / stats write)
+  const outcomesArr = outcomePrices.outcomes ?? outcomePrices.labels ?? outcomePrices.choices
+  const pricesArr = outcomePrices.outcomePrices ?? outcomePrices.prices ?? outcomePrices.probabilities
+  if (Array.isArray(outcomesArr) && Array.isArray(pricesArr)) {
+    const idx = outcomesArr.findIndex(
+      (o: string) => normalizeOutcome(o) === normalizedOutcome
+    )
+    if (idx >= 0 && idx < pricesArr.length) {
+      const p = Number(pricesArr[idx])
+      return Number.isFinite(p) ? p : null
+    }
+    return null
+  }
+
+  // Handle outcome-keyed map (from portfolio/trades write: { "Yes": 0.3, "No": 0.7 })
   for (const [key, price] of Object.entries(outcomePrices)) {
+    if (['outcomes', 'outcomePrices', 'prices', 'labels', 'choices', 'probabilities'].includes(key)) continue
     const normalizedKey = normalizeOutcome(key)
     if (normalizedKey === normalizedOutcome && Number.isFinite(Number(price))) {
       return Number(price)
