@@ -112,11 +112,11 @@ const PREMIUM_FEATURES = [
 
 function StepHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="mb-2 text-center md:mb-6">
-      <p className="mb-0.5 text-[8px] font-black uppercase tracking-[0.3em] text-zinc-400 md:mb-1 md:text-[9px]">
+    <div className="mb-3 text-center md:mb-6">
+      <p className="mb-1 text-[9px] font-black uppercase tracking-[0.3em] text-zinc-400 md:mb-1.5 md:text-[10px]">
         {subtitle}
       </p>
-      <h2 className="font-sans text-lg font-black uppercase tracking-tight md:text-3xl">
+      <h2 className="font-sans text-xl font-black uppercase tracking-tight md:text-3xl">
         {title}
       </h2>
     </div>
@@ -474,7 +474,7 @@ export function OnboardingFlow({ isPreview = false }: OnboardingFlowProps) {
   const renderTradeExplainer = () => (
     <div key="step-1" className="mx-auto my-auto max-w-2xl">
       <StepHeader subtitle="Core Mechanics" title="How to Copy Trades for Free" />
-      <p className="-mt-4 mx-auto mb-4 max-w-lg text-center text-[11px] text-zinc-500 md:mb-6">
+      <p className="mx-auto mb-4 max-w-lg text-center text-[11px] text-zinc-500 md:mb-6">
         Follow top traders and copy their moves manually — always free. Execute trades directly on
         the platform with Polycopy Premium.
       </p>
@@ -566,7 +566,7 @@ export function OnboardingFlow({ isPreview = false }: OnboardingFlowProps) {
   const renderBotsStep = () => (
     <div key="step-2" className="my-auto">
       <StepHeader subtitle="Automation" title="Automate Your Alpha" />
-      <p className="-mt-4 mx-auto mb-4 max-w-lg text-center text-[11px] text-zinc-500 md:mb-6">
+      <p className="mx-auto mb-4 max-w-lg text-center text-[11px] text-zinc-500 md:mb-6">
         Copy trading bots execute trades automatically using proven strategies. Every account gets
         one free bot — unlock the full roster with Premium.
       </p>
@@ -646,7 +646,7 @@ export function OnboardingFlow({ isPreview = false }: OnboardingFlowProps) {
           ))}
         </div>
 
-        <div className="flex w-full max-w-sm flex-col gap-2 md:gap-3">
+        <div className="flex w-full max-w-sm flex-col gap-4 md:gap-5">
           <Button
             onClick={() => setShowPremiumModal(true)}
             className="h-12 rounded-none bg-[#FDB022] text-[11px] font-black uppercase tracking-[0.2em] text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-black hover:text-[#FDB022] md:h-14"
@@ -655,7 +655,7 @@ export function OnboardingFlow({ isPreview = false }: OnboardingFlowProps) {
           </Button>
           <button
             onClick={nextStep}
-            className="py-1 text-[9px] font-black uppercase tracking-widest text-zinc-400 transition-colors hover:text-black"
+            className="py-2 text-[10px] font-black uppercase tracking-widest text-zinc-400 transition-colors hover:text-black"
           >
             MAYBE LATER
           </button>
@@ -707,7 +707,7 @@ export function OnboardingFlow({ isPreview = false }: OnboardingFlowProps) {
   const renderPremiumModal = () => (
     <AnimatePresence>
       {showPremiumModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
