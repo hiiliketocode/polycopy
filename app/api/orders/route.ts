@@ -401,9 +401,21 @@ export async function GET(request: NextRequest) {
       return !hasTitle || !hasImage
     })
 
-    const marketMetadataMap = await fetchMarketMetadataFromGamma(
-      (marketIdsNeedingMetadata.length > 0 ? marketIdsNeedingMetadata : marketIds).filter(Boolean)
-    )
+    const allIdsForMetadata = (marketIdsNeedingMetadata.length > 0 ? marketIdsNeedingMetadata : marketIds).filter(Boolean)
+    const marketMetadataMap = await fetchMarketMetadataFromGamma(allIdsForMetadata)
+    // Gamma skips markets where it returns wrong conditionId. Ensure ALL requested
+    // market IDs are in the map (even as empty stubs) so CLOB/Price API enrichment
+    // fills them in. Without this, skipped markets get no prices at all.
+    for (const id of allIdsForMetadata) {
+      if (!marketMetadataMap[id]) {
+        marketMetadataMap[id] = {
+          icon: null, image: null, question: null, slug: null,
+          outcomes: [], outcomePrices: [], tokens: [],
+          closed: null, resolved: null, acceptingOrders: null,
+          metadataPayload: null,
+        }
+      }
+    }
     await enrichMetadataWithClobPricesWhenNeeded(marketMetadataMap)
     await enrichMetadataFromPriceApiWhenPlaceholder(marketMetadataMap)
 
