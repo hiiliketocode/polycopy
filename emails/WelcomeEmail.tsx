@@ -54,8 +54,8 @@ export default function WelcomeEmail({
                 <table border={0} cellPadding="0" cellSpacing="0" style={{ margin: '0 auto' }}>
                   <tbody>
                     <tr>
-                      <td align="right" style={{ paddingBottom: '4px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: '900', fontFamily: FONTS.mono, color: COLORS.white, backgroundColor: COLORS.yellow, display: 'inline-block', padding: '2px 6px', letterSpacing: '0.5px' }}>#1</div>
+                      <td align="center" style={{ paddingBottom: '4px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '900', fontFamily: FONTS.mono, color: COLORS.black, backgroundColor: COLORS.yellow, display: 'inline-block', padding: '2px 6px', letterSpacing: '0.5px' }}>#1</div>
                       </td>
                     </tr>
                     <tr>
@@ -76,8 +76,8 @@ export default function WelcomeEmail({
                 <table border={0} cellPadding="0" cellSpacing="0" style={{ margin: '0 auto' }}>
                   <tbody>
                     <tr>
-                      <td align="right" style={{ paddingBottom: '4px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: '900', fontFamily: FONTS.mono, color: COLORS.white, backgroundColor: COLORS.yellow, display: 'inline-block', padding: '2px 6px', letterSpacing: '0.5px' }}>#2</div>
+                      <td align="center" style={{ paddingBottom: '4px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '900', fontFamily: FONTS.mono, color: COLORS.black, backgroundColor: COLORS.yellow, display: 'inline-block', padding: '2px 6px', letterSpacing: '0.5px' }}>#2</div>
                       </td>
                     </tr>
                     <tr>
@@ -98,8 +98,8 @@ export default function WelcomeEmail({
                 <table border={0} cellPadding="0" cellSpacing="0" style={{ margin: '0 auto' }}>
                   <tbody>
                     <tr>
-                      <td align="right" style={{ paddingBottom: '4px' }}>
-                        <div style={{ fontSize: '10px', fontWeight: '900', fontFamily: FONTS.mono, color: COLORS.white, backgroundColor: COLORS.yellow, display: 'inline-block', padding: '2px 6px', letterSpacing: '0.5px' }}>#3</div>
+                      <td align="center" style={{ paddingBottom: '4px' }}>
+                        <div style={{ fontSize: '10px', fontWeight: '900', fontFamily: FONTS.mono, color: COLORS.black, backgroundColor: COLORS.yellow, display: 'inline-block', padding: '2px 6px', letterSpacing: '0.5px' }}>#3</div>
                       </td>
                     </tr>
                     <tr>
