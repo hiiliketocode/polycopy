@@ -114,8 +114,83 @@ export async function GET(request: Request) {
         ? PRICE_FRESHNESS_TIERS_MS[tierParam]
         : DEFAULT_FRESHNESS_MS;
 
-  // ── Fast path: return from in-memory cache if fresh for this tier ──
   const cacheKey = conditionId || slug || title || '';
+
+  const loadCachedMarket = async (includePrices = false) => {
+    if (!supabaseAdmin || !conditionId) return null;
+    const columns = [
+      'condition_id',
+      'market_slug',
+      'event_slug',
+      'title',
+      'start_time',
+      'end_time',
+      'close_time',
+      'completed_time',
+      'game_start_time',
+      'status',
+      'winning_side',
+      'image',
+      'description',
+      'tags',
+      'espn_url',
+      'espn_game_id',
+      'espn_last_checked',
+    ];
+    if (includePrices) {
+      columns.push('outcome_prices', 'last_price_updated_at', 'closed');
+    }
+    const { data, error } = await supabaseAdmin
+      .from('markets')
+      .select(columns.join(','))
+      .eq('condition_id', conditionId)
+      .maybeSingle();
+    if (error) {
+      console.warn('[Price API] Failed to read market cache:', error.message || error);
+      return null;
+    }
+    return data ?? null;
+  };
+
+  const tryFreshPriceFromDb = async (maxAgeMsVal: number): Promise<Response | null> => {
+    if (!conditionId || !conditionId.startsWith('0x')) return null;
+    const row = (await loadCachedMarket(true)) as any;
+    const op = row?.outcome_prices;
+    if (!op || typeof op !== 'object') return null;
+    let outcomes: string[] | null = op.outcomes ?? op.labels ?? op.choices ?? null;
+    let outcomePrices: number[] | null = Array.isArray(op.outcomePrices) ? op.outcomePrices : Array.isArray(op.prices) ? op.prices : Array.isArray(op.probabilities) ? op.probabilities : null;
+    if ((!outcomes || !Array.isArray(outcomes)) && op && typeof op === 'object' && !Array.isArray(op)) {
+      const keys = Object.keys(op).filter((k) => !['outcomes', 'outcomePrices', 'prices', 'labels', 'choices', 'probabilities'].includes(k));
+      if (keys.length > 0) {
+        const vals = keys.map((k) => Number((op as Record<string, unknown>)[k]));
+        if (vals.every((n) => Number.isFinite(n))) {
+          outcomes = keys;
+          outcomePrices = vals;
+        }
+      }
+    }
+    if (!Array.isArray(outcomes) || !Array.isArray(outcomePrices) || outcomes.length === 0) return null;
+    const last = row.last_price_updated_at ? new Date(row.last_price_updated_at).getTime() : 0;
+    if (Number.isNaN(last) || Date.now() - last > maxAgeMsVal) return null;
+    const closed = row.closed === true;
+    const marketPayload = {
+      conditionId,
+      outcomes,
+      outcomePrices: outcomePrices.map((p: any) => Number(p)),
+      closed,
+      resolved: closed,
+      question: row.title,
+      title: row.title,
+      slug: row.market_slug,
+      icon: row.image,
+      image: row.image,
+    };
+    const response = { success: true, market: marketPayload };
+    setCachedPrice(cacheKey, response);
+    return NextResponse.json(response);
+  };
+
+  // ── Fast path: return from in-memory cache if fresh for this tier ──
   if (cacheKey) {
     const cached = getCachedPrice(cacheKey, maxAgeMs);
     if (cached) {
@@ -213,81 +288,6 @@ export async function GET(request: Request) {
     } catch {
       return null;
     }
-  };
-
-  const loadCachedMarket = async (includePrices = false) => {
-    if (!supabaseAdmin || !conditionId) return null;
-    const columns = [
-      'condition_id',
-      'market_slug',
-      'event_slug',
-      'title',
-      'start_time',
-      'end_time',
-      'close_time',
-      'completed_time',
-      'game_start_time',
-      'status',
-      'winning_side',
-      'image',
-      'description',
-      'tags',
-      'espn_url',
-      'espn_game_id',
-      'espn_last_checked',
-    ];
-    if (includePrices) {
-      columns.push('outcome_prices', 'last_price_updated_at', 'closed');
-    }
-    const { data, error } = await supabaseAdmin
-      .from('markets')
-      .select(columns.join(','))
-      .eq('condition_id', conditionId)
-      .maybeSingle();
-    if (error) {
-      console.warn('[Price API] Failed to read market cache:', error.message || error);
-      return null;
-    }
-    return data ?? null;
-  };
-
-  /** If we have outcome_prices in DB updated within maxAgeMs, return them (no Gamma/CLOB). */
-  const tryFreshPriceFromDb = async (maxAgeMs: number): Promise<Response | null> => {
-    if (!conditionId || !conditionId.startsWith('0x')) return null;
-    const row = await loadCachedMarket(true) as any;
-    const op = row?.outcome_prices;
-    if (!op || typeof op !== 'object') return null;
-    let outcomes: string[] | null = op.outcomes ?? op.labels ?? op.choices ?? null;
-    let outcomePrices: number[] | null = Array.isArray(op.outcomePrices) ? op.outcomePrices : Array.isArray(op.prices) ? op.prices : Array.isArray(op.probabilities) ? op.probabilities : null;
-    if ((!outcomes || !Array.isArray(outcomes)) && op && typeof op === 'object' && !Array.isArray(op)) {
-      const keys = Object.keys(op).filter((k) => !['outcomes', 'outcomePrices', 'prices', 'labels', 'choices', 'probabilities'].includes(k));
-      if (keys.length > 0) {
-        const vals = keys.map((k) => Number((op as Record<string, unknown>)[k]));
-        if (vals.every((n) => Number.isFinite(n))) {
-          outcomes = keys;
-          outcomePrices = vals;
-        }
-      }
-    }
-    if (!Array.isArray(outcomes) || !Array.isArray(outcomePrices) || outcomes.length === 0) return null;
-    const last = row.last_price_updated_at ? new Date(row.last_price_updated_at).getTime() : 0;
-    if (Number.isNaN(last) || Date.now() - last > maxAgeMs) return null;
-    const closed = row.closed === true;
-    const marketPayload = {
-      conditionId,
-      outcomes,
-      outcomePrices: outcomePrices.map((p: any) => Number(p)),
-      closed,
-      resolved: closed,
-      question: row.title,
-      title: row.title,
-      slug: row.market_slug,
-      icon: row.image,
-      image: row.image,
-    };
-    const response = { success: true, market: marketPayload };
-    setCachedPrice(cacheKey, response);
-    return NextResponse.json(response);
   };
 
   const ensureCachedMarket = async () => {
