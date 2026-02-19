@@ -151,7 +151,7 @@ export async function GET(request: Request, { params }: RouteParams) {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 5000);
             const res = await fetch(
-              `${baseUrl}/api/polymarket/price?conditionId=${conditionId}`,
+              `${baseUrl}/api/polymarket/price?conditionId=${conditionId}&tier=T3`,
               { signal: controller.signal }
             );
             clearTimeout(timeout);

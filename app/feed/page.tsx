@@ -2002,6 +2002,7 @@ export default function FeedPage() {
         if (trade.market.conditionId) params.set('conditionId', trade.market.conditionId);
         if (trade.market.slug) params.set('slug', trade.market.slug);
         if (trade.market.title) params.set('title', trade.market.title);
+        params.set('tier', 'T2a'); // Feed: live (≤1s)
 
           // Fetch current price from Polymarket API
           const priceResponse = await fetch(`/api/polymarket/price?${params.toString()}`);

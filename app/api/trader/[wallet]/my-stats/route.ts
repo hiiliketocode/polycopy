@@ -101,7 +101,7 @@ const fetchMarketPrices = async (
         const timeout = setTimeout(() => controller.abort(), PRICE_FETCH_TIMEOUT_MS)
         try {
           const res = await fetch(
-            `${baseUrl}/api/polymarket/price?conditionId=${marketId}`,
+            `${baseUrl}/api/polymarket/price?conditionId=${marketId}&tier=T3`,
             { signal: controller.signal }
           )
           if (!res.ok) return

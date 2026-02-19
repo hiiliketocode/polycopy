@@ -1,38 +1,37 @@
-'use client';
+image.png'use client';
 
 import React, { useState, useEffect, useRef, useMemo, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { supabase, ensureProfile } from '@/lib/supabase';
 import { resolveFeatureTier, tierHasPremiumAccess } from '@/lib/feature-tier';
-import { useAuthState } from '@/lib/auth/useAuthState';
 import type { User } from '@supabase/supabase-js';
 import { Navigation } from '@/components/polycopy/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { UpgradeModal } from '@/components/polycopy/upgrade-modal';
 import { ConnectWalletModal } from '@/components/polycopy/connect-wallet-modal';
+import { CancelSubscriptionModal } from '@/components/polycopy/cancel-subscription-modal';
 import { SubscriptionSuccessModal } from '@/components/polycopy/subscription-success-modal';
 import { MarkTradeClosed } from '@/components/polycopy/mark-trade-closed';
 import { EditCopiedTrade } from '@/components/polycopy/edit-copied-trade';
 import { OrdersScreen } from '@/components/orders/OrdersScreen';
 import ClosePositionModal from '@/components/orders/ClosePositionModal';
 import OrderRowDetails from '@/components/orders/OrderRowDetails';
-import { ShareStatsModal } from '@/components/polycopy/share-stats-modal';
 import type { OrderRow } from '@/lib/orders/types';
 import type { PositionSummary } from '@/lib/orders/position';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   TrendingUp,
   Percent,
@@ -42,16 +41,17 @@ import {
   Copy,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   RefreshCw,
   Edit2,
   X,
-  Settings,
+  Bell,
+  BellOff,
   Trash2,
   RotateCcw,
   Check,
   Info,
   ArrowUpRight,
-  Share2,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -84,7 +84,6 @@ interface CopiedTrade {
   trade_method?: 'quick' | 'manual' | 'auto' | null;
   order_id?: string | null;
   copied_trade_id?: string | null;
-  side?: string; // 'buy' or 'sell' - the original trade direction
 }
 
 interface PositionSizeBucket {
@@ -100,8 +99,9 @@ interface CategoryDistribution {
   color: string;
 }
 
-type ProfileTab = 'trades' | 'performance';
+type ProfileTab = 'trades' | 'performance' | 'settings';
 
+const SLIPPAGE_PRESETS = [0, 1, 3, 5];
 const MIN_OPEN_POSITION_SIZE = 1e-4;
 
 interface PortfolioStats {
@@ -136,19 +136,8 @@ function formatRelativeTime(dateString: string): string {
   if (diffInDays === 1) return 'Yesterday';
   if (diffInDays < 7) return `${diffInDays} days ago`;
   if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
-
+  
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function formatDuration(durationMs: number | null): string {
-  if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0) return '—';
-  const totalMinutes = Math.round(durationMs / 60000);
-  if (totalMinutes < 60) return `${totalMinutes}m`;
-  const totalHours = Math.round(totalMinutes / 60);
-  if (totalHours < 24) return `${totalHours}h`;
-  const days = Math.floor(totalHours / 24);
-  const hours = totalHours % 24;
-  return `${days}d ${hours}h`;
 }
 
 function formatTimestamp(dateString: string): string {
@@ -168,36 +157,6 @@ function formatOutcomeLabel(value: string | null | undefined) {
   const trimmed = value.trim();
   if (!trimmed) return 'Outcome';
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-}
-
-function normalizeOutcomeValue(value: string | null | undefined) {
-  if (!value) return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.toUpperCase() : null;
-}
-
-function resolveResolvedOutcomeFromRaw(raw: any): string | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const candidates = [
-    raw.resolved_outcome,
-    raw.resolvedOutcome,
-    raw.market?.resolved_outcome,
-    raw.market?.resolvedOutcome,
-    raw.market?.winning_outcome,
-    raw.market?.winner_outcome,
-    raw.market?.winner,
-  ];
-  for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim();
-    }
-  }
-  return null;
-}
-
-function isSettlementPrice(value: number | null | undefined) {
-  if (!Number.isFinite(value ?? NaN)) return false;
-  return Math.abs((value as number) - 1) < 1e-6 || Math.abs((value as number) - 0) < 1e-6;
 }
 
 function buildLiveMarketKey(marketId: string, outcome: string) {
@@ -244,6 +203,15 @@ function getCopiedTradeTimestamp(trade: CopiedTrade) {
   return parsed;
 }
 
+function mergeCopiedTrades(base: CopiedTrade[], extras: CopiedTrade[]) {
+  const map = new Map<string, CopiedTrade>();
+  base.forEach((trade) => map.set(trade.id, trade));
+  extras.forEach((trade) => map.set(trade.id, trade));
+  const merged = Array.from(map.values());
+  merged.sort((a, b) => getCopiedTradeTimestamp(b) - getCopiedTradeTimestamp(a));
+  return merged;
+}
+
 type OrderIdentifier = {
   column: 'copied_trade_id' | 'order_id';
   value: string;
@@ -268,40 +236,31 @@ const buildPositionKey = (marketId?: string | null, outcome?: string | null) => 
 function ProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
-  // Use the robust auth state hook that properly handles token refresh
-  const { user, loading } = useAuthState({
-    requireAuth: true,
-    onAuthComplete: async (authUser) => {
-      if (authUser) {
-        await ensureProfile(authUser.id, authUser.email!);
-      }
-    },
-  });
-  
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
   const [followingCount, setFollowingCount] = useState(0);
   const [loadingStats, setLoadingStats] = useState(true);
   
   // Premium and trading wallet state
   const [profile, setProfile] = useState<any>(null);
+  const [showWalletSetup, setShowWalletSetup] = useState(false);
+  const [disconnectingWallet, setDisconnectingWallet] = useState(false);
   const featureTier = resolveFeatureTier(Boolean(user), profile);
   const hasPremiumAccess = tierHasPremiumAccess(featureTier);
-  const hasConnectedWallet = Boolean(profile?.trading_wallet_address);
-  const canExecuteTrades = hasPremiumAccess && hasConnectedWallet;
   
   // Copied trades state
   const [copiedTradesBase, setCopiedTradesBase] = useState<CopiedTrade[]>([]);
+  const [autoCopyExtras, setAutoCopyExtras] = useState<CopiedTrade[]>([]);
   const copiedTrades = useMemo(
-    () => [...copiedTradesBase].sort((a, b) => getCopiedTradeTimestamp(b) - getCopiedTradeTimestamp(a)),
-    [copiedTradesBase]
+    () => mergeCopiedTrades(copiedTradesBase, autoCopyExtras),
+    [copiedTradesBase, autoCopyExtras]
   );
   const [loadingCopiedTrades, setLoadingCopiedTrades] = useState(true);
   const [expandedTradeId, setExpandedTradeId] = useState<string | null>(null);
   const [expandedQuickDetailsId, setExpandedQuickDetailsId] = useState<string | null>(null);
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [tradeFilter, setTradeFilter] = useState<'all' | 'open' | 'closed' | 'resolved' | 'history'>('all');
-  const [tradeSort, setTradeSort] = useState<'date' | 'invested' | 'currentValue' | 'roi'>('date');
   const [mobileMetric, setMobileMetric] = useState<'price' | 'size' | 'roi' | 'time'>('price');
   const [portfolioStats, setPortfolioStats] = useState<PortfolioStats | null>(null);
   const [portfolioStatsLoading, setPortfolioStatsLoading] = useState(false);
@@ -310,16 +269,6 @@ function ProfilePageContent() {
   // Quick trades (orders) state  
   const [quickTrades, setQuickTrades] = useState<OrderRow[]>([]);
   const [loadingQuickTrades, setLoadingQuickTrades] = useState(true);
-  const [marketMeta, setMarketMeta] = useState<
-    Map<
-      string,
-      {
-        title: string | null;
-        image: string | null;
-        slug?: string | null;
-      }
-    >
-  >(new Map());
   const [positions, setPositions] = useState<PositionSummary[]>([]);
   const [closeTarget, setCloseTarget] = useState<{ order: OrderRow; position: PositionSummary } | null>(null);
   const [closeSubmitting, setCloseSubmitting] = useState(false);
@@ -357,27 +306,35 @@ function ProfilePageContent() {
   const tabParam = searchParams?.get('tab');
   const preferredDefaultTab: ProfileTab = 'trades';
   const initialTab =
-    tabParam === 'performance' || tabParam === 'trades'
+    tabParam === 'settings' || tabParam === 'performance' || tabParam === 'trades'
       ? (tabParam as ProfileTab)
       : preferredDefaultTab;
   const [activeTab, setActiveTab] = useState<ProfileTab>(initialTab);
   const hasAppliedPreferredTab = useRef(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [showCancelSubscriptionModal, setShowCancelSubscriptionModal] = useState(false);
   const [showSubscriptionSuccessModal, setShowSubscriptionSuccessModal] = useState(false);
-  const [isShareStatsModalOpen, setIsShareStatsModalOpen] = useState(false);
+
+  // Disconnect wallet confirmation modal state
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [disconnectConfirmText, setDisconnectConfirmText] = useState('');
+  
+  // Notification preferences state
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [loadingNotificationPrefs, setLoadingNotificationPrefs] = useState(false);
+  const [defaultBuySlippage, setDefaultBuySlippage] = useState<number>(3);
+  const [defaultSellSlippage, setDefaultSellSlippage] = useState<number>(3);
+  const [buySlippageSelection, setBuySlippageSelection] = useState<string>('3');
+  const [sellSlippageSelection, setSellSlippageSelection] = useState<string>('3');
+  const [customBuySlippage, setCustomBuySlippage] = useState<string>('');
+  const [customSellSlippage, setCustomSellSlippage] = useState<string>('');
 
   // Check for upgrade success in URL params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('upgrade') === 'success') {
       setShowSubscriptionSuccessModal(true);
-      // Clean up URL
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, '', newUrl);
-    } else if (params.get('upgrade') === 'true') {
-      // Open upgrade modal when upgrade=true in URL
-      setShowUpgradeModal(true);
       // Clean up URL
       const newUrl = window.location.pathname;
       window.history.replaceState({}, '', newUrl);
@@ -404,7 +361,43 @@ function ProfilePageContent() {
   const hasLoadedStatsRef = useRef(false);
   const hasLoadedTradesRef = useRef(false);
   const hasLoadedQuickTradesRef = useRef(false);
-  const hasLoadedPositionsRef = useRef(false);
+  const hasLoadedNotificationPrefsRef = useRef(false);
+
+  // Check auth status on mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      setLoading(true);
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session?.user) {
+          router.push('/login');
+          return;
+        }
+
+        setUser(session.user);
+        await ensureProfile(session.user.id, session.user.email!);
+      } catch (err) {
+        console.error('Auth error:', err);
+        router.push('/login');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session?.user) {
+        router.push('/login');
+      } else {
+        setUser(session.user);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [router]);
 
   // Fetch user stats and wallet
   useEffect(() => {
@@ -471,12 +464,6 @@ function ProfilePageContent() {
     setActiveTab(preferredDefaultTab);
     hasAppliedPreferredTab.current = true;
   }, [preferredDefaultTab, tabParam, loadingStats]);
-
-  useEffect(() => {
-    if (tabParam === 'settings') {
-      router.replace('/settings');
-    }
-  }, [tabParam, router]);
 
   // Fetch Polymarket username when wallet is connected
   useEffect(() => {
@@ -559,42 +546,6 @@ function ProfilePageContent() {
 
         // Fetch live market data for the trades
         fetchLiveMarketData(tradesWithCorrectRoi);
-        
-        // Auto-close dust positions and hide duplicate SELL orders
-        console.log('🔍 Checking for duplicate positions and dust...');
-        const walletToCheck = profile?.trading_wallet_address || user.id; // Use user ID as fallback
-        
-        fetch('/api/portfolio/check-positions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ walletAddress: walletToCheck }),
-        })
-          .then(res => {
-            if (!res.ok) {
-              console.error('❌ check-positions failed:', res.status, res.statusText);
-              return res.json().then(data => {
-                console.error('Error details:', data);
-                throw new Error(data.error || 'Failed to check positions');
-              });
-            }
-            return res.json();
-          })
-          .then(data => {
-            console.log('✅ Check-positions result:', data);
-            if (data.closed > 0 || data.hidden > 0) {
-              console.log(`🧹 Auto-closed ${data.closed} dust/sold position(s), hidden ${data.hidden} duplicate SELL order(s)`);
-              // Refresh trades after auto-closing
-              hasLoadedTradesRef.current = false;
-              setTimeout(() => {
-                window.location.reload();
-              }, 1500);
-            } else {
-              console.log('ℹ️ No duplicates or dust positions found');
-            }
-          })
-          .catch(err => {
-            console.error('❌ Failed to check positions:', err);
-          });
       } catch (err) {
         console.error('Error fetching portfolio trades:', err);
         setCopiedTradesBase([]);
@@ -604,6 +555,58 @@ function ProfilePageContent() {
     };
 
     fetchCopiedTrades();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchAutoCopyLogs = async () => {
+      try {
+        const response = await fetch('/api/auto-copy/logs', { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.error || 'Failed to load auto copy logs');
+        }
+
+        const normalized = (payload?.logs || []).map((log: any) => {
+          const executedAt = log.executed_at || log.created_at || new Date().toISOString();
+          const normalizedTrade: CopiedTrade = {
+            id: log.id,
+            trader_wallet: log.trader_wallet,
+            trader_username: log.trader_username ?? null,
+            trader_profile_image_url: log.trader_profile_image_url ?? null,
+            market_id: log.market_id ?? '',
+            market_title: log.market_title ?? 'Auto copy trade',
+            market_slug: log.market_slug ?? null,
+            market_avatar_url: log.market_avatar_url ?? null,
+            outcome: log.outcome ?? 'Outcome',
+            price_when_copied: Number(log.price ?? log.amount_usd ?? 0) || 0,
+            entry_size: log.size ?? null,
+            amount_invested: log.amount_usd ?? null,
+            copied_at: executedAt,
+            trader_still_has_position: true,
+            trader_closed_at: null,
+            current_price: log.price ?? null,
+            market_resolved: false,
+            market_resolved_at: null,
+            roi: null,
+            pnl_usd: null,
+            user_closed_at: null,
+            user_exit_price: null,
+            resolved_outcome: null,
+            trade_method: 'auto'
+          };
+          (normalizedTrade as any).created_at = log.created_at ?? executedAt;
+          return normalizedTrade;
+        });
+
+        setAutoCopyExtras(normalized);
+      } catch (err) {
+        console.error('Error loading auto copy logs:', err);
+      }
+    };
+
+    fetchAutoCopyLogs();
   }, [user]);
 
   // Fetch quick trades (orders) from /api/orders
@@ -649,110 +652,16 @@ function ProfilePageContent() {
     fetchQuickTrades();
   }, [user]);
 
-  // Track which market IDs we've already fetched to prevent redundant API calls
-  const fetchedMarketIdsRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    let cancelled = false;
-    const allMarketIds = Array.from(
-      new Set(
-        [...quickTrades, ...copiedTrades]
-          .map((trade) => {
-            if ('marketId' in trade) {
-              return trade.marketId?.trim() || null;
-            }
-            return trade.market_id?.trim() || null;
-          })
-          .filter((id): id is string => Boolean(id))
-      )
-    );
-    
-    // Filter out IDs we've already fetched (using ref instead of marketMeta to avoid stale closures)
-    const idsToFetch = allMarketIds.filter((id) => !fetchedMarketIdsRef.current.has(id));
-
-    if (idsToFetch.length === 0) return () => {
-      cancelled = true;
-    };
-
-    // Mark these IDs as being fetched
-    idsToFetch.forEach((id) => fetchedMarketIdsRef.current.add(id));
-
-    const fetchMeta = async () => {
-      const entries: Array<[string, { title: string | null; image: string | null; slug?: string | null }]> = [];
-      
-      // Rate limit: fetch markets in batches to avoid 429 errors
-      const BATCH_SIZE = 5;
-      const DELAY_BETWEEN_BATCHES_MS = 200;
-      
-      for (let i = 0; i < idsToFetch.length; i += BATCH_SIZE) {
-        if (cancelled) break;
-        
-        const batch = idsToFetch.slice(i, i + BATCH_SIZE);
-        await Promise.allSettled(
-          batch.map(async (conditionId) => {
-            try {
-              const resp = await fetch(`/api/polymarket/market?conditionId=${encodeURIComponent(conditionId)}`, {
-                cache: 'no-store',
-              });
-              if (!resp.ok) return;
-              const data = await resp.json();
-              entries.push([
-                conditionId,
-                {
-                  title: data?.question ?? null,
-                  image: data?.icon ?? data?.image ?? null,
-                  slug: data?.slug ?? null,
-                },
-              ]);
-            } catch {
-              /* ignore fetch errors */
-            }
-          })
-        );
-        
-        // Update UI with current batch results
-        if (!cancelled && entries.length > 0) {
-          setMarketMeta((prev) => {
-            const next = new Map(prev);
-            entries.forEach(([id, meta]) => next.set(id, meta));
-            return next;
-          });
-        }
-        
-        // Delay between batches to respect rate limits
-        if (i + BATCH_SIZE < idsToFetch.length && !cancelled) {
-          await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES_MS));
-        }
-      }
-    };
-
-    fetchMeta();
-    return () => {
-      cancelled = true;
-    };
-  }, [quickTrades, copiedTrades]); // marketMeta intentionally not in deps - use ref instead to avoid stale closures
-
-  const refreshPositions = useCallback(async (): Promise<PositionSummary[] | null> => {
+  const refreshPositions = useCallback(async () => {
     try {
       const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
-      if (!positionsResponse.ok) return null;
+      if (!positionsResponse.ok) return;
       const positionsData = await positionsResponse.json();
-      const nextPositions = positionsData.positions || [];
-      setPositions(nextPositions);
-      return nextPositions;
+      setPositions(positionsData.positions || []);
     } catch (err) {
       console.error('Error refreshing positions:', err);
-      return null;
     }
   }, []);
-
-  useEffect(() => {
-    if (!user || !hasConnectedWallet || hasLoadedPositionsRef.current) return;
-    hasLoadedPositionsRef.current = true;
-    refreshPositions().catch(() => {
-      /* best effort */
-    });
-  }, [user, hasConnectedWallet, refreshPositions]);
 
   // Fetch aggregated portfolio stats (realized + unrealized PnL)
   useEffect(() => {
@@ -766,13 +675,6 @@ function ProfilePageContent() {
         if (!response.ok) {
           const message = await response.text();
           throw new Error(message || 'Failed to fetch portfolio stats');
-        }
-
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          const message = await response.text();
-          console.error('Portfolio stats returned non-JSON response:', message.slice(0, 200));
-          throw new Error('Invalid portfolio stats response');
         }
 
         const data = await response.json();
@@ -834,13 +736,12 @@ function ProfilePageContent() {
       uniqueMarketIds.map(async (marketId) => {
         try {
           // Fetch current price from Polymarket API
-          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${marketId}`);
+          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${marketId}&tier=T2b`);
           if (priceResponse.ok) {
             const priceData = await priceResponse.json();
-
+            
             if (priceData.success && priceData.market) {
-              const { outcomes, outcomePrices, closed, resolved } = priceData.market;
-              const marketResolved = resolved === true || Boolean(closed);
+              const { outcomes, outcomePrices, closed } = priceData.market;
               const outcomeSet = outcomeTargets.get(marketId) || new Set<string>();
               for (const outcome of outcomeSet) {
                 const outcomeIndex = outcomes?.findIndex((o: string) => o.toUpperCase() === outcome.toUpperCase());
@@ -848,7 +749,7 @@ function ProfilePageContent() {
                   const price = Number(outcomePrices[outcomeIndex]);
                   newLiveData.set(buildLiveMarketKey(marketId, outcome), {
                     price,
-                    closed: marketResolved,
+                    closed: Boolean(closed),
                   });
                 }
               }
@@ -863,141 +764,20 @@ function ProfilePageContent() {
     console.log(`💾 Stored live data for ${newLiveData.size} markets`);
     setLiveMarketData(newLiveData);
 
-    // Update database with resolved market status and current prices
-    if (newLiveData.size > 0 && user) {
-      const priceUpdates: Array<{ marketId: string; outcome: string; price: number; resolved?: boolean }> = [];
-      
-      for (const [key, data] of newLiveData.entries()) {
-        const parts = key.split(':');
-        if (parts.length === 2) {
-          const [marketId, outcome] = parts;
-          priceUpdates.push({
-            marketId,
-            outcome,
-            price: data.price,
-            resolved: data.closed || false,
-          });
-        }
-      }
-
-      if (priceUpdates.length > 0) {
-        fetch('/api/portfolio/refresh-prices', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ updates: priceUpdates }),
-        }).catch((err) => {
-          console.warn('Failed to update prices in database:', err);
-        });
-      }
-    }
-
-    // Apply live prices to open trades and auto-close manual trades when markets resolve
+    // Apply live prices to open trades so PnL is mark-to-market
     if (newLiveData.size > 0) {
       setCopiedTradesBase((prev) => {
         let changed = false;
-        const manualTradesToAutoClose: Array<{
-          trade: CopiedTrade;
-          settlementPrice: number;
-          roi: number;
-        }> = [];
-        
-        console.log(`🔍 Checking ${prev.length} trades for auto-close...`);
-        
         const next = prev.map((trade) => {
-          if (!trade.market_id || trade.user_closed_at) return trade;
+          if (!trade.market_id || trade.user_closed_at || trade.market_resolved) return trade;
           const live = newLiveData.get(buildLiveMarketKey(trade.market_id, trade.outcome));
-          if (!live) return trade;
-          
-          // Debug logging for manual trades
-          if (trade.trade_method === 'manual' && !trade.user_closed_at) {
-            console.log(`📋 Manual trade found:`, {
-              market: trade.market_title?.slice(0, 30),
-              outcome: trade.outcome,
-              closed: live.closed,
-              currentPrice: live.price,
-              entryPrice: trade.price_when_copied,
-            });
-          }
-          
-          // Update both price and resolution status
-          const priceChanged = trade.current_price !== live.price;
-          const resolvedChanged = !trade.market_resolved && live.closed;
-          
-          if (!priceChanged && !resolvedChanged) return trade;
-          
+          if (!live || trade.current_price === live.price) return trade;
           changed = true;
-          
-          // Auto-close manually copied trades when market resolves
-          if (live.closed && trade.trade_method === 'manual' && !trade.user_closed_at) {
-            const settlementPrice = live.price;
-            const entryPrice = trade.price_when_copied || 0;
-            const roi = entryPrice > 0 ? ((settlementPrice - entryPrice) / entryPrice) * 100 : 0;
-            
-            console.log(`🎯 Auto-closing manual trade:`, {
-              market: trade.market_title,
-              outcome: trade.outcome,
-              entryPrice,
-              settlementPrice,
-              roi: roi.toFixed(2) + '%',
-            });
-            
-            manualTradesToAutoClose.push({
-              trade,
-              settlementPrice,
-              roi: parseFloat(roi.toFixed(2)),
-            });
-            
-            return {
-              ...trade,
-              current_price: live.price,
-              market_resolved: true,
-              market_resolved_at: new Date().toISOString(),
-              user_closed_at: new Date().toISOString(),
-              user_exit_price: settlementPrice,
-              roi: parseFloat(roi.toFixed(2)),
-            };
-          }
-          
           return {
             ...trade,
             current_price: live.price,
-            market_resolved: live.closed || trade.market_resolved,
-            market_resolved_at: live.closed && !trade.market_resolved ? new Date().toISOString() : trade.market_resolved_at,
           };
         });
-        
-        // Update database for auto-closed manual trades
-        if (manualTradesToAutoClose.length > 0 && user && supabase) {
-          console.log(`🔒 Auto-closing ${manualTradesToAutoClose.length} manual trade(s) for resolved markets`);
-          
-          manualTradesToAutoClose.forEach(async ({ trade, settlementPrice, roi }) => {
-            const identifier = resolveOrderIdentifier(trade);
-            if (!identifier) {
-              console.warn('[Profile] Unable to identify trade for auto-close', trade);
-              return;
-            }
-            
-            try {
-              const now = new Date().toISOString();
-              await supabase
-                .from('orders')
-                .update({
-                  user_closed_at: now,
-                  user_exit_price: settlementPrice,
-                  roi: roi,
-                  market_resolved: true,
-                  market_resolved_at: now,
-                })
-                .eq(identifier.column, identifier.value)
-                .eq('copy_user_id', user.id);
-              
-              console.log(`✅ Auto-closed manual trade: ${trade.market_title?.slice(0, 30)} | ${trade.outcome} | Exit: $${settlementPrice.toFixed(2)} | ROI: ${roi.toFixed(1)}%`);
-            } catch (err) {
-              console.error('Failed to auto-close manual trade in database:', err);
-            }
-          });
-        }
-        
         return changed ? next : prev;
       });
     }
@@ -1052,7 +832,6 @@ function ProfilePageContent() {
       'Economics': '#06b6d4',
       'Tech': '#6366f1',
       'Weather': '#14b8a6',
-      // 'Real Estate': '#f97316', // Disabled until Polymarket API properly filters this category
       'Other': '#64748b'
     };
 
@@ -1093,10 +872,6 @@ function ProfilePageContent() {
       else if (title.match(/temperature|weather|climate|hurricane|storm|tornado|flood|drought|snow|rain|heat wave|cold|frost|wind|forecast|meteorolog|el nino|la nina|global warming|celsius|fahrenheit/)) {
         category = 'Weather';
       }
-      // Real Estate - housing, property, real estate markets (disabled for now)
-      // else if (title.match(/home|house|housing|property|real estate|median home value|mortgage|rent|rental|apartment|condo|property value|home price|zillow|redfin|residential|commercial property/)) {
-      //   category = 'Real Estate';
-      // }
       
       categoryMap[category] = (categoryMap[category] || 0) + 1;
     });
@@ -1203,6 +978,73 @@ function ProfilePageContent() {
     setTopTradersStats(topTraders);
   }, [copiedTrades]);
 
+  // Fetch notification preferences
+  useEffect(() => {
+    if (!user || hasLoadedNotificationPrefsRef.current) return;
+    hasLoadedNotificationPrefsRef.current = true;
+    
+    const fetchNotificationPrefs = async () => {
+      setLoadingNotificationPrefs(true);
+      try {
+        const { data, error } = await supabase
+          .from('notification_preferences')
+          .select('*')
+          .eq('user_id', user.id)
+          .maybeSingle(); // Use maybeSingle() instead of single() to avoid error when no row exists
+        
+        // Only log meaningful errors; Supabase may return an empty PostgrestError object when no row exists
+        const isMeaningfulError = (err: any) => {
+          if (!err || typeof err !== 'object') return !!err;
+          const values = [err.code, err.message, err.details, err.hint];
+          return values.some((v) => {
+            if (typeof v === 'string') return v.trim().length > 0;
+            return Boolean(v);
+          });
+        };
+
+        if (isMeaningfulError(error)) {
+          console.error('Error fetching notification preferences:', error);
+        }
+        
+        if (data) {
+          setNotificationsEnabled(data.trader_closes_position || false);
+          setDefaultBuySlippage(data.default_buy_slippage ?? 3);
+          setDefaultSellSlippage(data.default_sell_slippage ?? 3);
+        }
+        // If no data and no error, user has no preferences yet - that's fine, use default
+      } catch (err: any) {
+        const hasMeaningfulError =
+          err && (err.code || err.message || err.details || err.hint);
+        if (hasMeaningfulError) {
+          console.error('Error fetching notification preferences:', err);
+        }
+      } finally {
+        setLoadingNotificationPrefs(false);
+      }
+    };
+
+    fetchNotificationPrefs();
+  }, [user]);
+
+  useEffect(() => {
+    const nextSelection = SLIPPAGE_PRESETS.includes(defaultBuySlippage)
+      ? String(defaultBuySlippage)
+      : 'custom';
+    setBuySlippageSelection(nextSelection);
+    if (nextSelection === 'custom') {
+      setCustomBuySlippage(defaultBuySlippage.toString());
+    }
+  }, [defaultBuySlippage]);
+
+  useEffect(() => {
+    const nextSelection = SLIPPAGE_PRESETS.includes(defaultSellSlippage)
+      ? String(defaultSellSlippage)
+      : 'custom';
+    setSellSlippageSelection(nextSelection);
+    if (nextSelection === 'custom') {
+      setCustomSellSlippage(defaultSellSlippage.toString());
+    }
+  }, [defaultSellSlippage]);
 
   // Calculate stats
   const calculateStats = (): PortfolioStats => {
@@ -1305,134 +1147,12 @@ function ProfilePageContent() {
     displayedPnl: userStats.totalPnl.toFixed(2)
   });
 
-  const tradeStats = useMemo(() => {
-    const windowDays = 30;
-    const windowMs = windowDays * 24 * 60 * 60 * 1000;
-    const now = Date.now();
-
-    const getInvested = (trade: CopiedTrade) => {
-      if (trade.amount_invested !== null && trade.amount_invested !== undefined) {
-        return trade.amount_invested;
-      }
-      if (trade.entry_size && trade.price_when_copied) {
-        return trade.entry_size * trade.price_when_copied;
-      }
-      return 0;
-    };
-
-    const getReturnPct = (trade: CopiedTrade) => {
-      if (Number.isFinite(trade.roi ?? NaN)) return trade.roi as number;
-      const entry = trade.price_when_copied;
-      if (!entry) return null;
-      const exit = trade.user_exit_price ?? trade.current_price ?? null;
-      if (exit === null || exit === undefined) return null;
-      return ((exit - entry) / entry) * 100;
-    };
-
-    const getOpenTimestamp = (trade: CopiedTrade) => {
-      const ts = Date.parse(trade.copied_at || '');
-      return Number.isFinite(ts) ? ts : null;
-    };
-
-    const getCloseTimestamp = (trade: CopiedTrade) => {
-      const candidate = trade.user_closed_at || trade.market_resolved_at || trade.trader_closed_at;
-      if (!candidate) return null;
-      const ts = Date.parse(candidate);
-      return Number.isFinite(ts) ? ts : null;
-    };
-
-    const tradesWithTime = copiedTrades
-      .map((trade) => {
-        const ts = getOpenTimestamp(trade);
-        return ts ? { trade, ts } : null;
-      })
-      .filter((entry): entry is { trade: CopiedTrade; ts: number } => entry !== null);
-
-    const lastTradeTs = tradesWithTime.length > 0
-      ? Math.max(...tradesWithTime.map((entry) => entry.ts))
-      : null;
-
-    const recentTrades = tradesWithTime.filter(({ ts }) => now - ts <= windowMs);
-    const tradesPerWeek = recentTrades.length > 0 ? recentTrades.length / (windowDays / 7) : 0;
-    const frequencyLabel =
-      tradesPerWeek === 0 ? 'None' : tradesPerWeek >= 5 ? 'High' : tradesPerWeek >= 2 ? 'Medium' : 'Low';
-
-    const activeDays = new Set(
-      recentTrades.map(({ ts }) => new Date(ts).toISOString().slice(0, 10))
-    ).size;
-
-    const amounts = copiedTrades
-      .map(getInvested)
-      .filter((value) => Number.isFinite(value) && value > 0);
-    const avgTradeSize =
-      amounts.length > 0 ? amounts.reduce((sum, value) => sum + value, 0) / amounts.length : null;
-
-    const closedTrades = copiedTrades.filter((trade) => trade.user_closed_at || trade.market_resolved);
-    const returns = closedTrades
-      .map(getReturnPct)
-      .filter((value): value is number => value !== null && Number.isFinite(value));
-    const avgReturn =
-      returns.length > 0 ? returns.reduce((sum, value) => sum + value, 0) / returns.length : null;
-
-    const holdDurations = closedTrades
-      .map((trade) => {
-        const openTs = getOpenTimestamp(trade);
-        const closeTs = getCloseTimestamp(trade);
-        if (openTs === null || closeTs === null) return null;
-        const diff = closeTs - openTs;
-        return diff > 0 ? diff : null;
-      })
-      .filter((value): value is number => value !== null);
-    const avgHoldMs =
-      holdDurations.length > 0 ? holdDurations.reduce((sum, value) => sum + value, 0) / holdDurations.length : null;
-
-    const recentClosed = closedTrades
-      .map((trade) => {
-        const ts = getCloseTimestamp(trade) ?? getOpenTimestamp(trade);
-        return ts ? { trade, ts } : null;
-      })
-      .filter((entry): entry is { trade: CopiedTrade; ts: number } => entry !== null)
-      .sort((a, b) => b.ts - a.ts)
-      .slice(0, 10);
-
-    const consistency =
-      recentClosed.length > 0
-        ? (recentClosed.filter(({ trade }) => {
-            const value = getReturnPct(trade);
-            return value !== null && value > 0;
-          }).length / recentClosed.length) * 100
-        : null;
-
-    return {
-      lastTradeTs,
-      tradesPerWeek,
-      frequencyLabel,
-      activeDays,
-      avgTradeSize,
-      avgReturn,
-      avgHoldMs,
-      consistency,
-      consistencySampleSize: recentClosed.length,
-    };
-  }, [copiedTrades]);
-
-  const lastTradeLabel = tradeStats.lastTradeTs
-    ? formatRelativeTime(new Date(tradeStats.lastTradeTs).toISOString())
-    : '—';
-
   // Filter trades
   const filteredTrades = copiedTrades.filter(trade => {
-    // Exclude SELL orders from most views (they're closing positions, not new positions)
-    // BUT allow them in 'history' view so users can see all activity
-    if (trade.side && trade.side.toLowerCase() === 'sell' && tradeFilter !== 'history') {
-      return false;
-    }
-    
     if (tradeFilter === 'all') return true;
     if (tradeFilter === 'open') return !trade.user_closed_at && !trade.market_resolved;
     if (tradeFilter === 'closed') return Boolean(trade.user_closed_at);
     if (tradeFilter === 'resolved') return Boolean(trade.market_resolved);
-    if (tradeFilter === 'history') return true; // Show all trades including sells
     return true;
   });
 
@@ -1601,6 +1321,37 @@ function ProfilePageContent() {
     }
   };
 
+  const handleWalletDisconnect = async () => {
+    if (!user || !profile?.trading_wallet_address) return;
+    
+    // Check if confirmation is correct
+    if (disconnectConfirmText.toUpperCase() !== 'YES') {
+      return;
+    }
+    
+    setDisconnectingWallet(true);
+    
+    try {
+      // Delete from turnkey_wallets table
+      const { error } = await supabase
+        .from('turnkey_wallets')
+        .delete()
+        .eq('user_id', user.id);
+      
+      if (error) throw error;
+      
+      setProfile({ ...profile, trading_wallet_address: null });
+      setShowDisconnectModal(false);
+      setDisconnectConfirmText('');
+      setToastMessage('Wallet disconnected');
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error disconnecting wallet:', err);
+    } finally {
+      setDisconnectingWallet(false);
+    }
+  };
 
   // Edit trade handler
   const handleEditTrade = async (entryPrice: number, amountInvested: number | null) => {
@@ -1771,6 +1522,121 @@ function ProfilePageContent() {
     }
   };
 
+  // Notification toggle
+  const handleToggleNotifications = async () => {
+    if (!user) return;
+    
+    const newValue = !notificationsEnabled;
+    setNotificationsEnabled(newValue);
+    
+    try {
+      const { error } = await supabase
+        .from('notification_preferences')
+        .upsert(
+          {
+            user_id: user.id,
+            trader_closes_position: newValue,
+            market_resolves: newValue,
+          },
+          { onConflict: 'user_id' }
+        );
+      
+      if (error) throw error;
+      
+      setToastMessage(`Notifications ${newValue ? 'enabled' : 'disabled'}`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+    } catch (err) {
+      console.error('Error updating notification preferences:', err);
+      setNotificationsEnabled(!newValue);
+    }
+  };
+
+  // Update slippage settings
+  const handleUpdateSlippage = async (type: 'buy' | 'sell', value: number) => {
+    if (!user) return;
+    
+    // Validate slippage value (0-100)
+    const validatedValue = Math.max(0, Math.min(100, value));
+    const prevBuy = defaultBuySlippage;
+    const prevSell = defaultSellSlippage;
+    
+    if (type === 'buy') {
+      setDefaultBuySlippage(validatedValue);
+    } else {
+      setDefaultSellSlippage(validatedValue);
+    }
+    
+    const payload = {
+      userId: user.id,
+      default_buy_slippage: type === 'buy' ? validatedValue : defaultBuySlippage,
+      default_sell_slippage: type === 'sell' ? validatedValue : defaultSellSlippage,
+    };
+
+    const applyUpdatedState = (next: any) => {
+      if (typeof next?.default_buy_slippage === 'number') {
+        setDefaultBuySlippage(next.default_buy_slippage);
+      }
+      if (typeof next?.default_sell_slippage === 'number') {
+        setDefaultSellSlippage(next.default_sell_slippage);
+      }
+    };
+
+    try {
+      const response = await fetch('/api/notification-preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw payload?.error || payload?.dev_info || new Error('Failed to update slippage');
+      }
+
+      const updated = await response.json();
+      applyUpdatedState(updated);
+      
+      setToastMessage(`Default ${type} slippage updated to ${validatedValue}%`);
+      setShowToast(true);
+      setTimeout(() => setShowToast(false), 2000);
+      return;
+    } catch (err) {
+      // Fallback to client Supabase (anon) to reduce impact if API fails
+      try {
+        const { data, error } = await supabase
+          .from('notification_preferences')
+          .upsert(
+            {
+              user_id: user.id,
+              default_buy_slippage: payload.default_buy_slippage,
+              default_sell_slippage: payload.default_sell_slippage,
+            },
+            { onConflict: 'user_id' }
+          )
+          .select()
+          .maybeSingle();
+
+        if (error) throw error;
+
+        applyUpdatedState(data);
+        setToastMessage(`Default ${type} slippage updated to ${validatedValue}%`);
+        setShowToast(true);
+        setTimeout(() => setShowToast(false), 2000);
+        return;
+      } catch (fallbackErr) {
+        console.error('Slippage update failed via API and fallback:', {
+          api_error: err,
+          fallback_error: fallbackErr,
+        });
+      }
+    }
+    // Revert on error after all attempts
+    setDefaultBuySlippage(prevBuy);
+    setDefaultSellSlippage(prevSell);
+  };
 
   // Handle confirm close for quick trades
   const handleConfirmClose = async ({
@@ -2011,17 +1877,8 @@ function ProfilePageContent() {
     order: OrderRow,
     statusOverride?: UnifiedTrade['status'] | null
   ): UnifiedTrade => {
-    const meta = order.marketId ? marketMeta.get(order.marketId.trim()) : null;
-    const rawMarketTitle = order.marketTitle?.trim() ?? '';
-    const isUnknownTitle = rawMarketTitle.length === 0 || rawMarketTitle.toLowerCase() === 'unknown market';
-    const marketTitle = isUnknownTitle ? meta?.title ?? rawMarketTitle ?? 'Unknown Market' : rawMarketTitle;
-    const rawOutcome =
-      order.raw?.outcome ??
-      order.raw?.token?.outcome ??
-      order.raw?.market?.outcome ??
-      order.raw?.market?.winning_outcome ??
-      null;
-    const outcome = order.outcome || rawOutcome || (order.side === 'BUY' ? 'YES' : 'NO');
+    const marketTitle = order.marketTitle || 'Unknown Market';
+    const outcome = order.outcome || (order.side === 'BUY' ? 'YES' : 'NO');
     
     return {
       id: `quick-${order.orderId}`,
@@ -2030,7 +1887,7 @@ function ProfilePageContent() {
       created_at: order.createdAt || new Date().toISOString(),
       market_title: marketTitle,
       market_id: order.marketId || '',
-      market_slug: order.marketSlug || meta?.slug || null,
+      market_slug: order.marketSlug || null,
       outcome: outcome,
       price_entry: order.priceOrAvgPrice || 0,
       price_current: order.currentPrice || order.priceOrAvgPrice || 0,
@@ -2041,30 +1898,25 @@ function ProfilePageContent() {
       trader_wallet: order.copiedTraderWallet || null,
       trader_username: order.traderName || null,
       trader_profile_image: order.traderAvatarUrl || null,
-      market_avatar_url: order.marketImageUrl || meta?.image || null,
+      market_avatar_url: order.marketImageUrl || null,
       raw: order,
     };
   };
 
   const isDisplayableQuickTrade = (order: OrderRow) => {
     // Only show orders that have matched (partial) or fully filled.
-    const status = order.status?.toLowerCase()
-    return status === 'matched' || status === 'filled' || status === 'partial';
+    return order.status === 'matched' || order.status === 'filled' || order.status === 'partial';
   };
 
   const convertCopiedTradeToUnified = (trade: CopiedTrade): UnifiedTrade => {
-    const meta = trade.market_id ? marketMeta.get(trade.market_id.trim()) : null;
-    const rawMarketTitle = trade.market_title?.trim() ?? '';
-    const isUnknownTitle = rawMarketTitle.length === 0 || rawMarketTitle.toLowerCase() === 'unknown market';
-    const marketTitle = isUnknownTitle ? meta?.title ?? rawMarketTitle ?? 'Unknown Market' : rawMarketTitle;
     return {
       id: `manual-${trade.id}`,
       type: 'manual',
       status: getTradeStatus(trade),
       created_at: trade.copied_at,
-      market_title: marketTitle,
+      market_title: trade.market_title,
       market_id: trade.market_id,
-      market_slug: trade.market_slug ?? meta?.slug ?? null,
+      market_slug: trade.market_slug,
       outcome: trade.outcome,
       price_entry: trade.price_when_copied,
       price_current: trade.current_price,
@@ -2073,7 +1925,7 @@ function ProfilePageContent() {
       trader_wallet: trade.trader_wallet,
       trader_username: trade.trader_username,
       trader_profile_image: trade.trader_profile_image_url,
-      market_avatar_url: trade.market_avatar_url ?? meta?.image ?? null,
+      market_avatar_url: trade.market_avatar_url,
       copiedTrade: trade,
     };
   };
@@ -2117,49 +1969,6 @@ function ProfilePageContent() {
     return side === 'sell' || order.activity === 'sold' || order.positionState === 'closed';
   };
 
-  const getTradeContracts = useCallback((trade: UnifiedTrade) => {
-    if (trade.type === 'quick' && trade.raw) {
-      const filledSize =
-        Number.isFinite(trade.raw.filledSize) && trade.raw.filledSize > 0
-          ? trade.raw.filledSize
-          : trade.raw.size;
-      if (Number.isFinite(filledSize) && filledSize > 0) return filledSize;
-    }
-    if (trade.type === 'manual' && trade.copiedTrade?.entry_size) {
-      return trade.copiedTrade.entry_size;
-    }
-    if (trade.amount && trade.price_entry) {
-      return trade.amount / trade.price_entry;
-    }
-    return null;
-  }, []);
-
-  const getTradeDisplayPrice = useCallback(
-    (trade: UnifiedTrade) => {
-      const currentPrice = trade.price_current ?? trade.price_entry ?? null;
-      const resolvedOutcome =
-        trade.type === 'manual'
-          ? trade.copiedTrade?.resolved_outcome ?? null
-          : resolveResolvedOutcomeFromRaw(trade.raw);
-      const normalizedOutcome = normalizeOutcomeValue(trade.outcome);
-      const normalizedResolvedOutcome = normalizeOutcomeValue(resolvedOutcome);
-      const settlementPrice =
-        normalizedOutcome && normalizedResolvedOutcome
-          ? normalizedOutcome === normalizedResolvedOutcome
-            ? 1
-            : 0
-          : null;
-      if (settlementPrice !== null) return settlementPrice;
-      if (trade.status === 'open' && trade.market_id && trade.outcome) {
-        const liveKey = buildLiveMarketKey(trade.market_id, trade.outcome);
-        const livePrice = liveMarketData.get(liveKey)?.price;
-        return livePrice ?? currentPrice;
-      }
-      return currentPrice;
-    },
-    [liveMarketData]
-  );
-
   const netQuickPositionByKey = useMemo(() => {
     const map = new Map<string, number>();
     quickTrades.forEach((order) => {
@@ -2186,165 +1995,6 @@ function ProfilePageContent() {
     return map;
   }, [positions]);
 
-  const positionByKey = useMemo(() => {
-    const map = new Map<string, PositionSummary>();
-    positions.forEach((pos) => {
-      const key = buildPositionKey(pos.marketId, pos.outcome);
-      if (!key) return;
-      map.set(key, pos);
-    });
-    return map;
-  }, [positions]);
-
-  const buildFallbackPositionFromOrder = useCallback((order: OrderRow): PositionSummary | null => {
-    const raw = order.raw ?? {};
-    let tokenId: string | null = null;
-
-    const tokenIdCandidates = [
-      raw.token_id,
-      raw.tokenId,
-      raw.tokenID,
-      raw.asset_id,
-      raw.assetId,
-      raw.asset,
-      raw.market?.token_id,
-      raw.market?.asset_id,
-    ];
-
-    for (const candidate of tokenIdCandidates) {
-      if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
-        tokenId = candidate.trim();
-        break;
-      }
-    }
-
-    const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
-    const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
-    const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
-    const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
-
-    if (tokenId && size && size > 0) {
-      return {
-        tokenId,
-        marketId: order.marketId ?? null,
-        outcome: order.outcome ?? null,
-        direction: direction as 'LONG' | 'SHORT',
-        side: side as 'BUY' | 'SELL',
-        size,
-        avgEntryPrice: order.priceOrAvgPrice ?? null,
-        firstTradeAt: order.createdAt ?? null,
-        lastTradeAt: order.updatedAt ?? null,
-      };
-    }
-
-    return null;
-  }, []);
-
-  const buildSyntheticOrder = useCallback(
-    (trade: UnifiedTrade, position: PositionSummary): OrderRow => {
-      const meta = trade.market_id ? marketMeta.get(trade.market_id.trim()) : null;
-      const marketTitle = trade.market_title || meta?.title || 'Market';
-      const marketImageUrl = trade.market_avatar_url || meta?.image || null;
-      const marketSlug = trade.market_slug ?? meta?.slug ?? null;
-      const side = position.side ?? 'BUY';
-      const outcome = trade.outcome || position.outcome || null;
-      const createdAt = trade.created_at || new Date().toISOString();
-      const entryPrice = position.avgEntryPrice ?? trade.price_entry ?? null;
-      const currentPrice = getTradeDisplayPrice(trade);
-      const activity = side === 'SELL' ? 'sold' : 'bought';
-      const activityLabel = side === 'SELL' ? 'Sold' : 'Bought';
-
-      return {
-        orderId: trade.id,
-        status: 'filled',
-        activity,
-        activityLabel,
-        activityIcon: activity,
-        marketId: trade.market_id || position.marketId || '',
-        marketTitle,
-        marketImageUrl,
-        marketIsOpen: trade.status === 'open',
-        marketResolved: trade.status === 'resolved',
-        marketSlug,
-        traderId: trade.trader_wallet || 'unknown',
-        traderWallet: trade.trader_wallet ?? null,
-        traderName: trade.trader_username ?? 'Trader',
-        traderAvatarUrl: trade.trader_profile_image ?? null,
-        copiedTraderId: null,
-        copiedTraderWallet: trade.trader_wallet ?? null,
-        side,
-        outcome,
-        size: position.size,
-        filledSize: position.size,
-        priceOrAvgPrice: entryPrice,
-        currentPrice: currentPrice ?? entryPrice ?? null,
-        pnlUsd: null,
-        positionState: 'open',
-        positionStateLabel: 'Open',
-        createdAt,
-        updatedAt: createdAt,
-        raw: null,
-      };
-    },
-    [getTradeDisplayPrice, marketMeta]
-  );
-
-  const resolveTokenIdForTrade = useCallback(async (trade: UnifiedTrade): Promise<string | null> => {
-    const marketId = trade.market_id?.trim();
-    const normalizedOutcome = normalizeOutcomeValue(trade.outcome);
-    if (!marketId || !normalizedOutcome) return null;
-    try {
-      const response = await fetch(
-        `/api/polymarket/market?conditionId=${encodeURIComponent(marketId)}`,
-        { cache: 'no-store' }
-      );
-      if (!response.ok) return null;
-      const data = await response.json();
-      const tokens = Array.isArray(data?.tokens) ? data.tokens : [];
-      const match = tokens.find(
-        (token: any) => normalizeOutcomeValue(token?.outcome) === normalizedOutcome
-      );
-      if (typeof match?.token_id === 'string' && match.token_id.trim()) {
-        return match.token_id.trim();
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const findPositionMatch = useCallback(
-    (positionsList: PositionSummary[], trade: UnifiedTrade): PositionSummary | null => {
-      const normalizedMarketId = trade.market_id?.trim().toLowerCase();
-      if (!normalizedMarketId) return null;
-      const normalizedOutcome = normalizeOutcomeValue(trade.outcome);
-      const candidates = positionsList.filter(
-        (pos) => pos.marketId?.trim().toLowerCase() === normalizedMarketId
-      );
-      if (candidates.length === 0) return null;
-      if (normalizedOutcome) {
-        const outcomeMatch = candidates.find(
-          (pos) => normalizeOutcomeValue(pos.outcome) === normalizedOutcome
-        );
-        if (outcomeMatch) return outcomeMatch;
-      }
-      if (candidates.length === 1) return candidates[0];
-      return null;
-    },
-    []
-  );
-
-  const resolvePositionForTrade = useCallback(
-    async (trade: UnifiedTrade): Promise<PositionSummary | null> => {
-      const cached = findPositionMatch(positions, trade);
-      if (cached) return cached;
-      const fresh = await refreshPositions();
-      if (!fresh) return null;
-      return findPositionMatch(fresh, trade);
-    },
-    [findPositionMatch, positions, refreshPositions]
-  );
-
   // Merge and sort all trades
   const allUnifiedTrades = useMemo(() => {
     // Filter out trades that are explicitly marked as 'quick' - those should only come from orders API
@@ -2353,14 +2003,6 @@ function ProfilePageContent() {
     const manualTrades = actualManualTrades.map(convertCopiedTradeToUnified);
     const quickTradesConverted = quickTrades
       .filter(isDisplayableQuickTrade)
-      .filter(order => {
-        // Exclude SELL orders from quick trades in all views except 'history'
-        // SELL orders are position closures, not new positions
-        if (tradeFilter !== 'history' && order.side?.toLowerCase() === 'sell') {
-          return false;
-        }
-        return true;
-      })
       .map((order) => {
         const createdAt = Date.parse(order.createdAt || '');
         const createdAtMs = Number.isFinite(createdAt) ? createdAt : 0;
@@ -2390,7 +2032,7 @@ function ProfilePageContent() {
     combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     
     return combined;
-  }, [copiedTrades, quickTrades, openPositionByKey, tradeFilter]);
+  }, [copiedTrades, quickTrades, openPositionByKey]);
 
   useEffect(() => {
     if (tradeFilter === 'history') return;
@@ -2421,181 +2063,21 @@ function ProfilePageContent() {
       return Boolean(trade.copiedTrade?.user_closed_at || trade.copiedTrade?.trader_closed_at);
     };
 
-    const isLiveResolved = (trade: UnifiedTrade) => {
-      if (trade.status !== 'open' || !trade.market_id || !trade.outcome) return false;
-      const live = liveMarketData.get(buildLiveMarketKey(trade.market_id, trade.outcome));
-      return Boolean(live?.closed);
-    };
-
     if (tradeFilter === 'all') return allUnifiedTrades;
     
     return allUnifiedTrades.filter(trade => {
       switch (tradeFilter) {
         case 'open':
-          return trade.status === 'open' && !isSoldTrade(trade) && !isLiveResolved(trade);
+          return trade.status === 'open' && !isSoldTrade(trade);
         case 'closed':
           return isSoldTrade(trade);
         case 'resolved':
-          return (trade.status === 'resolved' || isLiveResolved(trade)) && !isSoldTrade(trade);
-        case 'history':
-          return true; // Show all trades including sells in activity view
+          return trade.status === 'resolved' && !isSoldTrade(trade);
         default:
           return true;
       }
     });
-  }, [allUnifiedTrades, tradeFilter, openPositionByKey, liveMarketData]);
-
-  const sortedUnifiedTrades = useMemo(() => {
-    const trades = [...filteredUnifiedTrades];
-    if (tradeSort === 'date') {
-      return trades.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }
-    if (tradeSort === 'invested') {
-      return trades.sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0));
-    }
-    if (tradeSort === 'roi') {
-      return trades.sort((a, b) => {
-        const aPrice = getTradeDisplayPrice(a);
-        const bPrice = getTradeDisplayPrice(b);
-        const aIsSell = a.type === 'quick' && a.raw?.side?.toLowerCase() === 'sell';
-        const bIsSell = b.type === 'quick' && b.raw?.side?.toLowerCase() === 'sell';
-        const aRoi =
-          a.roi ??
-          (a.price_entry != null && aPrice != null
-            ? (((aIsSell ? a.price_entry - aPrice : aPrice - a.price_entry) / a.price_entry) * 100)
-            : 0);
-        const bRoi =
-          b.roi ??
-          (b.price_entry != null && bPrice != null
-            ? (((bIsSell ? b.price_entry - bPrice : bPrice - b.price_entry) / b.price_entry) * 100)
-            : 0);
-        return bRoi - aRoi;
-      });
-    }
-    return trades.sort((a, b) => {
-      const aContracts = getTradeContracts(a);
-      const bContracts = getTradeContracts(b);
-      const aPrice = getTradeDisplayPrice(a);
-      const bPrice = getTradeDisplayPrice(b);
-      const aValue = aContracts && aPrice ? aContracts * aPrice : 0;
-      const bValue = bContracts && bPrice ? bContracts * bPrice : 0;
-      return bValue - aValue;
-    });
-  }, [filteredUnifiedTrades, tradeSort, getTradeContracts, getTradeDisplayPrice]);
-
-  const handleCopyAgain = (trade: UnifiedTrade) => {
-    if (trade.status !== 'open') return;
-
-    const meta = trade.market_id ? marketMeta.get(trade.market_id.trim()) : null;
-    const slug = trade.market_slug ?? meta?.slug ?? null;
-
-    if (canExecuteTrades) {
-      const params = new URLSearchParams();
-      params.set('prefill', '1');
-      if (trade.market_id) params.set('conditionId', trade.market_id);
-      if (slug) params.set('marketSlug', slug);
-      if (trade.market_title) params.set('marketTitle', trade.market_title);
-      if (trade.outcome) params.set('outcome', trade.outcome);
-      const contracts = getTradeContracts(trade);
-      if (Number.isFinite(contracts)) params.set('size', String(contracts));
-      if (Number.isFinite(trade.price_entry) && trade.price_entry > 0) {
-        params.set('price', String(trade.price_entry));
-      }
-
-      const positionKey = buildPositionKey(trade.market_id, trade.outcome);
-      const positionSide =
-        trade.type === 'quick'
-          ? trade.raw?.side
-          : positionKey
-            ? positionByKey.get(positionKey)?.side
-            : null;
-      if (positionSide) params.set('side', String(positionSide).toUpperCase());
-
-      if (trade.trader_username) params.set('traderName', trade.trader_username);
-      if (trade.trader_wallet) params.set('traderWallet', trade.trader_wallet);
-
-      router.push(`/trade-execute?${params.toString()}`);
-      return;
-    }
-
-    let url = 'https://polymarket.com';
-    if (slug) {
-      url = `https://polymarket.com/market/${slug}?utm_source=polycopy&utm_medium=copy_again&utm_campaign=profile`;
-    } else if (trade.market_title) {
-      url = `https://polymarket.com/search?q=${encodeURIComponent(trade.market_title)}`;
-    }
-    window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
-  const handleSellTrade = async (trade: UnifiedTrade) => {
-    if (trade.status !== 'open') return;
-    if (trade.type !== 'quick' && !canExecuteTrades) {
-      setToastMessage('Connect your Polymarket wallet to sell positions.');
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 4000);
-      return;
-    }
-
-    let position = await resolvePositionForTrade(trade);
-    if (!position && trade.type === 'quick' && trade.raw) {
-      position = buildFallbackPositionFromOrder(trade.raw);
-    }
-
-    if (!position) {
-      const tokenId = await resolveTokenIdForTrade(trade);
-      const size = getTradeContracts(trade);
-      if (tokenId && size && size > 0) {
-        // Get the original trade side
-        const sideRaw =
-          trade.type === 'quick' 
-            ? trade.raw?.side 
-            : (trade.copiedTrade?.side || trade.raw?.side); // For manual trades, get from copiedTrade
-        const normalizedSide = sideRaw ? String(sideRaw).trim().toUpperCase() : 'BUY';
-        const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
-        position = {
-          tokenId,
-          marketId: trade.market_id ?? null,
-          outcome: trade.outcome ?? null,
-          direction: side === 'SELL' ? 'SHORT' : 'LONG',
-          side,
-          size,
-          avgEntryPrice: trade.price_entry ?? null,
-          firstTradeAt: trade.created_at ?? null,
-          lastTradeAt: trade.created_at ?? null,
-        };
-      }
-    }
-
-    if (!position) {
-      setToastMessage('Unable to locate an open position to sell. Please refresh and try again.');
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 4000);
-      return;
-    }
-
-    const order =
-      trade.type === 'quick' && trade.raw ? trade.raw : buildSyntheticOrder(trade, position);
-    setCloseTarget({ order, position });
-  };
-
-  const tradeSortOptions = useMemo(
-    () => [
-      { value: 'date' as const, label: 'Latest' },
-      { value: 'currentValue' as const, label: 'Current Value' },
-      { value: 'invested' as const, label: 'Invested' },
-      { value: 'roi' as const, label: 'P&L %' },
-    ],
-    []
-  );
-  const activeSortLabel = tradeSortOptions.find((option) => option.value === tradeSort)?.label ?? 'Latest';
-  const mobileMetricOptions = [
-    { value: 'price' as const, label: 'Price' },
-    { value: 'size' as const, label: 'Size' },
-    { value: 'roi' as const, label: 'P&L' },
-    { value: 'time' as const, label: 'Time' },
-  ];
-  const activeMobileMetricLabel =
-    mobileMetricOptions.find((option) => option.value === mobileMetric)?.label ?? 'Price';
+  }, [allUnifiedTrades, tradeFilter, openPositionByKey]);
 
   // Loading state
   if (loading) {
@@ -2624,8 +2106,11 @@ function ProfilePageContent() {
   const tabButtons: Array<{ key: ProfileTab; label: string }> = [
     { key: 'trades' as ProfileTab, label: 'Trades' },
     { key: 'performance' as ProfileTab, label: 'Performance' },
+    { key: 'settings' as ProfileTab, label: 'Settings' },
   ];
-  const tabTooltips: Partial<Record<ProfileTab, string>> = {};
+  const tabTooltips: Partial<Record<ProfileTab, string>> = {
+    'trades': 'View all your copy trades (both manual and quick copy). Track performance and manage open positions.',
+  };
 
   return (
     <>
@@ -2636,23 +2121,7 @@ function ProfilePageContent() {
         profileImageUrl={profileImageUrl}
       />
       
-      {/* SEO H1 - Visually hidden but present for search engines */}
-      <h1 className="sr-only">Your Profile - Polymarket Trading Performance</h1>
-      
-      {/* Mobile top nav banner (logo only, no page title) */}
-      <div className="md:hidden sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
-        <div className="px-4 py-3">
-          <Image
-            src="/logos/polycopy-logo-primary.svg"
-            alt="Polycopy"
-            width={120}
-            height={32}
-            className="h-7 w-auto"
-          />
-        </div>
-      </div>
-      
-      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pt-2 md:pt-0 pb-20 md:pb-8">
+      <div className="min-h-screen bg-gradient-to-b from-white to-slate-50 pt-4 md:pt-0 pb-20 md:pb-8">
         <div className="max-w-[1200px] mx-auto px-4 md:px-6 space-y-6 py-8">
           {/* Mobile-only Upgrade to Premium button */}
           {!isPremium && (
@@ -2701,14 +2170,25 @@ function ProfilePageContent() {
                           View on Polymarket
                           <ArrowUpRight className="h-3 w-3" />
                         </a>
-                        <Button
-                          onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-slate-500 hover:text-slate-900"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            onClick={() => navigator.clipboard.writeText(profile.trading_wallet_address)}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-slate-500 hover:text-slate-900"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            onClick={() => setShowDisconnectModal(true)}
+                            disabled={disconnectingWallet}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-red-500 hover:text-red-700"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </div>
                       {/* Following count for premium users */}
                       <Link 
@@ -2746,7 +2226,7 @@ function ProfilePageContent() {
                       size="sm"
                     >
                       <Wallet className="mr-2 h-4 w-4" />
-                      Connect Polymarket Account
+                      Connect Polymarket Wallet
                     </Button>
                   )}
                 </div>
@@ -2795,82 +2275,51 @@ function ProfilePageContent() {
                 <p className="text-xs text-red-600 mt-2">Stats unavailable: {portfolioStatsError}</p>
               )}
             </div>
-
-            {/* Share Stats Button */}
-            {copiedTrades.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-slate-200">
-                <Button
-                  onClick={() => setIsShareStatsModalOpen(true)}
-                  variant="outline"
-                  className="w-full sm:w-auto bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-slate-900 font-semibold border-0"
-                >
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Share My Stats
-                </Button>
-              </div>
-            )}
           </Card>
 
           {/* Tab Navigation */}
-          <div className="flex flex-wrap items-center gap-2 mb-6">
-            <div className="flex flex-1 flex-wrap gap-2">
-              {tabButtons.map(({ key, label }) => {
-                const tooltipText = tabTooltips[key];
-                const button = (
-                  <Button
-                    onClick={() => setActiveTab(key)}
-                    variant="ghost"
-                    className={cn(
-                      "w-full px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
-                      activeTab === key
-                        ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
-                        : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
-                    )}
-                  >
-                    {label}
-                  </Button>
-                );
-
-                return (
-                  <div key={key} className="flex-1 min-w-[150px]">
-                    {tooltipText ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          {button}
-                        </TooltipTrigger>
-                        <TooltipContent className="max-w-xs">
-                          <p>{tooltipText}</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      button
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <Tooltip>
-              <TooltipTrigger asChild>
+          <div className="flex gap-2 mb-6 flex-wrap">
+            {tabButtons.map(({ key, label }) => {
+              const tooltipText = tabTooltips[key];
+              const button = (
                 <Button
-                  asChild
-                  variant="outline"
-                  size="icon"
-                  className="h-11 w-11 border-slate-200 text-slate-600 hover:text-slate-900"
+                  onClick={() => setActiveTab(key)}
+                  variant="ghost"
+                  className={cn(
+                    "w-full px-3 py-3 rounded-md font-medium text-sm transition-all whitespace-nowrap",
+                    activeTab === key
+                      ? "bg-slate-900 text-white shadow-md hover:bg-slate-800"
+                      : "bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200"
+                  )}
                 >
-                  <Link href="/settings" aria-label="Open settings">
-                    <Settings className="h-4 w-4" />
-                  </Link>
+                  {label}
                 </Button>
-              </TooltipTrigger>
-              <TooltipContent>Settings</TooltipContent>
-            </Tooltip>
+              );
+
+              return (
+                <div key={key} className="flex-1 min-w-[150px]">
+                  {tooltipText ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        {button}
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs">
+                        <p>{tooltipText}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    button
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Tab Content */}
           {activeTab === 'trades' && (
             <div className="space-y-4">
               {/* Filter and Refresh */}
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex gap-2 items-center">
                   {(['all', 'open', 'closed', 'resolved'] as const).map((filter) => (
                     <button
@@ -2907,74 +2356,38 @@ function ProfilePageContent() {
                 </div>
                 <div className="flex items-center gap-2 md:hidden">
                   <span className="text-xs text-slate-500">Show</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
-                      >
-                        <span>{activeMobileMetricLabel}</span>
-                        <ChevronDown className="h-3 w-3 text-slate-500" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-40 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
-                      <DropdownMenuRadioGroup
-                        value={mobileMetric}
-                        onValueChange={(value) => setMobileMetric(value as typeof mobileMetric)}
-                      >
-                        {mobileMetricOptions.map((option) => (
-                          <DropdownMenuRadioItem
-                            key={option.value}
-                            value={option.value}
-                            className="text-sm font-medium text-slate-700 focus:bg-slate-100"
-                          >
-                            {option.label}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {(['price', 'size', 'roi', 'time'] as const).map((metric) => (
+                    <button
+                      key={metric}
+                      type="button"
+                      onClick={() => setMobileMetric(metric)}
+                      className={cn(
+                        "px-2 py-1 rounded-full text-[11px] font-semibold border transition",
+                        mobileMetric === metric
+                          ? "bg-slate-900 text-white border-slate-900"
+                          : "bg-white border-slate-200 text-slate-600"
+                      )}
+                    >
+                      {metric === 'price'
+                        ? 'Price'
+                        : metric === 'size'
+                          ? 'Size'
+                          : metric === 'roi'
+                            ? 'ROI'
+                            : 'Time'}
+                    </button>
+                  ))}
                 </div>
-                <div className="flex items-center gap-3 ml-auto">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300"
-                      >
-                        <span className="text-xs font-semibold text-slate-500">Sort</span>
-                        <span className="text-sm font-semibold text-slate-900">{activeSortLabel}</span>
-                        <ChevronDown className="h-4 w-4 text-slate-500" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
-                      <DropdownMenuRadioGroup
-                        value={tradeSort}
-                        onValueChange={(value) => setTradeSort(value as typeof tradeSort)}
-                      >
-                        {tradeSortOptions.map((option) => (
-                          <DropdownMenuRadioItem
-                            key={option.value}
-                            value={option.value}
-                            className="text-sm font-medium text-slate-700 focus:bg-slate-100"
-                          >
-                            {option.label}
-                          </DropdownMenuRadioItem>
-                        ))}
-                      </DropdownMenuRadioGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Button
-                    onClick={handleManualRefresh}
-                    disabled={refreshingStatus}
-                    variant="outline"
-                    size="icon"
-                    aria-label="Refresh status"
-                    className="h-9 w-9"
-                  >
-                    <RefreshCw className={cn("h-4 w-4", refreshingStatus && "animate-spin")} />
-                  </Button>
-                </div>
+                <Button
+                  onClick={handleManualRefresh}
+                  disabled={refreshingStatus}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                >
+                  <RefreshCw className={cn("h-4 w-4", refreshingStatus && "animate-spin")} />
+                  Refresh Status
+                </Button>
               </div>
 
               {/* Trades List or History View */}
@@ -2991,34 +2404,29 @@ function ProfilePageContent() {
               ) : (loadingCopiedTrades || loadingQuickTrades) ? (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto border-separate border-spacing-y-2 border-spacing-x-0">
+                    <table className="min-w-[640px] md:min-w-[1100px] w-full text-sm">
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[120px]">Copied Trader</th>
-                          <th className="px-3 py-3 text-center font-semibold md:px-4">Market</th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Outcome</th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
+                          <th className="px-4 py-3 text-left font-semibold min-w-[260px]">Market</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[120px]">Trade</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[150px] hidden md:table-cell">
                             <span className="block">Invested</span>
                             <span className="block text-[10px] font-medium text-slate-400">Contracts</span>
                           </th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
-                            <span className="block">
-                              Entry <span aria-hidden="true">→</span> Current
-                            </span>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[140px] hidden md:table-cell">
+                            <span className="block">Entry</span>
+                            <span className="block text-[10px] font-medium text-slate-400">Current</span>
                           </th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
-                            <span className="block">Current Value</span>
-                            <span className="block text-[10px] font-medium text-slate-400">P&L</span>
-                          </th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Time</th>
-                          <th className="px-3 py-3 text-center font-semibold md:hidden md:px-4">Detail</th>
-                          <th className="px-3 py-3 text-right font-semibold w-[120px] md:w-[80px] md:px-4"></th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[80px] hidden md:table-cell">ROI</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[160px] hidden md:table-cell">Time</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[120px] md:hidden">Detail</th>
+                          <th className="px-4 py-3 text-right font-semibold w-[40px]"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {[1, 2, 3].map((i) => (
                           <tr key={i} className="border-b border-slate-100 animate-pulse">
-                            {Array.from({ length: 9 }).map((_, index) => (
+                            {Array.from({ length: 8 }).map((_, index) => (
                               <td key={index} className="px-4 py-4">
                                 <div className="h-3 w-full max-w-[120px] rounded-full bg-slate-200" />
                               </td>
@@ -3029,43 +2437,59 @@ function ProfilePageContent() {
                     </table>
                   </div>
                 </div>
-              ) : sortedUnifiedTrades.length === 0 ? (
+              ) : filteredUnifiedTrades.length === 0 ? (
                 <Card className="p-8 text-center">
                   <p className="text-slate-600">No trades yet.</p>
+                  <Link href="/discover">
+                    <Button className="mt-4 bg-[#FDB022] hover:bg-[#FDB022]/90 text-slate-900">
+                      Discover Traders
+                    </Button>
+                  </Link>
                 </Card>
               ) : (
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="min-w-[320px] md:min-w-[1020px] w-full text-sm table-fixed md:table-auto border-separate border-spacing-y-2 border-spacing-x-0">
+                    <table className="min-w-[640px] md:min-w-[1100px] w-full text-sm">
                       <thead className="bg-slate-50 text-xs text-slate-500">
                         <tr className="border-b border-slate-200">
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4 w-[120px]">Copied Trader</th>
-                          <th className="px-3 py-3 text-center font-semibold md:px-4">Market</th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Outcome</th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
+                          <th className="px-4 py-3 text-left font-semibold min-w-[260px]">Market</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[120px]">Trade</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[150px] hidden md:table-cell">
                             <span className="block">Invested</span>
                             <span className="block text-[10px] font-medium text-slate-400">Contracts</span>
                           </th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
-                            <span className="block">
-                              Entry <span aria-hidden="true">→</span> Current
-                            </span>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[140px] hidden md:table-cell">
+                            <span className="block">Entry</span>
+                            <span className="block text-[10px] font-medium text-slate-400">Current</span>
                           </th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">
-                            <span className="block">Current Value</span>
-                            <span className="block text-[10px] font-medium text-slate-400">P&L</span>
-                          </th>
-                          <th className="px-3 py-3 text-center font-semibold hidden md:table-cell md:px-4">Time</th>
-                          <th className="px-3 py-3 text-center font-semibold md:hidden md:px-4">Detail</th>
-                          <th className="px-3 py-3 text-right font-semibold w-[120px] md:w-[80px] md:px-4"></th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[80px] hidden md:table-cell">ROI</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[160px] hidden md:table-cell">Time</th>
+                          <th className="px-4 py-3 text-left font-semibold min-w-[120px] md:hidden">Detail</th>
+                          <th className="px-4 py-3 text-right font-semibold w-[40px]"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {sortedUnifiedTrades.slice(0, tradesToShow).map((trade) => {
+                        {filteredUnifiedTrades.slice(0, tradesToShow).map((trade) => {
                           const actionLabel =
                             trade.type === 'quick' && trade.raw?.side?.toLowerCase() === 'sell' ? 'Sell' : 'Buy';
+                          const currentPrice = trade.price_current ?? trade.price_entry ?? null;
                           const invested = trade.amount ?? null;
-                          const contracts = getTradeContracts(trade);
+                          const contracts = (() => {
+                            if (trade.type === 'quick' && trade.raw) {
+                              const filledSize =
+                                Number.isFinite(trade.raw.filledSize) && trade.raw.filledSize > 0
+                                  ? trade.raw.filledSize
+                                  : trade.raw.size;
+                              if (Number.isFinite(filledSize) && filledSize > 0) return filledSize;
+                            }
+                            if (trade.type === 'manual' && trade.copiedTrade?.entry_size) {
+                              return trade.copiedTrade.entry_size;
+                            }
+                            if (invested && trade.price_entry) {
+                              return invested / trade.price_entry;
+                            }
+                            return null;
+                          })();
                           const statusLabel =
                             trade.status === 'open'
                               ? 'Open'
@@ -3074,35 +2498,21 @@ function ProfilePageContent() {
                                 : trade.status === 'trader-closed'
                                   ? 'Trader Closed'
                                   : 'Resolved';
-                          const resolvedOutcome =
-                            trade.type === 'manual'
-                              ? trade.copiedTrade?.resolved_outcome ?? null
-                              : resolveResolvedOutcomeFromRaw(trade.raw);
-                          const normalizedOutcome = normalizeOutcomeValue(trade.outcome);
-                          const normalizedResolvedOutcome = normalizeOutcomeValue(resolvedOutcome);
-                          const settlementPrice =
-                            normalizedOutcome && normalizedResolvedOutcome
-                              ? normalizedOutcome === normalizedResolvedOutcome
-                                ? 1
-                                : 0
-                              : null;
-                          const displayPrice = settlementPrice ?? getTradeDisplayPrice(trade);
+                          const liveKey = trade.market_id && trade.outcome
+                            ? buildLiveMarketKey(trade.market_id, trade.outcome)
+                            : null;
+                          const livePrice = trade.status === 'open' && liveKey
+                            ? liveMarketData.get(liveKey)?.price
+                            : null;
+                          const displayPrice = livePrice ?? currentPrice;
                           const isResolvedLive = Boolean(
-                            trade.status === 'open' &&
-                              trade.market_id &&
-                              trade.outcome &&
-                              liveMarketData.get(buildLiveMarketKey(trade.market_id, trade.outcome))?.closed
+                            trade.status === 'open' && liveKey && liveMarketData.get(liveKey)?.closed
                           );
-                          const isResolvedMarket = trade.status === 'resolved' || isResolvedLive;
-                          const displayStatus = isResolvedMarket ? 'Resolved' : statusLabel;
-                          const resolvedDisplayPrice =
-                            isResolvedMarket && settlementPrice === null ? 0 : null;
-                          const finalDisplayPrice =
-                            resolvedDisplayPrice !== null ? resolvedDisplayPrice : displayPrice;
+                          const displayStatus = isResolvedLive ? 'Resolved' : statusLabel;
                           const roiValue =
                             trade.roi ??
-                            (trade.price_entry != null && finalDisplayPrice != null
-                              ? (((actionLabel === 'Sell' ? trade.price_entry - finalDisplayPrice : finalDisplayPrice - trade.price_entry) /
+                            (trade.price_entry && displayPrice
+                              ? (((actionLabel === 'Sell' ? trade.price_entry - displayPrice : displayPrice - trade.price_entry) /
                                   trade.price_entry) *
                                   100)
                               : null);
@@ -3114,136 +2524,180 @@ function ProfilePageContent() {
                                 : roiValue < 0
                                   ? "text-red-600"
                                   : "text-slate-600";
-                          const statusBadgeClass = cn(
-                            'inline-flex w-fit items-center rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-none',
-                            displayStatus === 'Open' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                            displayStatus === 'Resolved' && 'bg-rose-50 text-rose-700 border-rose-200',
-                            displayStatus === 'Trader Closed' && 'bg-orange-50 text-orange-700 border-orange-200',
-                            displayStatus === 'Sold' && 'bg-slate-50 text-slate-600 border-slate-200'
+                          const statusTextClass = cn(
+                            'text-xs font-medium',
+                            displayStatus === 'Open' && 'text-emerald-600',
+                            displayStatus === 'Resolved' && 'text-blue-600',
+                            displayStatus === 'Trader Closed' && 'text-orange-600',
+                            displayStatus === 'Sold' && 'text-slate-500'
                           );
-                          const outcomeBadgeClass = cn(
-                            'inline-flex items-center rounded-full border px-2.5 py-1 text-[12px] font-semibold',
-                            'bg-slate-50 text-slate-600 border-slate-200'
-                          );
-                          const currentValue =
-                            contracts && finalDisplayPrice !== null ? contracts * finalDisplayPrice : null;
                           const mobileDetail =
                             mobileMetric === 'price'
-                              ? `${formatPrice(trade.price_entry)} -> ${formatPrice(finalDisplayPrice)}`
+                              ? `${formatPrice(trade.price_entry)} -> ${formatPrice(displayPrice)}`
                               : mobileMetric === 'size'
                                 ? `${formatCurrency(invested)} / ${formatContracts(contracts)}`
                                 : mobileMetric === 'roi'
-                                  ? `${currentValue !== null ? formatCurrency(currentValue) : '—'} · ${
-                                      roiValue === null ? '—' : `${roiValue > 0 ? '+' : ''}${roiValue.toFixed(1)}%`
-                                    }`
+                                  ? roiValue === null
+                                    ? '—'
+                                    : `${roiValue > 0 ? '+' : ''}${roiValue.toFixed(1)}%`
                                   : formatTimestamp(trade.created_at);
 
-                          const canCopyAgain = trade.status === 'open' && !isResolvedMarket;
-                          const canSell =
-                            trade.status === 'open' &&
-                            !isResolvedMarket &&
-                            (trade.type === 'quick' ? Boolean(trade.raw) : canExecuteTrades);
+                          const handleQuickSell = async () => {
+                            if (!trade.raw) return;
+                            const order = trade.raw!;
+
+                            let position = positions.find(p => 
+                              p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
+                            );
+
+                            if (!position) {
+                              try {
+                                const positionsResponse = await fetch('/api/polymarket/positions', { cache: 'no-store' });
+                                if (positionsResponse.ok) {
+                                  const positionsData = await positionsResponse.json();
+                                  const freshPositions = positionsData.positions || [];
+
+                                  setPositions(freshPositions);
+
+                                  position = freshPositions.find((p: PositionSummary) => 
+                                    p.marketId?.toLowerCase() === trade.market_id?.toLowerCase()
+                                  );
+                                }
+                              } catch (err) {
+                                console.error('Error fetching positions:', err);
+                              }
+                            }
+
+                            if (!position) {
+                              console.log('[PROFILE] Building position from order:', order);
+
+                              const raw = order.raw ?? {};
+                              let tokenId: string | null = null;
+
+                              const tokenIdCandidates = [
+                                raw.token_id,
+                                raw.tokenId,
+                                raw.tokenID,
+                                raw.asset_id,
+                                raw.assetId,
+                                raw.asset,
+                                raw.market?.token_id,
+                                raw.market?.asset_id,
+                              ];
+
+                              for (const candidate of tokenIdCandidates) {
+                                if (candidate && typeof candidate === 'string' && candidate.trim().length > 0) {
+                                  tokenId = candidate.trim();
+                                  break;
+                                }
+                              }
+
+                              const size = order.filledSize && order.filledSize > 0 ? order.filledSize : order.size;
+                              const normalizedSide = order.side?.trim().toUpperCase() ?? 'BUY';
+
+                              const direction = normalizedSide === 'SELL' ? 'SHORT' : 'LONG';
+                              const side = normalizedSide === 'SELL' ? 'SELL' : 'BUY';
+
+                              console.log('[PROFILE] Built position data:', {
+                                tokenId,
+                                size,
+                                side,
+                                direction,
+                                marketId: order.marketId,
+                                avgEntryPrice: order.priceOrAvgPrice,
+                              });
+
+                              if (tokenId && size && size > 0) {
+                                position = {
+                                  tokenId,
+                                  marketId: order.marketId ?? null,
+                                  outcome: order.outcome ?? null,
+                                  direction: direction as 'LONG' | 'SHORT',
+                                  side: side as 'BUY' | 'SELL',
+                                  size,
+                                  avgEntryPrice: order.priceOrAvgPrice ?? null,
+                                  firstTradeAt: order.createdAt ?? null,
+                                  lastTradeAt: order.updatedAt ?? null,
+                                };
+                              } else {
+                                console.error('[PROFILE] Could not build position - missing critical data:', {
+                                  tokenId,
+                                  size,
+                                  order,
+                                });
+                              }
+                            }
+
+                            if (position) {
+                              console.log('[PROFILE] Opening sell modal with position:', position);
+                              setCloseTarget({ order, position });
+                            } else {
+                              setToastMessage('Unable to load position data for selling. Please try from the History tab.');
+                              setShowToast(true);
+                              setTimeout(() => setShowToast(false), 4000);
+                            }
+                          };
 
                           return (
                             <React.Fragment key={trade.id}>
-                              <tr className="border-b border-slate-100 align-top">
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 w-[120px] bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
-                                  {trade.trader_username ? (
-                                    trade.trader_wallet ? (
+                              <tr className="border-b border-slate-100 bg-white">
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] text-slate-400 md:hidden">Market</span>
+                                  <div className="mt-1 min-w-[220px]">
+                                    {trade.market_slug ? (
                                       <a
-                                        href={`/trader/${trade.trader_wallet}`}
-                                        className="text-sm font-medium text-slate-700 hover:text-slate-900 truncate block max-w-[120px]"
-                                        title={trade.trader_username}
+                                        href={`https://polymarket.com/market/${trade.market_slug}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm font-semibold text-slate-900 hover:underline line-clamp-2"
                                         onClick={(event) => event.stopPropagation()}
                                       >
-                                        {trade.trader_username}
+                                        {trade.market_title}
                                       </a>
                                     ) : (
-                                      <span className="text-sm font-medium text-slate-700 truncate block max-w-[120px]" title={trade.trader_username}>
-                                        {trade.trader_username}
+                                      <span className="text-sm font-semibold text-slate-900 line-clamp-2">
+                                        {trade.market_title}
                                       </span>
-                                    )
-                                  ) : (
-                                    <span className="text-sm text-slate-400">Unknown</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 align-top md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
-                                  <div className="mt-1 flex items-start gap-2 md:gap-3">
-                                    <div className="h-7 w-7 md:h-8 md:w-8 shrink-0 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200">
-                                      {trade.market_avatar_url ? (
-                                        <img
-                                          src={trade.market_avatar_url}
-                                          alt={trade.market_title}
-                                          className="h-full w-full object-cover"
-                                        />
-                                      ) : (
-                                        <span className="flex h-full w-full items-center justify-center text-[11px] font-semibold text-slate-500">
-                                          {trade.market_title.slice(0, 2)}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="min-w-0 md:max-w-[260px]">
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        {trade.market_slug ? (
-                                          <a
-                                            href={`https://polymarket.com/market/${trade.market_slug}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-sm font-semibold text-slate-900 hover:underline line-clamp-2"
-                                            onClick={(event) => event.stopPropagation()}
-                                          >
-                                            {trade.market_title}
-                                          </a>
-                                        ) : (
-                                          <span className="text-sm font-semibold text-slate-900 line-clamp-2">
-                                            {trade.market_title}
-                                          </span>
-                                        )}
-                                        <span className={cn("hidden md:inline-flex", statusBadgeClass)}>
-                                          {displayStatus}
-                                        </span>
-                                      </div>
-                                      <div className="mt-1 flex flex-wrap items-center gap-2 md:hidden">
-                                        <span className={cn("inline-flex", statusBadgeClass)}>
-                                          {displayStatus}
-                                        </span>
-                                        <span className={cn("inline-flex", outcomeBadgeClass)}>
-                                          {formatOutcomeLabel(trade.outcome)}
-                                        </span>
-                                      </div>
+                                    )}
+                                    <div className={cn("mt-1", statusTextClass)}>
+                                      {displayStatus}
                                     </div>
                                   </div>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
-                                  <span className={cn("inline-flex", outcomeBadgeClass)}>
-                                    {formatOutcomeLabel(trade.outcome)}
-                                  </span>
+                                <td className="px-4 py-4 align-top">
+                                  <span className="text-[10px] text-slate-400 md:hidden">Trade</span>
+                                  <div className="mt-1">
+                                    <p className={cn(
+                                      "text-sm font-semibold",
+                                      actionLabel === "Buy" ? "text-emerald-700" : "text-rose-700"
+                                    )}>
+                                      {actionLabel}
+                                    </p>
+                                    <p className="text-xs text-slate-500">{formatOutcomeLabel(trade.outcome)}</p>
+                                  </div>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
+                                <td className="px-4 py-4 align-top hidden md:table-cell">
                                   <p className="text-sm font-semibold text-slate-900">{formatCurrency(invested)}</p>
-                                  <p className="text-xs text-slate-500">{formatContracts(contracts)}</p>
+                                  <p className="text-xs text-slate-500">{formatContracts(contracts)} contracts</p>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
+                                <td className="px-4 py-4 align-top hidden md:table-cell">
                                   <p className="text-sm font-semibold text-slate-900">
                                     {formatPrice(trade.price_entry)}
                                     <span className="mx-1 text-slate-400">-&gt;</span>
-                                    {formatPrice(finalDisplayPrice)}
+                                    {formatPrice(displayPrice)}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
-                                  <p className="text-sm font-semibold text-slate-900">
-                                    {contracts && finalDisplayPrice !== null ? formatCurrency(contracts * finalDisplayPrice) : "—"}
-                                  </p>
-                                  <p className={cn("text-xs font-semibold", roiClass)}>
+                                <td className="px-4 py-4 align-top hidden md:table-cell">
+                                  <p className={cn("text-sm font-semibold", roiClass)}>
                                     {roiValue === null ? "—" : `${roiValue > 0 ? "+" : ""}${roiValue.toFixed(1)}%`}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top hidden md:table-cell md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
+                                <td className="px-4 py-4 align-top hidden md:table-cell">
                                   <p className="text-xs font-medium text-slate-600 whitespace-nowrap">
                                     {formatTimestamp(trade.created_at)}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top md:hidden md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
+                                <td className="px-4 py-4 align-top md:hidden">
                                   <p
                                     className={cn(
                                       "text-xs font-semibold",
@@ -3253,31 +2707,17 @@ function ProfilePageContent() {
                                     {mobileDetail}
                                   </p>
                                 </td>
-                                <td className="px-3 py-2 align-top text-right w-[120px] md:w-[80px] md:px-4 md:py-3 bg-slate-50 first:rounded-l-lg last:rounded-r-lg">
-                                  <div className="mt-1 flex flex-col items-end gap-1">
-                                    {(canCopyAgain || canSell) && (
-                                      <div className="flex items-center gap-2">
-                                        {canCopyAgain && (
-                                          <Button
-                                            onClick={() => handleCopyAgain(trade)}
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 px-3 text-[11px] font-semibold text-amber-700 border border-amber-300 bg-white hover:bg-amber-50 hover:text-amber-700"
-                                          >
-                                            Copy Again
-                                          </Button>
-                                        )}
-                                        {canSell && (
-                                          <Button
-                                            onClick={() => handleSellTrade(trade)}
-                                            size="sm"
-                                            variant="outline"
-                                            className="h-6 px-3 text-[11px] font-semibold text-red-600 border border-red-300 bg-white hover:bg-red-50 hover:text-red-600"
-                                          >
-                                            Sell
-                                          </Button>
-                                        )}
-                                      </div>
+                                <td className="px-4 py-4 align-top text-right">
+                                  <div className="mt-1 flex items-center justify-end gap-2">
+                                    {trade.type === 'quick' && trade.status === 'open' && trade.raw && (
+                                      <Button
+                                        onClick={handleQuickSell}
+                                        size="sm"
+                                        style={{ backgroundColor: '#EF4444' }}
+                                        className="h-7 px-3 text-xs font-semibold text-white hover:opacity-90 transition-opacity"
+                                      >
+                                        Sell
+                                      </Button>
                                     )}
                                     {(trade.type === 'quick' && trade.raw) || trade.type === 'manual' ? (
                                       <button
@@ -3291,9 +2731,18 @@ function ProfilePageContent() {
                                             setExpandedTradeId(expandedTradeId === trade.id ? null : trade.id);
                                           }
                                         }}
-                                        className="text-[10px] font-medium text-slate-400 hover:text-slate-500"
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                                        aria-label="Toggle trade details"
                                       >
-                                        Details
+                                        <ChevronRight
+                                          className={cn(
+                                            "h-4 w-4 transition-transform",
+                                            (trade.type === 'quick' && expandedQuickDetailsId === trade.id) ||
+                                              (trade.type === 'manual' && expandedTradeId === trade.id)
+                                              ? "rotate-90"
+                                              : "rotate-0"
+                                          )}
+                                        />
                                       </button>
                                     ) : null}
                                   </div>
@@ -3301,18 +2750,24 @@ function ProfilePageContent() {
                               </tr>
 
                               {trade.type === 'quick' && trade.raw && expandedQuickDetailsId === trade.id && (
-                                <tr className="border-b border-slate-100 bg-slate-100/60">
-                                  <td colSpan={9} className="px-4 py-4">
+                                <tr className="border-b border-slate-100 bg-slate-50/60">
+                                  <td colSpan={8} className="px-4 py-4">
                                     <OrderRowDetails order={trade.raw as OrderRow} />
                                   </td>
                                 </tr>
                               )}
 
                               {trade.type === 'manual' && expandedTradeId === trade.id && (
-                                <tr className="border-b border-slate-100 bg-slate-100/60">
-                                  <td colSpan={9} className="px-4 py-4">
+                                <tr className="border-b border-slate-100 bg-slate-50/60">
+                                  <td colSpan={8} className="px-4 py-4">
                                     <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
                                       <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                          <p className="text-xs text-slate-500 mb-1">Current Price</p>
+                                          <p className="font-semibold text-slate-900">
+                                            ${trade.price_current?.toFixed(2) || trade.price_entry.toFixed(2)}
+                                          </p>
+                                        </div>
                                         <div>
                                           <p className="text-xs text-slate-500 mb-1">Shares</p>
                                           <p className="font-semibold text-slate-900">
@@ -3325,6 +2780,17 @@ function ProfilePageContent() {
                                           <p className="text-xs text-slate-500 mb-1">Amount Invested</p>
                                           <p className="font-semibold text-slate-900">
                                             ${trade.amount?.toFixed(0) || '—'}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-xs text-slate-500 mb-1">P&L</p>
+                                          <p className={cn(
+                                            "font-semibold",
+                                            (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                                          )}>
+                                            {trade.amount && trade.roi
+                                              ? `${(trade.roi >= 0 ? '+' : '')}$${((trade.amount * trade.roi) / 100).toFixed(0)}`
+                                              : '—'}
                                           </p>
                                         </div>
                                       </div>
@@ -3439,14 +2905,14 @@ function ProfilePageContent() {
                     </table>
                   </div>
                   {/* View More Button */}
-                  {sortedUnifiedTrades.length > tradesToShow && (
+                  {filteredUnifiedTrades.length > tradesToShow && (
                     <div className="flex justify-center pt-4 pb-4">
                       <Button
                         onClick={() => setTradesToShow(prev => prev + 15)}
                         variant="outline"
                         className="border-slate-300 text-slate-700 hover:bg-slate-50"
                       >
-                        View More Trades ({sortedUnifiedTrades.length - tradesToShow} remaining)
+                        View More Trades ({filteredUnifiedTrades.length - tradesToShow} remaining)
                       </Button>
                     </div>
                   )}
@@ -3463,65 +2929,6 @@ function ProfilePageContent() {
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Performance Analysis</h2>
                 <p className="text-sm text-slate-500 mt-1">Your complete trading performance across all copied trades</p>
               </div>
-
-              {/* Top Traders Copied */}
-              {topTradersStats.length > 0 && (
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Top Traders Copied</h3>
-                  <p className="text-sm text-slate-500 mb-6">Performance of trades copied from your top 10 most-copied traders</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-200">
-                          <th className="text-left py-3 px-2 font-semibold text-slate-700">Trader</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Copies</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Invested</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">P&L</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">ROI</th>
-                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Win Rate</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {topTradersStats.map((trader) => (
-                          <tr key={trader.trader_wallet} className="border-b border-slate-100 hover:bg-slate-50">
-                            <td className="py-3 px-2">
-                              <Link
-                                href={`/trader/${trader.trader_wallet}`}
-                                className="font-medium text-slate-900 hover:text-yellow-600 transition-colors"
-                              >
-                                {trader.trader_name}
-                              </Link>
-                            </td>
-                            <td className="text-right py-3 px-2 text-slate-700">{trader.copy_count}</td>
-                            <td className="text-right py-3 px-2 text-slate-700">
-                              {formatCurrency(trader.total_invested)}
-                            </td>
-                            <td
-                              className={cn(
-                                "text-right py-3 px-2 font-semibold",
-                                trader.pnl >= 0 ? "text-emerald-600" : "text-red-600"
-                              )}
-                            >
-                              {trader.pnl >= 0 ? '+' : ''}{formatCurrency(trader.pnl)}
-                            </td>
-                            <td
-                              className={cn(
-                                "text-right py-3 px-2 font-semibold",
-                                trader.roi >= 0 ? "text-emerald-600" : "text-red-600"
-                              )}
-                            >
-                              {trader.roi >= 0 ? '+' : ''}{trader.roi.toFixed(1)}%
-                            </td>
-                            <td className="text-right py-3 px-2 text-slate-700">
-                              {trader.win_rate.toFixed(0)}%
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </Card>
-              )}
 
               {/* Position Size Distribution */}
               <Card className="p-6">
@@ -3622,136 +3029,131 @@ function ProfilePageContent() {
                 )}
               </Card>
 
-              {/* Trading Stats */}
-              <Card className="overflow-hidden border border-slate-200 bg-white">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900">Trading Stats</h3>
-                    <p className="text-sm text-slate-500">Based on your copied trades. Lifetime unless noted.</p>
-                  </div>
-                  <span className="text-xs rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">All time</span>
-                </div>
-                <div className="grid gap-4 p-6 lg:grid-cols-[1.15fr_1fr]">
-                  <div className="rounded-2xl border border-slate-200/60 bg-slate-50 p-5 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Performance</p>
-                      <span className="text-[11px] text-slate-400">All time</span>
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
-                      <div>
-                        <p className="text-xs text-slate-500">ROI</p>
-                        <p
-                          className={cn(
-                            'text-3xl font-semibold',
-                            userStats.roi > 0 ? 'text-emerald-600' : userStats.roi < 0 ? 'text-red-600' : 'text-slate-900'
-                          )}
-                        >
-                          {userStats.totalVolume > 0
-                            ? `${userStats.roi > 0 ? '+' : ''}${userStats.roi.toFixed(1)}%`
-                            : 'N/A'}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-slate-500">Winnings</p>
-                        <p
-                          className={cn(
-                            'text-2xl font-semibold',
-                            userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
-                          )}
-                        >
-                          {`${userStats.totalPnl > 0 ? '+' : ''}${formatCompactNumber(userStats.totalPnl)}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-xl border border-slate-200/70 bg-white/70 p-3">
-                        <p className="text-[11px] text-slate-500">Volume</p>
-                        <p className="text-base font-semibold text-slate-900">{formatCompactNumber(userStats.totalVolume)}</p>
-                      </div>
-                      <div className="rounded-xl border border-slate-200/70 bg-white/70 p-3">
-                        <p className="text-[11px] text-slate-500">Win rate</p>
-                        <p className="text-base font-semibold text-slate-900">{userStats.winRate.toFixed(1)}%</p>
-                      </div>
-                      <div className="col-span-2 rounded-xl border border-slate-200/70 bg-white/70 p-3">
-                        <div className="flex items-center justify-between">
-                          <p className="text-[11px] text-slate-500">Consistency</p>
-                          <span className="text-[10px] text-slate-400">
-                            {tradeStats.consistencySampleSize > 0
-                              ? `Last ${tradeStats.consistencySampleSize} closed`
-                              : 'No closed trades'}
-                          </span>
-                        </div>
-                        <p className="text-base font-semibold text-slate-900">
-                          {tradeStats.consistency !== null ? `${tradeStats.consistency.toFixed(0)}%` : '—'}
-                        </p>
-                      </div>
-                    </div>
+              {/* Performance Metrics */}
+              <Card className="p-6">
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">Performance Metrics</h3>
+                <p className="text-sm text-slate-500 mb-6">Showing lifetime performance across all trades</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Lifetime ROI */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Lifetime ROI</p>
+                    <p
+                      className={cn(
+                        'text-2xl font-bold',
+                        userStats.roi > 0 ? 'text-emerald-600' : userStats.roi < 0 ? 'text-red-600' : 'text-slate-900'
+                      )}
+                    >
+                      {userStats.totalVolume > 0
+                        ? `${userStats.roi > 0 ? '+' : ''}${userStats.roi.toFixed(1)}%`
+                        : 'N/A'}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">All time</p>
                   </div>
 
-                  <div className="rounded-2xl border border-slate-200/80 p-5">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trades</p>
-                        <p className="text-xs text-slate-400">Sizing and cadence</p>
-                      </div>
-                      <span className="text-[11px] text-slate-400">Activity uses last 30d</span>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3">
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Average return</p>
-                        <p
-                          className={cn(
-                            'text-base font-semibold',
-                            tradeStats.avgReturn !== null && tradeStats.avgReturn > 0
-                              ? 'text-emerald-600'
-                              : tradeStats.avgReturn !== null && tradeStats.avgReturn < 0
-                                ? 'text-red-600'
-                                : 'text-slate-900'
-                          )}
-                        >
-                          {tradeStats.avgReturn !== null
-                            ? `${tradeStats.avgReturn > 0 ? '+' : ''}${tradeStats.avgReturn.toFixed(1)}%`
-                            : '—'}
-                        </p>
-                        <p className="text-[10px] text-slate-400">Closed trades</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Open positions</p>
-                        <p className="text-base font-semibold text-slate-900">{userStats.openTrades}</p>
-                        <p className="text-[10px] text-slate-400">Active now</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Trade frequency</p>
-                        <p className="text-base font-semibold text-slate-900">{tradeStats.frequencyLabel}</p>
-                        <p className="text-[10px] text-slate-400">
-                          {tradeStats.tradesPerWeek > 0 ? `${tradeStats.tradesPerWeek.toFixed(1)}/wk` : '0/wk'} (30d)
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Average trade size</p>
-                        <p className="text-base font-semibold text-slate-900">
-                          {tradeStats.avgTradeSize !== null ? formatCurrency(tradeStats.avgTradeSize) : '—'}
-                        </p>
-                        <p className="text-[10px] text-slate-400">Per trade</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Recency</p>
-                        <p className="text-base font-semibold text-slate-900">{lastTradeLabel}</p>
-                        <p className="text-[10px] text-slate-400">Last trade</p>
-                      </div>
-                      <div className="rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Activity</p>
-                        <p className="text-base font-semibold text-slate-900">{tradeStats.activeDays} days</p>
-                        <p className="text-[10px] text-slate-400">Active days (30d)</p>
-                      </div>
-                      <div className="col-span-2 rounded-xl bg-slate-50 p-3">
-                        <p className="text-[11px] text-slate-500">Avg hold time</p>
-                        <p className="text-base font-semibold text-slate-900">
-                          {formatDuration(tradeStats.avgHoldMs)}
-                        </p>
-                        <p className="text-[10px] text-slate-400">Closed trades</p>
-                      </div>
-                    </div>
+                  {/* Total P&L */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Total P&L</p>
+                    <p
+                      className={cn(
+                        'text-2xl font-bold',
+                        userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
+                      )}
+                    >
+                      {`${userStats.totalPnl > 0 ? '+' : ''}$${Math.abs(userStats.totalPnl).toFixed(0)}`}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">All time</p>
+                  </div>
+
+                  {/* Best Position */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Best Position</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      ${(() => {
+                        if (copiedTrades.length === 0) return '0';
+                        const maxTrade = Math.max(...copiedTrades.map(t => t.amount_invested || 0));
+                        return maxTrade >= 1000000 
+                          ? `${(maxTrade / 1000000).toFixed(2)}M`
+                          : maxTrade >= 1000 
+                            ? `${(maxTrade / 1000).toFixed(1)}K` 
+                            : maxTrade.toFixed(0);
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Largest trade</p>
+                  </div>
+
+                  {/* Total Trades */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Total Trades</p>
+                    <p className="text-2xl font-bold text-slate-900">{userStats.totalTrades}</p>
+                    <p className="text-xs text-slate-500 mt-1">All time</p>
+                  </div>
+
+                  {/* Net P&L / Trade */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Net P&L / Trade</p>
+                    <p
+                      className={cn(
+                        'text-2xl font-bold',
+                        userStats.totalPnl > 0 ? 'text-emerald-600' : userStats.totalPnl < 0 ? 'text-red-600' : 'text-slate-900'
+                      )}
+                    >
+                      {(() => {
+                        const tradesCount = userStats.totalTrades || copiedTrades.length;
+                        if (tradesCount === 0) return '$0';
+                        const avgPnL = userStats.totalPnl / tradesCount;
+                        return `${avgPnL > 0 ? '+' : ''}$${Math.abs(avgPnL).toFixed(0)}`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Per trade</p>
+                  </div>
+
+                  {/* Avg ROI / Trade */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Avg ROI / Trade</p>
+                    <p className={`text-2xl font-bold ${(() => {
+                      const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                      if (closedTrades.length === 0) return 'text-slate-900';
+                      const avgROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
+                      return avgROI > 0 ? 'text-emerald-600' : 'text-red-600';
+                    })()}`}>
+                      {(() => {
+                        const closedTrades = copiedTrades.filter(t => t.roi !== null && t.roi !== 0);
+                        if (closedTrades.length === 0) return 'N/A';
+                        const avgROI = closedTrades.reduce((sum, t) => sum + (t.roi || 0), 0) / closedTrades.length;
+                        return `${avgROI > 0 ? '+' : ''}${avgROI.toFixed(2)}%`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Per trade</p>
+                  </div>
+
+                  {/* Open Positions */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Open Positions</p>
+                    <p className="text-2xl font-bold text-slate-900">
+                      {copiedTrades.filter(t => !t.market_resolved && !t.user_closed_at).length}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Currently active</p>
+                  </div>
+
+                  {/* Avg P&L / Trade */}
+                  <div className="bg-slate-50 rounded-lg p-4">
+                    <p className="text-sm text-slate-500 mb-1">Avg P&L / Trade</p>
+                    <p className={`text-2xl font-bold ${(() => {
+                      const totalPnL = copiedTrades
+                        .filter(t => t.roi !== null && t.roi !== 0)
+                        .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
+                      return totalPnL > 0 ? 'text-emerald-600' : 'text-red-600';
+                    })()}`}>
+                      {(() => {
+                        if (copiedTrades.length === 0) return '$0';
+                        const totalPnL = copiedTrades
+                          .filter(t => t.roi !== null && t.roi !== 0)
+                          .reduce((sum, t) => sum + ((t.amount_invested || 0) * ((t.roi || 0) / 100)), 0);
+                        const avgPnL = totalPnL / copiedTrades.length;
+                        return `${avgPnL > 0 ? '+' : ''}$${Math.abs(avgPnL).toFixed(0)}`;
+                      })()}
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">Average</p>
                   </div>
                 </div>
               </Card>
@@ -3850,6 +3252,61 @@ function ProfilePageContent() {
                 )}
               </Card>
 
+              {/* Top Traders Copied */}
+              {topTradersStats.length > 0 && (
+                <Card className="p-6">
+                  <h3 className="text-lg font-semibold text-slate-900 mb-2">Top Traders Copied</h3>
+                  <p className="text-sm text-slate-500 mb-6">Performance of trades copied from your top 10 most-copied traders</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200">
+                          <th className="text-left py-3 px-2 font-semibold text-slate-700">Trader</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Copies</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Invested</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">P&L</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">ROI</th>
+                          <th className="text-right py-3 px-2 font-semibold text-slate-700">Win Rate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {topTradersStats.map((trader) => (
+                          <tr key={trader.trader_wallet} className="border-b border-slate-100 hover:bg-slate-50">
+                            <td className="py-3 px-2">
+                              <Link 
+                                href={`/trader/${trader.trader_wallet}`}
+                                className="font-medium text-slate-900 hover:text-yellow-600 transition-colors"
+                              >
+                                {trader.trader_name}
+                              </Link>
+                            </td>
+                            <td className="text-right py-3 px-2 text-slate-700">{trader.copy_count}</td>
+                            <td className="text-right py-3 px-2 text-slate-700">
+                              {formatCurrency(trader.total_invested)}
+                            </td>
+                            <td className={cn(
+                              "text-right py-3 px-2 font-semibold",
+                              trader.pnl >= 0 ? "text-emerald-600" : "text-red-600"
+                            )}>
+                              {trader.pnl >= 0 ? '+' : ''}{formatCurrency(trader.pnl)}
+                            </td>
+                            <td className={cn(
+                              "text-right py-3 px-2 font-semibold",
+                              trader.roi >= 0 ? "text-emerald-600" : "text-red-600"
+                            )}>
+                              {trader.roi >= 0 ? '+' : ''}{trader.roi.toFixed(1)}%
+                            </td>
+                            <td className="text-right py-3 px-2 text-slate-700">
+                              {trader.win_rate.toFixed(0)}%
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              )}
+
               <Card className="p-6">
                 <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Performing Trades</h3>
                 <div className="space-y-3">
@@ -3858,36 +3315,28 @@ function ProfilePageContent() {
                     .sort((a, b) => (b.roi || 0) - (a.roi || 0))
                     .slice(0, 5)
                     .map((trade) => (
-                      <div key={trade.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-slate-900 line-clamp-2">{trade.market_title}</p>
-                            <p className="text-xs text-slate-500">{formatRelativeTime(trade.copied_at)}</p>
-                          </div>
-                          <div className="grid grid-cols-2 gap-3 sm:flex sm:items-center sm:gap-4">
-                            <div className="flex flex-col items-start text-left sm:items-end sm:text-right">
-                              <span className="text-[11px] font-medium text-slate-500">Outcome</span>
-                              <Badge
-                                className={cn(
-                                  "font-semibold",
-                                  trade.outcome === 'YES'
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "bg-red-50 text-red-700 border-red-200"
-                                )}
-                              >
-                                {trade.outcome}
-                              </Badge>
-                            </div>
-                            <div className="flex flex-col items-start text-left sm:items-end sm:text-right">
-                              <span className="text-[11px] font-medium text-slate-500">ROI</span>
-                              <p className={cn(
-                                "text-base font-semibold",
-                                (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
-                              )}>
-                                {(trade.roi || 0) >= 0 ? '+' : ''}{(trade.roi || 0).toFixed(1)}%
-                              </p>
-                            </div>
-                          </div>
+                      <div key={trade.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-900 truncate">{trade.market_title}</p>
+                          <p className="text-sm text-slate-500">{formatRelativeTime(trade.copied_at)}</p>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <Badge
+                            className={cn(
+                              "font-semibold",
+                              trade.outcome === 'YES'
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-red-50 text-red-700 border-red-200"
+                            )}
+                          >
+                            {trade.outcome}
+                          </Badge>
+                          <p className={cn(
+                            "font-bold text-lg",
+                            (trade.roi || 0) >= 0 ? "text-emerald-600" : "text-red-600"
+                          )}>
+                            {(trade.roi || 0) >= 0 ? '+' : ''}{(trade.roi || 0).toFixed(1)}%
+                          </p>
                         </div>
                       </div>
                     ))}
@@ -3900,6 +3349,226 @@ function ProfilePageContent() {
               </Card>
             </div>
           )}
+
+          {activeTab === 'settings' && (
+            <Card className="p-6 space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Notifications</h3>
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
+                  <div className="flex items-center gap-3">
+                    {notificationsEnabled ? (
+                      <Bell className="h-5 w-5 text-slate-600" />
+                    ) : (
+                      <BellOff className="h-5 w-5 text-slate-400" />
+                    )}
+                    <div>
+                      <p className="font-medium text-slate-900">Email Notifications</p>
+                      <p className="text-sm text-slate-500">Get notified when traders close positions</p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleToggleNotifications}
+                    disabled={loadingNotificationPrefs}
+                    variant={notificationsEnabled ? "default" : "outline"}
+                    size="sm"
+                  >
+                    {notificationsEnabled ? 'Enabled' : 'Disabled'}
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Premium</h3>
+                {isPremium ? (
+                  <div className="space-y-3">
+                    <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Crown className="h-5 w-5 text-yellow-600" />
+                        <p className="font-semibold text-yellow-900">Premium Member</p>
+                      </div>
+                      <p className="text-sm text-yellow-700">
+                        You have access to all premium features including Real Copy trading.
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4">
+                      <div>
+                        <h4 className="font-semibold text-slate-900">Default Slippage</h4>
+                        <p className="text-sm text-slate-500">
+                          Set your preferred default slippage tolerance for buy and sell orders.
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          This becomes the default slippage for all trades unless you change it on a specific order.
+                        </p>
+                      </div>
+                      <div className="space-y-3">
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-slate-900">Buy Orders</p>
+                            <span className="text-xs text-slate-600">{defaultBuySlippage}%</span>
+                          </div>
+                          <RadioGroup
+                            value={buySlippageSelection}
+                            onValueChange={(value) => {
+                              setBuySlippageSelection(value);
+                              if (value === 'custom') return;
+                              const parsed = Number(value);
+                              if (Number.isFinite(parsed)) {
+                                handleUpdateSlippage('buy', parsed);
+                              }
+                            }}
+                            className="mt-2 flex flex-wrap gap-4"
+                          >
+                            {SLIPPAGE_PRESETS.map((value) => (
+                              <div key={value} className="flex items-center space-x-2">
+                                <RadioGroupItem
+                                  value={String(value)}
+                                  id={`buy-slippage-${value}`}
+                                  className="h-4 w-4"
+                                />
+                                <Label
+                                  htmlFor={`buy-slippage-${value}`}
+                                  className="text-sm font-medium text-slate-700 cursor-pointer"
+                                >
+                                  {value}%
+                                </Label>
+                              </div>
+                            ))}
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="custom" id="buy-slippage-custom" className="h-4 w-4" />
+                              <Label
+                                htmlFor="buy-slippage-custom"
+                                className="text-sm font-medium text-slate-700 cursor-pointer"
+                              >
+                                Custom
+                              </Label>
+                            </div>
+                          </RadioGroup>
+                          {buySlippageSelection === 'custom' && (
+                            <div className="mt-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={customBuySlippage}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value;
+                                  setCustomBuySlippage(nextValue);
+                                  setBuySlippageSelection('custom');
+                                  const parsed = Number(nextValue);
+                                  if (Number.isFinite(parsed)) {
+                                    handleUpdateSlippage('buy', parsed);
+                                  }
+                                }}
+                                className="w-28 text-sm"
+                                placeholder="0.5"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-medium text-slate-900">Sell Orders</p>
+                            <span className="text-xs text-slate-600">{defaultSellSlippage}%</span>
+                          </div>
+                          <RadioGroup
+                            value={sellSlippageSelection}
+                            onValueChange={(value) => {
+                              setSellSlippageSelection(value);
+                              if (value === 'custom') return;
+                              const parsed = Number(value);
+                              if (Number.isFinite(parsed)) {
+                                handleUpdateSlippage('sell', parsed);
+                              }
+                            }}
+                            className="mt-2 flex flex-wrap gap-4"
+                          >
+                            {SLIPPAGE_PRESETS.map((value) => (
+                              <div key={value} className="flex items-center space-x-2">
+                                <RadioGroupItem
+                                  value={String(value)}
+                                  id={`sell-slippage-${value}`}
+                                  className="h-4 w-4"
+                                />
+                                <Label
+                                  htmlFor={`sell-slippage-${value}`}
+                                  className="text-sm font-medium text-slate-700 cursor-pointer"
+                                >
+                                  {value}%
+                                </Label>
+                              </div>
+                            ))}
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="custom" id="sell-slippage-custom" className="h-4 w-4" />
+                              <Label
+                                htmlFor="sell-slippage-custom"
+                                className="text-sm font-medium text-slate-700 cursor-pointer"
+                              >
+                                Custom
+                              </Label>
+                            </div>
+                          </RadioGroup>
+                          {sellSlippageSelection === 'custom' && (
+                            <div className="mt-2">
+                              <Input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={customSellSlippage}
+                                onChange={(e) => {
+                                  const nextValue = e.target.value;
+                                  setCustomSellSlippage(nextValue);
+                                  setSellSlippageSelection('custom');
+                                  const parsed = Number(nextValue);
+                                  if (Number.isFinite(parsed)) {
+                                    handleUpdateSlippage('sell', parsed);
+                                  }
+                                }}
+                                className="w-28 text-sm"
+                                placeholder="0.5"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500">
+                          Higher slippage increases fill rate but may result in worse prices.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                      <p className="text-sm text-slate-600 mb-3">
+                        Need to cancel your subscription? You'll keep premium access until the end of your billing period.
+                      </p>
+                      <Button
+                        onClick={() => setShowCancelSubscriptionModal(true)}
+                        variant="outline"
+                        className="border-red-300 text-red-700 hover:bg-red-50"
+                      >
+                        Cancel Subscription
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <p className="text-sm text-slate-600 mb-3">
+                      Upgrade to Premium to unlock Real Copy trading and advanced features.
+                    </p>
+                    <Button
+                      onClick={() => setShowUpgradeModal(true)}
+                      className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white"
+                    >
+                      <Crown className="mr-2 h-4 w-4" />
+                      Upgrade to Premium
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -3910,26 +3579,35 @@ function ProfilePageContent() {
         onOpenChange={setIsConnectModalOpen}
         onConnect={handleWalletConnect}
       />
+      <CancelSubscriptionModal
+        open={showCancelSubscriptionModal}
+        onOpenChange={setShowCancelSubscriptionModal}
+        onConfirmCancel={async () => {
+          const response = await fetch('/api/stripe/cancel-subscription', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+            },
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            const accessUntil = new Date(data.current_period_end * 1000).toLocaleDateString();
+            alert(`Your subscription has been canceled. You'll keep Premium access until ${accessUntil}.`);
+            window.location.reload();
+          } else {
+            throw new Error(data.error || 'Failed to cancel subscription');
+          }
+        }}
+      />
       <SubscriptionSuccessModal
         open={showSubscriptionSuccessModal}
         onOpenChange={setShowSubscriptionSuccessModal}
         onConnectWallet={() => {
           setShowSubscriptionSuccessModal(false);
           setIsConnectModalOpen(true);
-        }}
-      />
-      <ShareStatsModal
-        open={isShareStatsModalOpen}
-        onOpenChange={setIsShareStatsModalOpen}
-        username={polymarketUsername || 'My copy trades'}
-        stats={{
-          pnl: userStats.totalPnl,
-          roi: userStats.roi,
-          winRate: userStats.winRate,
-          volume: userStats.totalVolume,
-          trades: copiedTrades.length,
-          followers: followingCount,
-          memberSince: profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Jan 2026',
         }}
       />
       <EditCopiedTrade
@@ -3982,6 +3660,63 @@ function ProfilePageContent() {
           submittedAt={closeSubmittedAt}
         />
       )}
+
+      {/* Disconnect Wallet Confirmation Modal */}
+      <Dialog open={showDisconnectModal} onOpenChange={setShowDisconnectModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold text-red-600">Disconnect Wallet?</DialogTitle>
+            <DialogDescription className="text-slate-600 mt-2">
+              This will remove your connected Polymarket wallet from Polycopy. You will need to reconnect it to use Real Copy trading features.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 mt-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-red-900 mb-2">⚠️ Warning:</p>
+              <ul className="text-sm text-red-800 space-y-1 list-disc list-inside">
+                <li>You will lose access to automated trade execution</li>
+                <li>Your private key will be removed from secure storage</li>
+                <li>This action cannot be undone</li>
+              </ul>
+            </div>
+            
+            <div className="space-y-2">
+              <label htmlFor="confirm-text" className="text-sm font-medium text-slate-900">
+                Type <span className="font-bold">YES</span> to confirm:
+              </label>
+              <Input
+                id="confirm-text"
+                type="text"
+                placeholder="Type YES to confirm"
+                value={disconnectConfirmText}
+                onChange={(e) => setDisconnectConfirmText(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+            
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowDisconnectModal(false);
+                  setDisconnectConfirmText('');
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleWalletDisconnect}
+                disabled={disconnectConfirmText.toUpperCase() !== 'YES' || disconnectingWallet}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+              >
+                {disconnectingWallet ? 'Disconnecting...' : 'Disconnect Wallet'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Toast */}
       {showToast && (

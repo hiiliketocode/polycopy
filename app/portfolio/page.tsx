@@ -1073,7 +1073,7 @@ function ProfilePageContent() {
       uniqueMarketIds.map(async (marketId) => {
         try {
           // Fetch current price from Polymarket API
-          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${marketId}`);
+          const priceResponse = await fetch(`/api/polymarket/price?conditionId=${marketId}&tier=T2b`);
           if (priceResponse.ok) {
             const priceData = await priceResponse.json();
 

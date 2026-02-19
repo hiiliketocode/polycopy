@@ -1691,6 +1691,7 @@ export function TradeCard({
         } else if (market) {
           params.set('title', market)
         }
+        params.set('tier', 'T2a') // Feed card: live (≤1s) for 250ms poll
         const response = await fetch(`/api/polymarket/price?${params.toString()}`, {
           cache: 'no-store',
         })

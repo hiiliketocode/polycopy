@@ -1018,7 +1018,7 @@ export default function TraderProfilePage({
 
         try {
           // Fetch market data to check resolution status and get price
-          const response = await fetch(`/api/polymarket/price?conditionId=${trade.conditionId}`);
+          const response = await fetch(`/api/polymarket/price?conditionId=${trade.conditionId}&tier=T2b`);
           if (response.ok) {
             const priceData = await response.json();
             

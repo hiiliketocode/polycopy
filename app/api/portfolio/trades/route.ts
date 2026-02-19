@@ -260,7 +260,7 @@ export async function GET(request: Request) {
             const controller = new AbortController()
             const timeout = setTimeout(() => controller.abort(), 8000)
             const resp = await fetch(
-              `${APP_BASE_URL}/api/polymarket/price?conditionId=${encodeURIComponent(marketId)}`,
+              `${APP_BASE_URL}/api/polymarket/price?conditionId=${encodeURIComponent(marketId)}&tier=T2b`,
               { cache: 'no-store', signal: controller.signal }
             )
             clearTimeout(timeout)

@@ -183,7 +183,7 @@ export async function GET() {
           try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 4000);
-            const res = await fetch(`${baseUrl}/api/polymarket/price?conditionId=${conditionId}`, { cache: 'no-store', signal: controller.signal });
+            const res = await fetch(`${baseUrl}/api/polymarket/price?conditionId=${conditionId}&tier=T3`, { cache: 'no-store', signal: controller.signal });
             clearTimeout(timeout);
             if (res.ok) {
               const json = await res.json();

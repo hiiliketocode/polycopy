@@ -1,6 +1,11 @@
-// Proxy API for fetching Polymarket prices
-// Gamma-first with in-memory cache (2-3s TTL) for live pricing.
-// CLOB API is fallback only. Supabase markets table updated as side-effect.
+// Proxy API for fetching Polymarket prices (single source of truth for live pricing).
+// Returns MARKET price (CLOB/Gamma order book / token price), not execution price — execution price comes from the CLOB order/fill response when you place an order.
+//
+// Live pricing flow (do not bypass; all UIs should use this endpoint or DB written by it):
+// 1. DB-first: if markets.outcome_prices + last_price_updated_at within caller's maxAgeMs (tier), return that.
+// 2. Else: fetch Gamma; if Gamma has placeholder (e.g. all 0.5), try CLOB and use CLOB if real.
+// 3. Return chosen prices; write back to markets via updateMarketsPriceCache so next request can use DB.
+// 4. In-memory cache (short TTL) reduces duplicate Gamma/CLOB calls; DB is the durable cache.
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -23,10 +28,21 @@ const supabaseAdmin =
       })
     : null;
 
+// ── Freshness tiers (contextual per use case) ──
+// Callers pass tier= or maxAgeMs=; DB and in-memory cache use this to decide "fresh enough".
+// See docs/PRICE_FRESHNESS_TIERS.md for every caller and tier.
+export const PRICE_FRESHNESS_TIERS_MS: Record<string, number> = {
+  T1: 30_000,       // Execution: trade-execute, LT/FT when placing orders, bots when trading (market price for sizing)
+  T2a: 250,         // Feed (live): feed table + cards; 250ms so display feels real-time
+  T2b: 15_000,      // Portfolio / profile / trader / discover
+  T3: 120_000,      // Dashboard: portfolio stats, FT list, FT wallet [id], trader my-stats
+  T4: 600_000,      // Background: crons, analytics (10 min)
+};
+const DEFAULT_FRESHNESS_MS = PRICE_FRESHNESS_TIERS_MS.T2b; // 15s when caller doesn't specify
+
 // ── In-memory price cache ──
-// Keyed by conditionId. Stores full response JSON + timestamp.
-// TTL: 3 seconds — keeps feed live while preventing duplicate API calls.
-const PRICE_CACHE_TTL_MS = 3_000;
+// Keyed by conditionId. TTL respects caller's maxAgeMs so feed (250ms) gets fresher data than dashboard (2min).
+const PRICE_CACHE_TTL_MS = 3_000; // upper bound when caller asks for very fresh
 const MAX_CACHE_SIZE = 2000;
 
 type CachedPrice = { response: any; cachedAt: number };
@@ -36,10 +52,11 @@ const priceCache = new Map<string, CachedPrice>();
 // await the same promise instead of making a duplicate API call.
 const inFlightRequests = new Map<string, Promise<Response>>();
 
-function getCachedPrice(key: string): any | null {
+function getCachedPrice(key: string, maxAgeMs?: number): any | null {
   const entry = priceCache.get(key);
   if (!entry) return null;
-  if (Date.now() - entry.cachedAt > PRICE_CACHE_TTL_MS) {
+  const ttl = maxAgeMs != null ? Math.min(PRICE_CACHE_TTL_MS, maxAgeMs) : PRICE_CACHE_TTL_MS;
+  if (Date.now() - entry.cachedAt > ttl) {
     priceCache.delete(key);
     return null;
   }
@@ -88,11 +105,19 @@ export async function GET(request: Request) {
   const slug = searchParams.get('slug');
   const eventSlug = searchParams.get('eventSlug');
   const title = searchParams.get('title');
+  const tierParam = searchParams.get('tier');
+  const maxAgeParam = searchParams.get('maxAgeMs');
+  const maxAgeMs =
+    maxAgeParam != null && /^\d+$/.test(maxAgeParam)
+      ? Math.min(Number(maxAgeParam), PRICE_CACHE_TTL_MS * 2)
+      : tierParam && PRICE_FRESHNESS_TIERS_MS[tierParam] != null
+        ? PRICE_FRESHNESS_TIERS_MS[tierParam]
+        : DEFAULT_FRESHNESS_MS;
 
-  // ── Fast path: return from in-memory cache if fresh ──
+  // ── Fast path: return from in-memory cache if fresh for this tier ──
   const cacheKey = conditionId || slug || title || '';
   if (cacheKey) {
-    const cached = getCachedPrice(cacheKey);
+    const cached = getCachedPrice(cacheKey, maxAgeMs);
     if (cached) {
       return NextResponse.json(cached);
     }
@@ -108,6 +133,12 @@ export async function GET(request: Request) {
         // If the pending request failed, fall through to fetch fresh
       }
     }
+  }
+
+  // DB-first: if we have outcome_prices in markets table fresh within maxAgeMs, use them
+  if (conditionId) {
+    const freshResponse = await tryFreshPriceFromDb(maxAgeMs);
+    if (freshResponse) return freshResponse;
   }
 
   const normalizeEndDate = (value: any) => {
@@ -184,41 +215,79 @@ export async function GET(request: Request) {
     }
   };
 
-  const loadCachedMarket = async () => {
+  const loadCachedMarket = async (includePrices = false) => {
     if (!supabaseAdmin || !conditionId) return null;
-    
-    // Always look up by condition_id (primary key) - we always have condition_id
+    const columns = [
+      'condition_id',
+      'market_slug',
+      'event_slug',
+      'title',
+      'start_time',
+      'end_time',
+      'close_time',
+      'completed_time',
+      'game_start_time',
+      'status',
+      'winning_side',
+      'image',
+      'description',
+      'tags',
+      'espn_url',
+      'espn_game_id',
+      'espn_last_checked',
+    ];
+    if (includePrices) {
+      columns.push('outcome_prices', 'last_price_updated_at', 'closed');
+    }
     const { data, error } = await supabaseAdmin
       .from('markets')
-      .select(
-        [
-          'condition_id',
-          'market_slug',
-          'event_slug',
-          'title',
-          'start_time',
-          'end_time',
-          'close_time',
-          'completed_time',
-          'game_start_time',
-          'status',
-          'winning_side',
-          'image',
-          'description',
-          'tags',
-          'espn_url',
-          'espn_game_id',
-          'espn_last_checked',
-        ].join(',')
-      )
+      .select(columns.join(','))
       .eq('condition_id', conditionId)
       .maybeSingle();
-    
     if (error) {
       console.warn('[Price API] Failed to read market cache:', error.message || error);
       return null;
     }
     return data ?? null;
+  };
+
+  /** If we have outcome_prices in DB updated within maxAgeMs, return them (no Gamma/CLOB). */
+  const tryFreshPriceFromDb = async (maxAgeMs: number): Promise<Response | null> => {
+    if (!conditionId || !conditionId.startsWith('0x')) return null;
+    const row = await loadCachedMarket(true) as any;
+    const op = row?.outcome_prices;
+    if (!op || typeof op !== 'object') return null;
+    let outcomes: string[] | null = op.outcomes ?? op.labels ?? op.choices ?? null;
+    let outcomePrices: number[] | null = Array.isArray(op.outcomePrices) ? op.outcomePrices : Array.isArray(op.prices) ? op.prices : Array.isArray(op.probabilities) ? op.probabilities : null;
+    if ((!outcomes || !Array.isArray(outcomes)) && op && typeof op === 'object' && !Array.isArray(op)) {
+      const keys = Object.keys(op).filter((k) => !['outcomes', 'outcomePrices', 'prices', 'labels', 'choices', 'probabilities'].includes(k));
+      if (keys.length > 0) {
+        const vals = keys.map((k) => Number((op as Record<string, unknown>)[k]));
+        if (vals.every((n) => Number.isFinite(n))) {
+          outcomes = keys;
+          outcomePrices = vals;
+        }
+      }
+    }
+    if (!Array.isArray(outcomes) || !Array.isArray(outcomePrices) || outcomes.length === 0) return null;
+    const last = row.last_price_updated_at ? new Date(row.last_price_updated_at).getTime() : 0;
+    if (Number.isNaN(last) || Date.now() - last > maxAgeMs) return null;
+    const closed = row.closed === true;
+    const marketPayload = {
+      conditionId,
+      outcomes,
+      outcomePrices: outcomePrices.map((p: any) => Number(p)),
+      closed,
+      resolved: closed,
+      question: row.title,
+      title: row.title,
+      slug: row.market_slug,
+      icon: row.image,
+      image: row.image,
+    };
+    const response = { success: true, market: marketPayload };
+    setCachedPrice(cacheKey, response);
+    return NextResponse.json(response);
   };
 
   const ensureCachedMarket = async () => {
@@ -509,7 +578,7 @@ export async function GET(request: Request) {
       null;
     const cryptoPriceUsd = cryptoSymbol ? await fetchCryptoSpotPrice(cryptoSymbol) : null;
 
-    // Try 1: Gamma API by condition_id (primary — no CLOB for display)
+    // Try 1: Gamma API by condition_id (primary)
     if (conditionId && conditionId.startsWith('0x')) {
       try {
         const gammaRes = await fetch(
@@ -520,10 +589,31 @@ export async function GET(request: Request) {
           const gammaData = await gammaRes.json();
           const gammaMarket = Array.isArray(gammaData) && gammaData.length > 0 ? gammaData[0] : null;
           if (gammaMarket) {
-            let prices = gammaMarket.outcomePrices;
+            let pricesRaw = gammaMarket.outcomePrices ?? gammaMarket.outcome_prices ?? gammaMarket.prices;
             let outcomes = gammaMarket.outcomes;
-            if (typeof prices === 'string') { try { prices = JSON.parse(prices); } catch { prices = null; } }
+            if (typeof pricesRaw === 'string') { try { pricesRaw = JSON.parse(pricesRaw); } catch { pricesRaw = null; } }
             if (typeof outcomes === 'string') { try { outcomes = JSON.parse(outcomes); } catch { outcomes = null; } }
+            let prices = Array.isArray(pricesRaw) ? pricesRaw.map((p: any) => Number(p)) : null;
+            const isPlaceholderPrices = prices && prices.length > 0 && prices.every((p: number) => p === 0.5);
+            if (isPlaceholderPrices && conditionId) {
+              try {
+                const clobRes = await fetch(`https://clob.polymarket.com/markets/${conditionId}`, { cache: 'no-store' });
+                if (clobRes.ok) {
+                  const clob = await clobRes.json();
+                  if (Array.isArray(clob?.tokens) && clob.tokens.length > 0) {
+                    const clobPrices = clob.tokens.map((t: any) => {
+                      const p = t?.price;
+                      return typeof p === 'number' ? p : (typeof p === 'string' ? parseFloat(p) : NaN);
+                    });
+                    if (clobPrices.some((p: number) => Number.isFinite(p) && p > 0.01 && p < 0.99)) {
+                      prices = clobPrices;
+                    }
+                  }
+                }
+              } catch {
+                /* keep Gamma placeholder if CLOB fails */
+              }
+            }
             if (outcomes && Array.isArray(outcomes) && prices && Array.isArray(prices)) {
               const endDateIso = cachedEndTime
                 ? normalizeEndDate(cachedEndTime)

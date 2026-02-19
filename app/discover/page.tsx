@@ -1151,6 +1151,7 @@ function DiscoverPageContent() {
           if (trade.conditionId) params.set('conditionId', trade.conditionId);
           else if (trade.marketSlug) params.set('slug', trade.marketSlug);
           else if (trade.marketTitle) params.set('title', trade.marketTitle);
+          params.set('tier', 'T2b');
 
           try {
             const response = await fetch(`/api/polymarket/price?${params.toString()}`, { cache: 'no-store' });

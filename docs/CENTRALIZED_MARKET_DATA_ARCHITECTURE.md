@@ -199,6 +199,7 @@ Resolved/closed markets: always serve from cache (no max age). Rules:
 
 ## 9. References
 
+- **Freshness tiers (per-flow):** `docs/PRICE_FRESHNESS_TIERS.md` — every caller (frontend + backend), which tier (T1–T4), and max age.
 - **Rigorous analysis:** `docs/MARKET_DATA_RIGOROUS_ANALYSIS.md` — components, break risks, APIs, Dome usage.
 - **Cache stampede / single-flight:** Request coalescing (e.g. in-process Promise map per condition_id).
 - **APIs:** Polymarket [pricing API](https://docs.polymarket.com/api-reference/pricing/) (CLOB), [Dome API](https://docs.domeapi.io/) (markets + market price).

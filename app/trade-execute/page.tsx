@@ -1478,6 +1478,7 @@ function TradeExecutePageInner() {
         if (conditionId) params.set('conditionId', String(conditionId))
         if (slug) params.set('slug', String(slug))
         if (title) params.set('title', String(title))
+        params.set('tier', 'T1') // Execution: need fresh price for order
 
         const priceRes = await fetch(`/api/polymarket/price?${params.toString()}`)
         const priceData = await priceRes.json()
