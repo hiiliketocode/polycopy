@@ -10,8 +10,7 @@ import { Crown } from 'lucide-react';
 export default function BottomNav() {
   const pathname = usePathname();
 
-  // Hide bottom nav on login/signup pages
-  if (pathname === '/login' || pathname?.startsWith('/login?')) {
+  if (pathname === '/login' || pathname?.startsWith('/login?') || pathname === '/onboarding') {
     return null;
   }
 

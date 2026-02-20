@@ -40,35 +40,10 @@ export default function OnboardingPage() {
     checkAuth();
   }, [router]);
 
-  // Hide mobile bottom nav and footer by adding class to body
   React.useEffect(() => {
     document.body.classList.add('hide-mobile-nav');
-    
-    // Hide the website footer more aggressively
-    const hideFooter = () => {
-      const footers = document.querySelectorAll('body > footer, body > div > footer:not([class*="fixed"])');
-      footers.forEach(footer => {
-        if (footer instanceof HTMLElement && !footer.querySelector('[class*="border-t"]')) {
-          // Only hide the main website footer, not our onboarding footer
-          footer.style.display = 'none';
-        }
-      });
-    };
-    
-    hideFooter();
-    // Check again after a brief delay in case footer loads later
-    const timer = setTimeout(hideFooter, 100);
-    
     return () => {
-      clearTimeout(timer);
       document.body.classList.remove('hide-mobile-nav');
-      // Restore all footers
-      const footers = document.querySelectorAll('body > footer, body > div > footer');
-      footers.forEach(footer => {
-        if (footer instanceof HTMLElement) {
-          footer.style.display = '';
-        }
-      });
     };
   }, []);
 

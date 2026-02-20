@@ -275,9 +275,10 @@ body {
   
 }
 
-/* Hide mobile navigation & footer when body has this class (for onboarding) */
-body.hide-mobile-nav nav.fixed,
-body.hide-mobile-nav footer {
+/* Hide mobile navigation & site footer when body has this class (for onboarding).
+   Exclude fixed footers so the onboarding step footer remains visible. */
+body.hide-mobile-nav nav.fixed:not([data-onboarding]),
+body.hide-mobile-nav footer:not(.fixed) {
   display: none !important;
 }
 body.hide-mobile-nav #main-content {
