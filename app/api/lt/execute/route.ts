@@ -24,6 +24,7 @@ import { detectTraderSells, executeSell } from '@/lib/live-trading/sell-manager'
 import { type FTWallet, type EnrichedTrade, getSourceTradeId, FT_SLIPPAGE_PCT } from '@/lib/ft-sync/shared-logic';
 
 const FT_LOOKBACK_HOURS = 12;  // Look back 12 hours for FT orders (was 6h; extended so we don't miss orders)
+const FT_ORDERS_FETCH_LIMIT = 2000;  // Explicit limit so we see newer trades when many OPEN (Supabase default 1000 would starve them)
 
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -111,7 +112,8 @@ export async function POST(request: Request) {
                 .eq('wallet_id', strategy.ft_wallet_id)
                 .eq('outcome', 'OPEN')
                 .gte('order_time', minOrderTime)
-                .order('order_time', { ascending: true });
+                .order('order_time', { ascending: true })
+                .limit(FT_ORDERS_FETCH_LIMIT);
 
             if (ftError) {
                 await strategyLogger.error('FT_QUERY', `FT orders query failed: ${ftError.message}`);
