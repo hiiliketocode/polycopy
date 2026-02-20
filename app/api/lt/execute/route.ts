@@ -35,6 +35,7 @@ export async function POST(request: Request) {
     const now = new Date();
 
     try {
+        await logger.info('EXECUTION_START', `LOG_FILTERS: POLL | TRADE | CASH | ERROR | SELL | FILTER — filter logs by typing one of these`);
         await logger.info('EXECUTION_START', `LT execution starting at ${now.toISOString()}`);
 
         // ── Step 1: Daily risk reset ──
@@ -56,7 +57,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ success: true, message: 'No active strategies', strategies: 0 });
         }
 
-        await logger.info('EXECUTION_START', `Found ${strategies.length} active strategies`);
+        await logger.info('EXECUTION_START', `POLL: strategies=${strategies.length}`);
 
         // ── Step 4: Load FT wallet configs ──
         const ftWalletIds = [...new Set(strategies.map(s => s.ft_wallet_id))];
@@ -66,7 +67,7 @@ export async function POST(request: Request) {
             .in('wallet_id', ftWalletIds);
 
         if (!ftWallets || ftWallets.length === 0) {
-            await logger.error('EXECUTION_END', 'No FT wallets found');
+            await logger.error('EXECUTION_END', 'ERROR: No FT wallets found');
             return NextResponse.json({ success: false, error: 'No FT wallets found' });
         }
 
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
 
         // ── Step 5: Process each strategy ──
         const results: Record<string, { executed: number; skipped: number; errors: number; reasons: Record<string, number> }> = {};
+        let totalFtCandidates = 0;
 
         // Sort strategies: process those with fewest recent ft_orders first
         // so that one busy strategy (e.g. 800+ orders) doesn't starve the rest.
@@ -116,7 +118,7 @@ export async function POST(request: Request) {
                 .limit(FT_ORDERS_FETCH_LIMIT);
 
             if (ftError) {
-                await strategyLogger.error('FT_QUERY', `FT orders query failed: ${ftError.message}`);
+                await strategyLogger.error('FT_QUERY', `ERROR: FT orders query failed: ${ftError.message}`);
                 summary.reasons['ft_query_error'] = 1;
                 continue;
             }
@@ -126,7 +128,8 @@ export async function POST(request: Request) {
                 continue;
             }
 
-            await strategyLogger.info('FT_QUERY', `Found ${ftOrders.length} OPEN ft_orders to consider`);
+            totalFtCandidates += ftOrders.length;
+            await strategyLogger.info('FT_QUERY', `POLL: ft_order_candidates=${ftOrders.length} (total_this_run=${totalFtCandidates})`);
 
             // ── Step 5b: Dedup against existing lt_orders (only placed/live — NOT rejected) ──
             // REJECTED orders are excluded so we retry (e.g. transient token resolution, dead market).
@@ -226,7 +229,7 @@ export async function POST(request: Request) {
                 } catch (err: any) {
                     summary.errors++;
                     summary.reasons['exception'] = (summary.reasons['exception'] || 0) + 1;
-                    await strategyLogger.error('ERROR', `Exception executing trade: ${err.message}`, {
+                    await strategyLogger.error('ERROR', `ERROR: Exception executing trade: ${err.message}`, {
                         source_trade_id: sourceTradeId,
                         error: err.message,
                     });
@@ -242,7 +245,7 @@ export async function POST(request: Request) {
                 .update({ last_sync_time: now.toISOString(), updated_at: now.toISOString() })
                 .eq('strategy_id', strategy.strategy_id);
 
-            await strategyLogger.info('STRATEGY_END', `Strategy done: ${summary.executed} executed, ${summary.skipped} skipped (dedup), ${summary.errors} errors`, summary);
+            await strategyLogger.info('STRATEGY_END', `TRADE: Strategy done: ${summary.executed} executed, ${summary.skipped} skipped (dedup), ${summary.errors} errors`, summary);
         }
 
         const totalExecuted = Object.values(results).reduce((s, r) => s + r.executed, 0);
@@ -253,12 +256,12 @@ export async function POST(request: Request) {
         try {
             const sellCandidates = await detectTraderSells(supabase, logger);
             if (sellCandidates.length > 0) {
-                await logger.info('SELL_DETECT', `Found ${sellCandidates.length} positions where trader sold`);
+                await logger.info('SELL_DETECT', `SELL: Found ${sellCandidates.length} positions where trader sold`);
                 for (const candidate of sellCandidates) {
                     const sellResult = await executeSell(supabase, candidate, 1.0, logger);
                     if (sellResult.success) {
                         totalSells++;
-                        await logger.info('SELL_EXECUTE', `Sold ${sellResult.shares_sold} shares @ $${sellResult.sell_price?.toFixed(4)} = $${sellResult.sell_proceeds?.toFixed(2)}`, {
+                        await logger.info('SELL_EXECUTE', `SELL: Sold ${sellResult.shares_sold} shares @ $${sellResult.sell_price?.toFixed(4)} = $${sellResult.sell_proceeds?.toFixed(2)}`, {
                             lt_order_id: candidate.lt_order_id,
                             strategy_id: candidate.strategy_id,
                         });
@@ -266,10 +269,12 @@ export async function POST(request: Request) {
                 }
             }
         } catch (sellErr: any) {
-            await logger.warn('SELL_ERROR', `Sell detection error (non-fatal): ${sellErr.message}`);
+            await logger.warn('SELL_ERROR', `ERROR: Sell detection error (non-fatal): ${sellErr.message}`);
         }
 
-        await logger.info('EXECUTION_END', `LT execution complete: ${totalExecuted} buys, ${totalSells} sells, ${totalErrors} errors across ${strategies.length} strategies`, {
+        await logger.info('EXECUTION_END', `POLL: strategies=${strategies.length} ft_candidates=${totalFtCandidates} executed=${totalExecuted} sells=${totalSells} errors=${totalErrors}`, {
+            strategies: strategies.length,
+            ft_candidates: totalFtCandidates,
             total_executed: totalExecuted,
             total_sells: totalSells,
             total_errors: totalErrors,
@@ -287,7 +292,7 @@ export async function POST(request: Request) {
             results,
         });
     } catch (error: any) {
-        await logger.error('ERROR', `LT execution fatal error: ${error.message}`, { error: error.message, stack: error.stack?.slice(0, 500) });
+        await logger.error('ERROR', `ERROR: LT execution fatal error: ${error.message}`, { error: error.message, stack: error.stack?.slice(0, 500) });
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }

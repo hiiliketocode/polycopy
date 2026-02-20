@@ -160,7 +160,8 @@ export async function POST(request: Request) {
       });
     }
     
-    console.log(`[ft/sync] Found ${activeWallets.length} active wallets (stalest-first)`);
+    console.log('[ft/sync] LOG_FILTERS: POLL | TRADE | ERROR | FILTER — filter logs by typing one of these');
+    console.log(`[ft/sync] POLL: wallets_to_poll=${activeWallets.length} (stalest-first)`);
     
     // 2. Get traders from different pools based on strategy needs
     // Fetch multiple pools: month/week for quality, DAY for currently active (critical for live events like Super Bowl)
@@ -520,7 +521,7 @@ export async function POST(request: Request) {
     }
     console.log(`[ft/sync] Trade fetch: ${eligibleTraders.length} traders in ${((Date.now() - fetchStartMs) / 1000).toFixed(1)}s (concurrency=${FETCH_CONCURRENCY})`);
     
-    console.log(`[ft/sync] Collected ${allTrades.length} BUY trades from ${topTraders.length} traders`);
+    console.log(`[ft/sync] POLL: trades_found=${allTrades.length} (from ${topTraders.length} traders)`);
     
     if (allTrades.length === 0) {
       return NextResponse.json({
@@ -1056,6 +1057,11 @@ export async function POST(request: Request) {
       totalEvaluated += results[walletId].evaluated;
     }
 
+    console.log(`[ft/sync] POLL: FT_candidates_evaluated=${totalEvaluated} ft_orders_inserted=${totalInserted} (wallets_processed=${walletsProcessed}/${activeWallets.length})`);
+    if (totalInserted > 0) {
+      console.log(`[ft/sync] TRADE: ft_orders_inserted=${totalInserted}`);
+    }
+
     // Diagnostic: log wallets with 0 inserts and their top skip reasons (for debugging zero-trade bots)
     const zeroInsertWalletIds = Object.keys(results).filter(id => (results[id]?.inserted ?? 0) === 0);
     if (zeroInsertWalletIds.length > 0) {
@@ -1066,7 +1072,7 @@ export async function POST(request: Request) {
         const sorted = Object.entries(r.reasons).sort((a, b) => b[1] - a[1]).slice(0, 5) as [string, number][];
         reasonsSummary[id] = { evaluated: r.evaluated, top_reasons: sorted };
       }
-      console.log('[ft/sync] Zero-insert wallets (sample):', JSON.stringify(reasonsSummary).slice(0, 2500));
+      console.log('[ft/sync] FILTER: Zero-insert wallets (sample):', JSON.stringify(reasonsSummary).slice(0, 2500));
     }
 
     return NextResponse.json({
@@ -1090,7 +1096,7 @@ export async function POST(request: Request) {
     });
     
   } catch (error) {
-    console.error('[ft/sync] Error:', error);
+    console.error('[ft/sync] ERROR: Sync failed:', error);
     return NextResponse.json(
       { success: false, error: 'Sync failed', details: String(error) },
       { status: 500 }

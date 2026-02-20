@@ -133,11 +133,11 @@ export async function getActiveStrategies(
         .from('lt_strategies')
         .select('*')
         .eq('is_active', true)
-        .eq('is_paused', false)
-        .eq('circuit_breaker_active', false);
+        .eq('is_paused', false);
 
     if (error || !data) return [];
-    return data as LTStrategy[];
+    const rows = data as (LTStrategy & { circuit_breaker_active?: boolean })[];
+    return rows.filter((s) => s.circuit_breaker_active !== true) as LTStrategy[];
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ export async function executeTrade(
     // ── Step 3: Lock capital ──
     const lockResult = await lockCapitalForTrade(supabase, strategy.strategy_id, betSize);
     if (!lockResult.success) {
-        await traceLogger.warn('CASH_CHECK', `Capital lock failed: ${lockResult.error}`, {
+        await traceLogger.warn('CASH_CHECK', `CASH: Capital lock failed: ${lockResult.error}`, {
             needed: betSize,
             available_before: lockResult.available_before,
         });
@@ -240,7 +240,7 @@ export async function executeTrade(
         return { success: false, error: lockResult.error, stage: 'CASH_CHECK', bet_size: betSize };
     }
 
-    await traceLogger.info('CASH_CHECK', `Locked $${betSize.toFixed(2)} (was $${lockResult.available_before?.toFixed(2)} → $${lockResult.available_after?.toFixed(2)})`, {
+    await traceLogger.info('CASH_CHECK', `CASH: Locked $${betSize.toFixed(2)} (was $${lockResult.available_before?.toFixed(2)} → $${lockResult.available_after?.toFixed(2)})`, {
         locked_amount: betSize,
     });
 
@@ -248,7 +248,7 @@ export async function executeTrade(
     const riskState = await loadStrategyRiskState(supabase, strategy.strategy_id);
     if (!riskState) {
         await unlockCapital(supabase, strategy.strategy_id, betSize);
-        await traceLogger.error('RISK_CHECK', 'Failed to load risk state');
+        await traceLogger.error('RISK_CHECK', 'ERROR: Failed to load risk state');
         return { success: false, error: 'Failed to load risk state', stage: 'RISK_CHECK', bet_size: betSize };
     }
 
@@ -260,7 +260,7 @@ export async function executeTrade(
 
     if (!riskCheck.allowed) {
         await unlockCapital(supabase, strategy.strategy_id, betSize);
-        await traceLogger.warn('RISK_CHECK', `Risk check failed: ${riskCheck.reason}`, {
+        await traceLogger.warn('RISK_CHECK', `FILTER: Risk check failed: ${riskCheck.reason}`, {
             check_failed: riskCheck.check_failed,
         });
         await recordRejectedOrder(supabase, strategy, trade, sourceTradeId, ftOrderId, betSize, price, side, riskCheck.reason, riskCheck.check_failed);
@@ -271,7 +271,7 @@ export async function executeTrade(
     const tokenId = trade.asset || await resolveTokenId(supabase, trade.conditionId || '', trade.outcome || 'YES', traceLogger);
     if (!tokenId) {
         await unlockCapital(supabase, strategy.strategy_id, betSize);
-        await traceLogger.error('TOKEN_RESOLVE', `Token resolution failed for ${trade.conditionId}`);
+        await traceLogger.error('TOKEN_RESOLVE', `ERROR: Token resolution failed for ${trade.conditionId}`);
         return { success: false, error: 'Token ID resolution failed', stage: 'TOKEN_RESOLVE', bet_size: betSize };
     }
 
@@ -313,7 +313,7 @@ export async function executeTrade(
                 // Check 1: Absolute floor (only when signal was a real trade, not a long-shot)
                 if (midpoint < DEAD_MARKET_FLOOR && price >= DEAD_MARKET_SIGNAL_THRESHOLD) {
                     await unlockCapital(supabase, strategy.strategy_id, betSize);
-                    await traceLogger.warn('DEAD_MARKET', `Market collapsed to ${midpoint.toFixed(4)} (signal was ${price.toFixed(4)}) — dead market. Skipping.`, {
+                    await traceLogger.warn('DEAD_MARKET', `FILTER: Market collapsed to ${midpoint.toFixed(4)} (signal was ${price.toFixed(4)}) — dead market. Skipping.`, {
                         midpoint,
                         signal_price: price,
                         drift_pct: +driftPct.toFixed(1),
@@ -327,7 +327,7 @@ export async function executeTrade(
                 // Check 2: Signal drift (catches cases where price dropped significantly)
                 if (driftPct > DEAD_MARKET_MAX_DRIFT_PCT) {
                     await unlockCapital(supabase, strategy.strategy_id, betSize);
-                    await traceLogger.warn('DEAD_MARKET', `Signal drift ${driftPct.toFixed(0)}%: signal ${price.toFixed(4)} → market ${midpoint.toFixed(4)}. Skipping.`, {
+                    await traceLogger.warn('DEAD_MARKET', `FILTER: Signal drift ${driftPct.toFixed(0)}%: signal ${price.toFixed(4)} → market ${midpoint.toFixed(4)}. Skipping.`, {
                         midpoint,
                         signal_price: price,
                         drift_pct: +driftPct.toFixed(1),
@@ -417,7 +417,7 @@ export async function executeTrade(
     const expiration = Math.floor(Date.now() / 1000) + ORDER_EXPIRATION_MINUTES * 60;
     const orderType = 'GTD' as const;
 
-    await traceLogger.info('ORDER_PLACE', `Placing GTD ${side}: ${finalSize} contracts @ ${finalPrice} (expires in ${ORDER_EXPIRATION_MINUTES}m)`, {
+    await traceLogger.info('ORDER_PLACE', `TRADE: Placing GTD ${side}: ${finalSize} contracts @ ${finalPrice} (expires in ${ORDER_EXPIRATION_MINUTES}m)`, {
         order_type: orderType,
         final_price: finalPrice,
         final_size: finalSize,
@@ -451,14 +451,14 @@ export async function executeTrade(
         });
     } catch (err: any) {
         await unlockCapital(supabase, strategy.strategy_id, betSize);
-        await traceLogger.error('ORDER_PLACE', `Place order threw: ${err.message}`, { error: err.message });
+        await traceLogger.error('ORDER_PLACE', `ERROR: Place order threw: ${err.message}`, { error: err.message });
         return { success: false, error: `Order placement error: ${err.message}`, stage: 'ORDER_PLACE', bet_size: betSize };
     }
 
     if (!result.success) {
         await unlockCapital(supabase, strategy.strategy_id, betSize);
         const errMsg = 'message' in result.evaluation ? result.evaluation.message : 'Order placement failed';
-        await traceLogger.error('ORDER_PLACE', `Order rejected: ${errMsg}`, { evaluation: result.evaluation });
+        await traceLogger.error('ORDER_PLACE', `ERROR: Order rejected: ${errMsg}`, { evaluation: result.evaluation });
         return { success: false, error: errMsg, stage: 'ORDER_PLACE', bet_size: betSize };
     }
 
@@ -466,14 +466,14 @@ export async function executeTrade(
     const orderEventId = result.orderEventId ?? null;
 
     // ── Step 9: Poll CLOB for fill ──
-    await traceLogger.info('ORDER_POLL', `Polling CLOB for order ${orderId} (${POLL_INTERVAL_MS}ms interval)`);
+    await traceLogger.info('ORDER_POLL', `TRADE: Polling CLOB for order ${orderId} (${POLL_INTERVAL_MS}ms interval)`);
     const pollResult = await pollOrderUntilTerminal(strategy.user_id, orderId, traceLogger);
     const executionLatency = Date.now() - signalTime;
 
     const filled = pollResult.sizeMatched > 0;
     const fillRate = pollResult.originalSize > 0 ? pollResult.sizeMatched / pollResult.originalSize : 0;
 
-    await traceLogger.info('ORDER_RESULT', `Poll result: ${pollResult.status} filled=${pollResult.sizeMatched}/${pollResult.originalSize}`, {
+    await traceLogger.info('ORDER_RESULT', `TRADE: Poll result: ${pollResult.status} filled=${pollResult.sizeMatched}/${pollResult.originalSize}`, {
         ...pollResult,
         execution_latency_ms: executionLatency,
     });
@@ -493,7 +493,7 @@ export async function executeTrade(
             }).eq('id', orderEventId);
         }
 
-        await traceLogger.warn('ORDER_RESULT', `Order rejected/cancelled: ${pollResult.status} — capital unlocked`, {
+        await traceLogger.warn('ORDER_RESULT', `ERROR: Order rejected/cancelled: ${pollResult.status} — capital unlocked`, {
             order_id: orderId,
         });
 
