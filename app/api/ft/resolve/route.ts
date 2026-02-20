@@ -278,16 +278,26 @@ export async function POST(request: Request) {
     // 6. Full reconciliation: recompute total_pnl for ALL ft_wallets from ft_orders
     // Fixes PnL drift between wallet.total_pnl and sum of order PnL (doc Section 4)
     // Run hourly to avoid excessive DB load
+    // Uses paginated fetch to handle wallets with >1000 orders (e.g. T0_CONTROL, FT_ML_LOOSE)
     const runReconciliation = now.getMinutes() === 0;
     let reconciled = 0;
     if (runReconciliation) {
       const { data: allWallets } = await supabase.from('ft_wallets').select('wallet_id, starting_balance');
       for (const w of allWallets || []) {
-        const { data: ords } = await supabase
-          .from('ft_orders')
-          .select('outcome, pnl, size')
-          .eq('wallet_id', w.wallet_id);
-        const orders = ords || [];
+        const orders: { outcome: string; pnl?: number; size?: number }[] = [];
+        let reconOffset = 0;
+        while (true) {
+          const { data: page, error: pageErr } = await supabase
+            .from('ft_orders')
+            .select('outcome, pnl, size')
+            .eq('wallet_id', w.wallet_id)
+            .order('order_id', { ascending: true })
+            .range(reconOffset, reconOffset + PAGE_SIZE - 1);
+          if (pageErr || !page || page.length === 0) break;
+          orders.push(...page);
+          if (page.length < PAGE_SIZE) break;
+          reconOffset += PAGE_SIZE;
+        }
         const totalTrades = orders.length;
         const openPositions = orders.filter((o: { outcome: string }) => o.outcome === 'OPEN').length;
         const totalPnl = orders
