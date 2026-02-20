@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { fetchUserWalletAddress } from '@/lib/wallet-utils';
 import { useAuthState } from '@/lib/auth/useAuthState';
 import { triggerLoggedOut } from '@/lib/auth/logout-events';
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from '@/lib/feature-tier';
@@ -1862,17 +1863,13 @@ export default function FeedPage() {
 
     const fetchProfileAndWallet = async () => {
       try {
-        const [profileRes, walletRes] = await Promise.all([
+        const [profileRes, resolvedAddr] = await Promise.all([
           supabase
             .from('profiles')
             .select('is_premium, is_admin, profile_image_url')
             .eq('id', user.id)
             .single(),
-          supabase
-            .from('turnkey_wallets')
-            .select('polymarket_account_address, eoa_address')
-            .eq('user_id', user.id)
-            .maybeSingle()
+          fetchUserWalletAddress(user.id),
         ]);
 
         if (profileRes.error) {
@@ -1890,11 +1887,7 @@ export default function FeedPage() {
           setUserTier(resolveFeatureTier(true, profileRes.data));
           setIsPremium(profileRes.data?.is_premium || false);
           setProfileImageUrl(profileRes.data?.profile_image_url || null);
-          setWalletAddress(
-            walletRes.data?.polymarket_account_address || 
-            walletRes.data?.eoa_address || 
-            null
-          );
+          setWalletAddress(resolvedAddr);
           setTierLoading(false);
         }
       } catch (err) {
@@ -1920,16 +1913,8 @@ export default function FeedPage() {
     if (!user) return;
 
     try {
-      const { data: walletData } = await supabase
-        .from('turnkey_wallets')
-        .select('polymarket_account_address, eoa_address')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      const connectedWallet =
-        walletData?.polymarket_account_address ||
-        walletData?.eoa_address ||
-        address;
+      const resolvedWallet = await fetchUserWalletAddress(user.id);
+      const connectedWallet = resolvedWallet || address;
 
       setWalletAddress(connectedWallet || null);
 

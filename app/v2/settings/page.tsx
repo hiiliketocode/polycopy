@@ -15,6 +15,7 @@ import {
   AlertTriangle,
 } from "lucide-react"
 import { supabase, ensureProfile } from "@/lib/supabase"
+import { fetchUserWalletAddress } from "@/lib/wallet-utils"
 import { useAuthState } from "@/lib/auth/useAuthState"
 import { resolveFeatureTier, tierHasPremiumAccess } from "@/lib/feature-tier"
 import { UpgradeModal } from "@/components/polycopy-v2/upgrade-modal"
@@ -77,16 +78,16 @@ export default function V2SettingsPage() {
     let mounted = true
     const fetchProfile = async () => {
       try {
-        const [profileRes, walletRes] = await Promise.all([
+        const [profileRes, walletAddr] = await Promise.all([
           supabase.from("profiles").select("is_premium, is_admin, profile_image_url").eq("id", user.id).single(),
-          supabase.from("turnkey_wallets").select("polymarket_account_address, eoa_address").eq("user_id", user.id).maybeSingle(),
+          fetchUserWalletAddress(user.id),
         ])
         if (!mounted) return
         if (profileRes.error) { setIsPremium(false); return }
         setIsPremium(Boolean(profileRes.data?.is_premium || profileRes.data?.is_admin))
         setProfile({
           ...profileRes.data,
-          trading_wallet_address: walletRes.data?.polymarket_account_address || walletRes.data?.eoa_address || null,
+          trading_wallet_address: walletAddr,
         })
       } catch (err) {
         console.error("Error fetching profile:", err)
@@ -364,7 +365,7 @@ export default function V2SettingsPage() {
                     <p className="font-sans text-xs font-bold uppercase tracking-wide text-poly-black">CURRENT PLAN</p>
                   </div>
                   <p className="mb-3 font-body text-xs text-muted-foreground">
-                    Unlock all bot strategies, zero trading fees, and AI recommendations.
+                    Unlock all bot strategies, zero trading fees, and AI insights.
                   </p>
                   <button
                     onClick={() => setShowUpgradeModal(true)}

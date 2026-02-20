@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { ShareCardModal } from "@/components/polycopy-v2/share-card-modal"
 import { supabase } from "@/lib/supabase"
+import { fetchUserWalletAddress } from "@/lib/wallet-utils"
 import { cn } from "@/lib/utils"
 import {
   ResponsiveContainer,
@@ -277,6 +278,9 @@ export default function TraderProfilePage({
   /* ── Trades ── */
   const [trades, setTrades] = useState<any[]>([])
   const [tradeCards, setTradeCards] = useState<TradeData[]>([])
+  const [closedPositions, setClosedPositions] = useState<any[]>([])
+  const [totalTradeCount, setTotalTradeCount] = useState(0)
+  const [tradeCountCapped, setTradeCountCapped] = useState(false)
   const [loadingTrades, setLoadingTrades] = useState(true)
   const [tradesToShow, setTradesToShow] = useState(15)
 
@@ -318,14 +322,9 @@ export default function TraderProfilePage({
       }
       setUser(user)
 
-      // Get user's wallet
-      const { data: walletData } = await supabase
-        .from("turnkey_wallets")
-        .select("polymarket_account_address, eoa_address")
-        .eq("user_id", user.id)
-        .maybeSingle()
-      if (walletData) {
-        setWalletAddress(walletData.polymarket_account_address || walletData.eoa_address || null)
+      const walletAddr = await fetchUserWalletAddress(user.id)
+      if (walletAddr) {
+        setWalletAddress(walletAddr)
       }
     }
     checkAuth()
@@ -431,6 +430,15 @@ export default function TraderProfilePage({
           }
           if (typeof data.tradingDaysActive === "number") {
             setTradingDaysActive(data.tradingDaysActive)
+          }
+          if (Array.isArray(data.positions?.closed)) {
+            setClosedPositions(data.positions.closed)
+          }
+          if (typeof data.totalTradeCount === "number") {
+            setTotalTradeCount(data.totalTradeCount)
+          }
+          if (data.tradeCountCapped) {
+            setTradeCountCapped(true)
           }
         }
 
@@ -565,6 +573,33 @@ export default function TraderProfilePage({
     return { totalPnl, avgDaily, rank: ranking?.rank, daysActive, daysUp, daysDown, roi }
   }, [pnlSummaries, realizedWindowRows, pnlRankings, pnlWindow, traderVolume, trader?.volume, tradingDaysActive])
 
+  const activityStreak = useMemo(() => {
+    if (sortedPnlRows.length === 0) return { days: 0, isActive: false }
+    const pnlDateSet = new Set(sortedPnlRows.filter((r) => r.realized_pnl !== 0).map((r) => r.date))
+    const today = new Date()
+    today.setUTCHours(0, 0, 0, 0)
+    const checkDate = (d: Date) => d.toISOString().slice(0, 10)
+    const todayActive = pnlDateSet.has(checkDate(today))
+    const yesterdayDate = new Date(today)
+    yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1)
+    const yesterdayActive = pnlDateSet.has(checkDate(yesterdayDate))
+    const isActive = todayActive || yesterdayActive
+    let streak = 0
+    const cursor = new Date(today)
+    if (!todayActive && yesterdayActive) cursor.setUTCDate(cursor.getUTCDate() - 1)
+    for (let i = 0; i < 365; i++) {
+      const dateStr = checkDate(cursor)
+      const dayActive = pnlDateSet.has(dateStr)
+      if (dayActive === isActive) {
+        streak++
+      } else {
+        break
+      }
+      cursor.setUTCDate(cursor.getUTCDate() - 1)
+    }
+    return { days: Math.max(streak, 1), isActive }
+  }, [sortedPnlRows])
+
   // Category distribution from trades
   const categoryDistribution = useMemo(() => {
     if (trades.length === 0) return []
@@ -585,19 +620,18 @@ export default function TraderProfilePage({
       .sort((a, b) => b.count - a.count)
   }, [trades])
 
-  // Top performing trades (best ROI)
+  // Top performing trades (best realized PnL from closed positions)
   const topPerformingTrades = useMemo(() => {
-    return trades
-      .filter((t: any) => t.currentPrice != null || t.current_price != null)
-      .map((t: any) => {
-        const entry = Number(t.price || t.entry_price || 0)
-        const current = Number(t.currentPrice || t.current_price || entry)
-        const roi = entry > 0 ? ((current - entry) / entry) * 100 : 0
-        return { ...t, _roi: roi }
-      })
-      .sort((a: any, b: any) => b._roi - a._roi)
+    if (closedPositions.length === 0) return []
+    return [...closedPositions]
+      .filter((p: any) => p.realizedPnl != null)
+      .map((p: any) => ({
+        ...p,
+        _roi: p.avgPrice > 0 ? (p.realizedPnl / (p.totalBought || p.avgPrice)) * 100 : 0,
+      }))
+      .sort((a: any, b: any) => b.realizedPnl - a.realizedPnl)
       .slice(0, 5)
-  }, [trades])
+  }, [closedPositions])
 
   // Size distribution from trade data
   const sizeDistribution = useMemo(() => {
@@ -719,6 +753,16 @@ export default function TraderProfilePage({
                 {copiedAddress ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                 {truncateAddress(wallet)}
               </button>
+              <a
+                href={`https://polymarket.com/profile/${wallet}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 font-body text-xs transition-colors hover:text-poly-black"
+                title="View on Polymarket"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Polymarket
+              </a>
               {rankBadge && (
                 <span className="flex items-center gap-1 font-sans text-xs font-bold uppercase tracking-widest text-poly-yellow">
                   <span className="inline-block h-1.5 w-1.5 bg-poly-yellow" />
@@ -745,7 +789,7 @@ export default function TraderProfilePage({
             </button>
             <button
               onClick={() => setIsShareModalOpen(true)}
-              className="flex items-center gap-2 bg-poly-black px-6 py-3 font-sans text-sm font-bold uppercase tracking-wide text-poly-cream transition-colors hover:bg-poly-black/90"
+              className="flex items-center gap-2 bg-poly-yellow px-6 py-3 font-sans text-sm font-bold uppercase tracking-wide text-poly-black transition-colors hover:bg-poly-yellow/90"
             >
               <Share2 className="h-4 w-4" />
               Share
@@ -895,36 +939,16 @@ export default function TraderProfilePage({
               {/* ── Realized P&L Section (2/3 width) ── */}
               <div className="border border-border bg-poly-paper p-6 lg:col-span-2">
                 {/* Header */}
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="font-sans text-xl font-bold uppercase tracking-wide text-poly-black">
-                        Realized P&L
-                      </h2>
-                      <span title="The chart below shows realized P&L from closed positions only. Total P&L includes unrealized gains/losses from open positions and may differ from the chart."><Info className="h-4 w-4 text-muted-foreground cursor-help" /></span>
-                    </div>
-                    <p className="mt-1 font-body text-xs uppercase tracking-wide text-muted-foreground">
-                      Realized P&L (Closed Positions)
-                    </p>
+                <div className="mb-4">
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-sans text-xl font-bold uppercase tracking-wide text-poly-black">
+                      Realized P&L
+                    </h2>
+                    <span title="The chart below shows realized P&L from closed positions only. Total P&L includes unrealized gains/losses from open positions and may differ from the chart."><Info className="h-4 w-4 text-muted-foreground cursor-help" /></span>
                   </div>
-
-                  {/* Daily / Cumulative toggle */}
-                  <div className="flex items-center gap-1">
-                    {(["daily", "cumulative"] as const).map((view) => (
-                      <button
-                        key={view}
-                        onClick={() => setPnlView(view)}
-                        className={cn(
-                          "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
-                          pnlView === view
-                            ? "bg-poly-black text-poly-cream"
-                            : "border border-poly-black text-poly-black hover:bg-poly-black/5"
-                        )}
-                      >
-                        {view === "daily" ? "Daily_Change" : "Accumulated"}
-                      </button>
-                    ))}
-                  </div>
+                  <p className="mt-1 font-body text-xs uppercase tracking-wide text-muted-foreground">
+                    Realized P&L (Closed Positions)
+                  </p>
                 </div>
 
                 {/* Time period selector */}
@@ -993,26 +1017,44 @@ export default function TraderProfilePage({
                   </div>
                   <div className="border border-border p-3">
                     <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      Days_Up
+                      Activity
                     </p>
-                    <p className="mt-1 font-sans text-xl font-bold tabular-nums text-profit-green">
-                      {windowSummary.daysUp}
+                    <p className={cn("mt-1 font-sans text-xl font-bold tabular-nums", activityStreak.isActive ? "text-profit-green" : "text-loss-red")}>
+                      {activityStreak.days} Days
                     </p>
                     <p className="font-body text-[11px] uppercase tracking-widest text-muted-foreground">
-                      Profitable
+                      {activityStreak.isActive ? "Active" : "Inactive"}
                     </p>
                   </div>
                   <div className="border border-border p-3">
                     <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                      Days_Down
+                      Total_Trades
                     </p>
-                    <p className="mt-1 font-sans text-xl font-bold tabular-nums text-loss-red">
-                      {windowSummary.daysDown}
+                    <p className="mt-1 font-sans text-xl font-bold tabular-nums text-poly-black">
+                      {(totalTradeCount || trades.length).toLocaleString()}{tradeCountCapped ? "+" : ""}
                     </p>
                     <p className="font-body text-[11px] uppercase tracking-widest text-muted-foreground">
-                      Losses
+                      Orders
                     </p>
                   </div>
+                </div>
+
+                {/* Daily / Cumulative toggle */}
+                <div className="mb-4 flex items-center gap-1">
+                  {(["daily", "cumulative"] as const).map((view) => (
+                    <button
+                      key={view}
+                      onClick={() => setPnlView(view)}
+                      className={cn(
+                        "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest transition-all",
+                        pnlView === view
+                          ? "bg-poly-black text-poly-cream"
+                          : "border border-poly-black text-poly-black hover:bg-poly-black/5"
+                      )}
+                    >
+                      {view === "daily" ? "Daily_Change" : "Accumulated"}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Chart */}
@@ -1168,15 +1210,14 @@ export default function TraderProfilePage({
                         <div key={i} className="flex items-center justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <p className="font-sans text-sm font-bold text-poly-black line-clamp-1">
-                              {t.market || t.title || t.question || "Unknown"}
+                              {t.title || "Unknown"}
                             </p>
                             <p className="font-body text-xs text-muted-foreground">
-                              {formatRelativeTime(t.timestamp || t.created_at)}
+                              {t.outcome || "—"}
                             </p>
                           </div>
-                          <p className={cn("shrink-0 font-sans text-sm font-bold tabular-nums", t._roi >= 0 ? "text-profit-green" : "text-loss-red")}>
-                            {t._roi >= 0 ? "+" : ""}
-                            {t._roi.toFixed(1)}%
+                          <p className={cn("shrink-0 font-sans text-sm font-bold tabular-nums", (t.realizedPnl ?? 0) >= 0 ? "text-profit-green" : "text-loss-red")}>
+                            {formatSignedCurrency(t.realizedPnl ?? 0)}
                           </p>
                         </div>
                       ))}
@@ -1251,6 +1292,51 @@ export default function TraderProfilePage({
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* ── Top Performing Trades ── */}
+            <div className="border border-border bg-poly-paper p-6">
+              <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
+                Top Performing Trades
+              </h3>
+              {topPerformingTrades.length === 0 ? (
+                <p className="py-8 text-center font-body text-sm text-muted-foreground">
+                  No closed trades yet
+                </p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {topPerformingTrades.map((t: any, i: number) => {
+                    const pnl = Number(t.realizedPnl || 0)
+                    const invested = Number(t.totalBought || 0)
+                    const roi = invested > 0 ? (pnl / invested) * 100 : 0
+                    return (
+                      <div key={i} className="flex items-center gap-4 py-3">
+                        <span className="font-body text-xs font-semibold tabular-nums text-muted-foreground w-5 text-center flex-shrink-0">
+                          {i + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-sans text-sm font-bold text-poly-black line-clamp-1">
+                            {t.title || "Unknown Market"}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-3 font-body text-xs text-muted-foreground">
+                            <span>{t.outcome || "—"}</span>
+                            <span>Avg: ${Number(t.avgPrice || 0).toFixed(2)}</span>
+                            {invested > 0 && <span>Invested: {formatCompactCurrency(invested)}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <p className={cn("font-sans text-sm tabular-nums", roi >= 0 ? "text-profit-green" : "text-loss-red")}>
+                            {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
+                          </p>
+                          <p className={cn("font-sans text-base font-bold tabular-nums", pnl >= 0 ? "text-profit-green" : "text-loss-red")}>
+                            {formatSignedCurrency(pnl)}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

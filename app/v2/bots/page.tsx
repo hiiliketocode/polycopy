@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { useAuthState } from "@/lib/auth/useAuthState"
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from "@/lib/feature-tier"
 import { supabase } from "@/lib/supabase"
+import { fetchUserWalletAddress } from "@/lib/wallet-utils"
 import type { BotData } from "@/components/polycopy-v2/bot-card"
 
 /* ═══════════════════════════════════════════════════════
@@ -175,15 +176,14 @@ export default function BotsPage() {
     if (!user) return
     let cancelled = false
     const fetchUserData = async () => {
-      const [profileRes, walletRes] = await Promise.all([
+      const [profileRes, addr] = await Promise.all([
         supabase.from('profiles').select('is_premium, is_admin').eq('id', user.id).single(),
-        supabase.from('turnkey_wallets').select('polymarket_account_address, eoa_address').eq('user_id', user.id).maybeSingle(),
+        fetchUserWalletAddress(user.id),
       ])
       if (cancelled) return
       if (profileRes.data) {
         setUserTier(resolveFeatureTier(true, profileRes.data))
       }
-      const addr = walletRes.data?.polymarket_account_address || walletRes.data?.eoa_address || null
       setWalletAddress(addr)
 
       // Fetch subscriptions

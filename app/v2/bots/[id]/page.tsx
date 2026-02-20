@@ -25,6 +25,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { useAuthState } from "@/lib/auth/useAuthState"
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from "@/lib/feature-tier"
 import { supabase } from "@/lib/supabase"
+import { fetchUserWalletAddress } from "@/lib/wallet-utils"
 
 /* ═══════════════════════════════════════════════════════
    Types
@@ -257,13 +258,13 @@ export default function BotDetailPage() {
     if (!user) return
     let cancelled = false
     const fetchProfile = async () => {
-      const [profileRes, walletRes] = await Promise.all([
+      const [profileRes, addr] = await Promise.all([
         supabase.from('profiles').select('is_premium, is_admin').eq('id', user.id).single(),
-        supabase.from('turnkey_wallets').select('polymarket_account_address, eoa_address').eq('user_id', user.id).maybeSingle(),
+        fetchUserWalletAddress(user.id),
       ])
       if (!cancelled && profileRes.data) {
         setUserTier(resolveFeatureTier(true, profileRes.data))
-        setUserWalletAddress(walletRes.data?.polymarket_account_address || walletRes.data?.eoa_address || null)
+        setUserWalletAddress(addr)
       }
     }
     fetchProfile()

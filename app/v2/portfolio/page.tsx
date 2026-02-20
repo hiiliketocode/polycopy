@@ -24,6 +24,7 @@ import {
 } from "lucide-react"
 import { ShareCardModal } from "@/components/polycopy-v2/share-card-modal"
 import { supabase } from "@/lib/supabase"
+import { fetchUserWalletAddress } from "@/lib/wallet-utils"
 import { cn } from "@/lib/utils"
 import {
   ResponsiveContainer,
@@ -386,26 +387,17 @@ export default function PortfolioPage() {
           }
         }
 
-        // Wallet data
-        const { data: walletData } = await supabase
-          .from("turnkey_wallets")
-          .select("polymarket_account_address, eoa_address")
-          .eq("user_id", user.id)
-          .maybeSingle()
+        const walletAddr = await fetchUserWalletAddress(user.id)
 
         setProfile({
           ...profileData,
-          trading_wallet_address:
-            walletData?.polymarket_account_address || walletData?.eoa_address || null,
+          trading_wallet_address: walletAddr,
         })
 
-        // Fetch Polymarket username if we have a wallet but no username yet
-        const walletAddress =
-          walletData?.polymarket_account_address || walletData?.eoa_address
-        if (walletAddress && !profileData?.polymarket_username) {
+        if (walletAddr && !profileData?.polymarket_username) {
           try {
             const response = await fetch(
-              `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${walletAddress}`
+              `https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=${walletAddr}`
             )
             if (response.ok) {
               const data = await response.json()
