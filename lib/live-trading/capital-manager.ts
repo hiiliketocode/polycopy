@@ -93,8 +93,18 @@ export async function lockCapitalForTrade(
         };
     }
 
+    // Safeguard: never let locked exceed initial_capital (prevents runaway lock from stale PENDING)
+    const wouldBeLocked = +(state.locked_capital + amount).toFixed(2);
+    if (state.initial_capital > 0 && wouldBeLocked > state.initial_capital) {
+        return {
+            success: false,
+            error: `Lock would exceed initial capital: locked would be $${wouldBeLocked.toFixed(2)} > initial $${state.initial_capital.toFixed(2)}`,
+            available_before: state.available_cash,
+        };
+    }
+
     const newAvailable = +(state.available_cash - amount).toFixed(2);
-    const newLocked = +(state.locked_capital + amount).toFixed(2);
+    const newLocked = wouldBeLocked;
 
     // 2. Atomic update with optimistic concurrency check
     const { error, count } = await supabase

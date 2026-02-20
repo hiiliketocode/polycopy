@@ -29,6 +29,8 @@ export type ExtendedFilters = {
     max_conviction?: number;
     max_edge?: number;
     market_categories?: string[];
+    /** When set, skip trades whose market title/tags contain any of these (case-insensitive). Use for "no crypto" without whitelist. */
+    exclude_market_keywords?: string[];
     min_original_trade_usd?: number;
     max_original_trade_usd?: number;
     trader_pool?: 'top_pnl' | 'top_wr' | 'high_volume' | 'newcomers';

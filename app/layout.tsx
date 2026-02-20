@@ -4,7 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import BottomNav from "./components/BottomNav";
 import Footer from "./components/Footer";
-import { LoggedOutModal } from "@/components/auth/LoggedOutModal";
+
 
 // Polycopy 2.0 - Industrial Block Typography
 const spaceGrotesk = Space_Grotesk({ 
@@ -214,7 +214,6 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         </div>
         <Footer />
         <BottomNav />
-        <LoggedOutModal />
       </body>
     </html>
   );

@@ -51,7 +51,7 @@ export async function POST(request: Request) {
             .in('status', ['PENDING', 'PARTIAL'])
             .not('order_id', 'is', null)
             .order('created_at', { ascending: true })
-            .limit(100);
+            .limit(300);
 
         if (fetchError) {
             console.error(`[lt/sync-order-status] Fetch error: ${fetchError.message}`);
@@ -302,7 +302,12 @@ export async function POST(request: Request) {
 
             // ── 2e: Compute correct values ──
             const correctEquity = +(initialCapital + realizedPnl).toFixed(2);
-            const correctLocked = +shouldBeLocked.toFixed(2);
+            let correctLocked = +shouldBeLocked.toFixed(2);
+            // Cap locked at initial capital (prevents stale PENDING from starving available_cash)
+            if (initialCapital > 0 && correctLocked > initialCapital) {
+                console.log(`[lt/sync-order-status] LOCKED CAP ${strategyId}: shouldBeLocked $${correctLocked.toFixed(2)} > initial $${initialCapital.toFixed(2)} — capping locked to initial`);
+                correctLocked = +initialCapital.toFixed(2);
+            }
             const correctAvailable = +(correctEquity - correctLocked - correctCooldown).toFixed(2);
             const correctDrawdown = correctEquity < initialCapital
                 ? +((initialCapital - correctEquity) / initialCapital).toFixed(4)

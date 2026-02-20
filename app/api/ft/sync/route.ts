@@ -805,6 +805,17 @@ export async function POST(request: Request) {
               reasons['wrong_category'] = (reasons['wrong_category'] || 0) + 1; results[wallet.wallet_id].skipped++; continue;
             }
           }
+          // ── Exclude keywords (e.g. no crypto): skip if title/tags contain any keyword ──
+          const excludeKeywords = extFilters.exclude_market_keywords;
+          if (excludeKeywords && excludeKeywords.length > 0) {
+            const titleLower = ((trade.title || market.title || '').toString()).toLowerCase();
+            const tagsArr = Array.isArray(market.tags) ? market.tags : (typeof market.tags === 'object' && market.tags !== null ? Object.values(market.tags) : []);
+            const tagsStr = tagsArr.map((t: unknown) => String(t || '')).join(' ').toLowerCase();
+            const combined = `${titleLower} ${tagsStr}`;
+            if (excludeKeywords.some((kw: string) => combined.includes((kw || '').toLowerCase()))) {
+              reasons['excluded_category'] = (reasons['excluded_category'] || 0) + 1; results[wallet.wallet_id].skipped++; continue;
+            }
+          }
 
           // ── Trade size filter (in-memory) ──
           const originalTradeSize = Number(trade.size || 0);
@@ -1044,7 +1055,20 @@ export async function POST(request: Request) {
       totalSkipped += results[walletId].skipped;
       totalEvaluated += results[walletId].evaluated;
     }
-    
+
+    // Diagnostic: log wallets with 0 inserts and their top skip reasons (for debugging zero-trade bots)
+    const zeroInsertWalletIds = Object.keys(results).filter(id => (results[id]?.inserted ?? 0) === 0);
+    if (zeroInsertWalletIds.length > 0) {
+      const reasonsSummary: Record<string, { evaluated: number; top_reasons: [string, number][] }> = {};
+      for (const id of zeroInsertWalletIds.slice(0, 30)) {
+        const r = results[id];
+        if (!r) continue;
+        const sorted = Object.entries(r.reasons).sort((a, b) => b[1] - a[1]).slice(0, 5) as [string, number][];
+        reasonsSummary[id] = { evaluated: r.evaluated, top_reasons: sorted };
+      }
+      console.log('[ft/sync] Zero-insert wallets (sample):', JSON.stringify(reasonsSummary).slice(0, 2500));
+    }
+
     return NextResponse.json({
       success: true,
       synced_at: now.toISOString(),
@@ -1060,6 +1084,8 @@ export async function POST(request: Request) {
       total_skipped: totalSkipped,
       total_evaluated: totalEvaluated,
       results,
+      zero_insert_wallet_ids: zeroInsertWalletIds.slice(0, 50),
+      zero_insert_reasons_sample: zeroInsertWalletIds.length > 0 ? Object.fromEntries(zeroInsertWalletIds.slice(0, 15).map(id => [id, (results[id]?.reasons && Object.entries(results[id].reasons).sort((a, b) => b[1] - a[1]).slice(0, 5)) || []])) : undefined,
       fetch_errors: errors.length > 0 ? errors : undefined
     });
     

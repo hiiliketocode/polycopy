@@ -166,6 +166,33 @@ Strategy whiplash: ALPHA_CONSERVATIVE pivoted 5 times in 4 days between favorite
 | Bot Audit | npx tsx scripts/bot-program-audit.ts |
 | Charts | /trading?tab=charts |
 | Daily Stats API | GET /api/ft/daily-stats?wallets=W1,W2 |
+| ML bots check | npx tsx scripts/check-ml-bots.ts (add --fix to apply NULL threshold fix) |
+
+---
+
+## 10. Follow-up: Zero-trade bots & ML fix (Feb 19)
+
+### 10.1 ML threshold fix (applied)
+Four wallets had `use_model=true` but `model_threshold=NULL`, so sync never called getPolyScore and ML was effectively off:
+- **FT_MODEL_BALANCED**, **FT_UNDERDOG_HUNTER**, **FT_SHARP_SHOOTER**, **FT_MODEL_ONLY**
+
+**Fix:** Set `model_threshold = 0.55` for all four (migration `20260219_fix_ml_null_threshold.sql` and script `npx tsx scripts/check-ml-bots.ts --fix`).
+
+### 10.2 Polling: all active wallets are polled
+- Sync loads all `ft_wallets` with `is_active = true` and `start_date <= now <= end_date`, sorted **stalest first**.
+- Trader pool: leaderboard (month/week/day PnL & Vol) **plus** every wallet’s `target_trader` / `target_traders` from `detailed_description` (so TOP_* and TRADER_* targets are included).
+- Each wallet is evaluated against the same global trade set; no wallet is skipped except by the 4‑minute time guard (remaining wallets are processed on the next cron run).
+
+### 10.3 Why some bots have 0 trades
+- **FT_TOP_*** (Daily/7D + ML): Depend on `rotate-pnl-winners` (3am UTC) to set `target_traders`. If `get_top_pnl_wallets` returns no rows, `target_traders` is `[]` and the bot accepts **all** leaderboard trades (no restriction). So 0 trades usually means other filters (price, ML, conviction, category) are excluding everything.
+- **Cursor bots**: Very selective (e.g. min_conviction 3 or 5, WR band 55–65%, no crypto). **CURSOR_SWEET_SPOT** had min_conviction 5 (almost no trades); relaxed to 2 so it can get flow.
+- **Underdog Hunter ML variants**: Narrow price band (e.g. underdogs 20–40¢) + ML + conviction → few qualifying trades.
+- **Conviction 2x/4x + ML 55%**: Same idea; filters are tight.
+
+### 10.4 Zero-insert diagnostics
+- Sync response now includes `zero_insert_wallet_ids` and `zero_insert_reasons_sample` (top skip reasons per wallet).
+- Vercel logs: `[ft/sync] Zero-insert wallets (sample): {...}` after each run.
+- Use this to see why a given bot got 0 inserts (e.g. `low_ml_score`, `price_out_of_range`, `not_target_trader`, `wrong_category`).
 
 ---
 
