@@ -24,6 +24,10 @@ import { getActualFillPrice } from '@/lib/polymarket/fill-price';
 import { emitOrderEvent } from '@/lib/live-trading/event-bus';
 
 const LOST_ORDER_THRESHOLD = 3;
+/** Max PENDING/PARTIAL orders to fetch per batch. Larger = faster backlog clear, more work per run. */
+const PENDING_BATCH_SIZE = 500;
+/** Max time (ms) to spend in Phase 1 so we leave room for Phase 2 (reconciliation). Cron runs every 2 min. */
+const PHASE1_MAX_MS = 55_000;
 
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -43,23 +47,28 @@ export async function POST(request: Request) {
 
     try {
         // ═══════════════════════════════════════════════════════════════
-        // PHASE 1: Sync pending/partial orders from CLOB
+        // PHASE 1: Sync pending/partial orders from CLOB (time-bounded, scalable)
+        // Process batches until none left or we hit the time budget. Reconciliation (Phase 2) always runs after.
         // ═══════════════════════════════════════════════════════════════
-        const { data: pendingOrders, error: fetchError } = await supabase
-            .from('lt_orders')
-            .select('lt_order_id, strategy_id, user_id, order_id, signal_size_usd, executed_size_usd, shares_bought, status, order_not_found_count')
-            .in('status', ['PENDING', 'PARTIAL'])
-            .not('order_id', 'is', null)
-            .order('created_at', { ascending: true })
-            .limit(300);
+        const phase1Start = Date.now();
 
-        if (fetchError) {
-            console.error(`[lt/sync-order-status] Fetch error: ${fetchError.message}`);
-        }
+        while (Date.now() - phase1Start < PHASE1_MAX_MS) {
+            const { data: pendingOrders, error: fetchError } = await supabase
+                .from('lt_orders')
+                .select('lt_order_id, strategy_id, user_id, order_id, signal_size_usd, executed_size_usd, shares_bought, status, order_not_found_count')
+                .in('status', ['PENDING', 'PARTIAL'])
+                .not('order_id', 'is', null)
+                .order('created_at', { ascending: true })
+                .limit(PENDING_BATCH_SIZE);
 
-        if (pendingOrders && pendingOrders.length > 0) {
-            checked = pendingOrders.length;
-            console.log(`[lt/sync-order-status] Checking ${checked} pending/partial orders`);
+            if (fetchError) {
+                console.error(`[lt/sync-order-status] Fetch error: ${fetchError.message}`);
+                break;
+            }
+            if (!pendingOrders || pendingOrders.length === 0) break;
+
+            checked += pendingOrders.length;
+            console.log(`[lt/sync-order-status] Batch: checking ${pendingOrders.length} pending/partial (total this run: ${checked})`);
 
             // Group by user_id for CLOB client reuse
             const byUser = new Map<string, typeof pendingOrders>();
@@ -222,9 +231,9 @@ export async function POST(request: Request) {
                     }
                 }
             }
-        } else {
-            console.log('[lt/sync-order-status] No pending/partial orders to sync');
         }
+
+        if (checked === 0) console.log('[lt/sync-order-status] No pending/partial orders to sync');
 
         // ═══════════════════════════════════════════════════════════════
         // PHASE 2: Capital reconciliation — ALWAYS runs
