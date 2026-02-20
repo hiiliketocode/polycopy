@@ -103,6 +103,11 @@ function validateConfigValue(field: string, value: unknown): { valid: boolean; c
 // Apply strategy changes to a bot
 // ============================================================================
 
+// Minimum days between config changes per bot. Prevents strategy whiplash.
+const MIN_DAYS_BETWEEN_CHANGES = 7;
+// Maximum number of parameters that can change in a single decision.
+const MAX_PARAMS_PER_CHANGE = 3;
+
 export async function applyStrategyChanges(
   supabase: SupabaseClient,
   runId: string,
@@ -124,6 +129,36 @@ export async function applyStrategyChanges(
         error: `Bot ${botId} not found in current snapshots`,
       });
       continue;
+    }
+
+    // ── Change cooldown: skip if last change was too recent ──
+    const { data: lastChange } = await supabase
+      .from('alpha_agent_decisions')
+      .select('created_at')
+      .eq('bot_id', botId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (lastChange && lastChange.length > 0) {
+      const daysSinceLastChange = (Date.now() - new Date(lastChange[0].created_at).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSinceLastChange < MIN_DAYS_BETWEEN_CHANGES) {
+        actions.push({
+          bot_id: botId,
+          action_type: 'skip',
+          changes_applied: {},
+          success: true,
+          error: `Change cooldown: ${daysSinceLastChange.toFixed(1)}d since last change (min ${MIN_DAYS_BETWEEN_CHANGES}d). Wait ${(MIN_DAYS_BETWEEN_CHANGES - daysSinceLastChange).toFixed(1)} more days.`,
+        });
+        continue;
+      }
+    }
+
+    // ── Limit number of parameter changes per decision ──
+    const changeEntries = Object.entries(rec.changes || {});
+    if (changeEntries.length > MAX_PARAMS_PER_CHANGE) {
+      // Only keep the first MAX_PARAMS_PER_CHANGE changes
+      const trimmed = Object.fromEntries(changeEntries.slice(0, MAX_PARAMS_PER_CHANGE));
+      rec.changes = trimmed;
     }
 
     // Build the config diff
