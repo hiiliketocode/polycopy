@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils"
 import { getBotDescription } from "@/lib/bot-descriptions"
 import { CopyBotModal } from "@/components/polycopy-v2/copy-bot-modal"
 import { BotShareCardModal } from "@/components/polycopy-v2/bot-share-card-modal"
+import { UpgradeModal } from "@/components/polycopy-v2/upgrade-modal"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { useAuthState } from "@/lib/auth/useAuthState"
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from "@/lib/feature-tier"
 import { supabase } from "@/lib/supabase"
@@ -142,6 +144,8 @@ function formatShortDate(d: string): string {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }).toUpperCase()
 }
 
+const FREE_BOT_NAMES = ["Steady Eddie", "Balanced Play", "Full Send"]
+
 function deriveRiskProfile(wallet: WalletData): { label: string; color: string } {
   const name = (wallet.display_name || "").toLowerCase()
   if (name.includes("conservative") || name.includes("steady") || name.includes("safe") || name.includes("favorite") || name.includes("heavy fav") || name.includes("arbitrage"))
@@ -240,6 +244,7 @@ export default function BotDetailPage() {
   const [categories, setCategories] = useState<CategoryPerf[]>([])
   const [showCopyBotModal, setShowCopyBotModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false)
   const [refreshingSnapshot, setRefreshingSnapshot] = useState(false)
 
   // User auth + premium state
@@ -364,6 +369,11 @@ export default function BotDetailPage() {
     return wallet ? deriveRiskProfile(wallet) : { label: "MODERATE", color: "text-poly-yellow" }
   }, [wallet])
 
+  const isBotPremium = useMemo(() => {
+    if (!wallet) return false
+    return !FREE_BOT_NAMES.some(n => wallet.display_name?.includes(n))
+  }, [wallet])
+
   // Best performing trades last 7 days (resolved, sorted by PnL desc)
   const bestTrades7d = useMemo(() => {
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
@@ -439,14 +449,43 @@ export default function BotDetailPage() {
               {wallet.display_name}
             </h1>
             <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCopyBotModal(true)}
-                className="flex items-center gap-2 bg-poly-yellow px-6 py-3 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
-              >
-                <Zap className="h-4 w-4" />
-                COPY_THIS_BOT
-              </button>
+              {isBotPremium && !hasPremiumAccess ? (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 bg-muted px-6 py-3 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground opacity-60 cursor-not-allowed"
+                    >
+                      <Zap className="h-4 w-4" />
+                      COPY_THIS_BOT
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    side="bottom"
+                    className="w-auto max-w-[220px] rounded-none border border-white/10 bg-[#0F0F0F] px-4 py-3 text-center shadow-lg"
+                  >
+                    <p className="mb-1.5 font-sans text-[11px] font-bold uppercase tracking-wide text-white">
+                      Premium Feature
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowUpgradeModal(true)}
+                      className="font-sans text-[11px] font-bold uppercase tracking-wide text-[#FDB022] underline underline-offset-2 transition-colors hover:text-white"
+                    >
+                      Learn more about Premium
+                    </button>
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowCopyBotModal(true)}
+                  className="flex items-center gap-2 bg-poly-yellow px-6 py-3 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
+                >
+                  <Zap className="h-4 w-4" />
+                  COPY_THIS_BOT
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowShareModal(true)}
@@ -1026,6 +1065,7 @@ export default function BotDetailPage() {
             walletAddress={userWalletAddress}
             onSuccess={() => {}}
           />
+          <UpgradeModal open={showUpgradeModal} onOpenChange={setShowUpgradeModal} />
           <BotShareCardModal
             open={showShareModal}
             onOpenChange={setShowShareModal}

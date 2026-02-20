@@ -1,7 +1,8 @@
 "use client"
 
-import { Zap, Settings, Lock } from "lucide-react"
+import { Zap, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 
 /* ───── Types ───── */
 
@@ -28,6 +29,7 @@ interface BotCardProps {
   onCopyBot?: () => void
   onManage?: () => void
   onAnalysis?: () => void
+  onUpgrade?: () => void
   isPremiumUser?: boolean
   /** Whether the user has an active subscription for this bot */
   isSubscribed?: boolean
@@ -104,6 +106,7 @@ export function BotCard({
   onCopyBot,
   onManage,
   onAnalysis,
+  onUpgrade,
   isPremiumUser = false,
   isSubscribed = false,
   className,
@@ -221,13 +224,31 @@ export function BotCard({
           ANALYSIS
         </button>
         {bot.is_premium && !isPremiumUser && !isSubscribed ? (
-          <button
-            type="button"
-            disabled
-            className="flex items-center justify-center gap-2 py-3 font-sans text-xs font-bold uppercase tracking-widest bg-muted text-muted-foreground cursor-not-allowed"
-          >
-            <Zap className="h-3.5 w-3.5" /> PREMIUM ONLY
-          </button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center justify-center gap-2 py-3 font-sans text-xs font-bold uppercase tracking-widest bg-muted text-muted-foreground cursor-not-allowed opacity-60"
+              >
+                <Zap className="h-3.5 w-3.5" /> COPY_BOT
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              side="top"
+              className="w-auto max-w-[220px] rounded-none border border-white/10 bg-[#0F0F0F] px-4 py-3 text-center shadow-lg"
+            >
+              <p className="mb-1.5 font-sans text-[11px] font-bold uppercase tracking-wide text-white">
+                Premium Feature
+              </p>
+              <button
+                type="button"
+                onClick={onUpgrade}
+                className="font-sans text-[11px] font-bold uppercase tracking-wide text-[#FDB022] underline underline-offset-2 transition-colors hover:text-white"
+              >
+                Learn more about Premium
+              </button>
+            </PopoverContent>
+          </Popover>
         ) : (
           <button
             type="button"

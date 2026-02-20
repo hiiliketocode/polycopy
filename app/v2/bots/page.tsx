@@ -9,6 +9,7 @@ import { TopNav } from "@/components/polycopy-v2/top-nav"
 import { BotCard } from "@/components/polycopy-v2/bot-card"
 import { CopyBotModal } from "@/components/polycopy-v2/copy-bot-modal"
 import { ManageBotModal, type BotSubscription } from "@/components/polycopy-v2/manage-bot-modal"
+import { UpgradeModal } from "@/components/polycopy-v2/upgrade-modal"
 import { cn } from "@/lib/utils"
 import { useAuthState } from "@/lib/auth/useAuthState"
 import { resolveFeatureTier, tierHasPremiumAccess, type FeatureTier } from "@/lib/feature-tier"
@@ -166,6 +167,9 @@ export default function BotsPage() {
   const [manageModalOpen, setManageModalOpen] = useState(false)
   const [manageTargetSub, setManageTargetSub] = useState<BotSubscription | null>(null)
   const [subscriptionMap, setSubscriptionMap] = useState<Record<string, BotSubscription>>({})
+
+  // Upgrade modal state
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -378,6 +382,7 @@ export default function BotsPage() {
                     }
                   }}
                   onAnalysis={() => router.push(`/v2/bots/${bot.id}`)}
+                  onUpgrade={() => setUpgradeModalOpen(true)}
                 />
               ))}
             </div>
@@ -447,6 +452,8 @@ export default function BotsPage() {
           }}
         />
       )}
+
+      <UpgradeModal open={upgradeModalOpen} onOpenChange={setUpgradeModalOpen} />
     </div>
   )
 }
