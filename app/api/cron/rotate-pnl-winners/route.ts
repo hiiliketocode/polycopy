@@ -4,9 +4,19 @@ import { createAdminServiceClient } from '@/lib/admin'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const WALLET_DAILY = 'FT_TOP_DAILY_WINNERS'
-const WALLET_7D = 'FT_TOP_7D_WINNERS'
 const TOP_N = 10
+
+const DAILY_WALLETS = [
+  'FT_TOP_DAILY_WINNERS',
+  'FT_TOP_DAILY_ML55',
+  'FT_TOP_DAILY_ML60_KELLY',
+];
+
+const WEEKLY_WALLETS = [
+  'FT_TOP_7D_WINNERS',
+  'FT_TOP_7D_ML55_NO_CRYPTO',
+  'FT_TOP_7D_FIXED',
+];
 
 /**
  * GET/POST /api/cron/rotate-pnl-winners
@@ -27,11 +37,51 @@ function verifyAuth(request: Request): Response | null {
   return null
 }
 
+async function updateTargetTraders(
+  supabase: ReturnType<typeof createAdminServiceClient>,
+  walletId: string,
+  traders: string[],
+): Promise<boolean> {
+  const { data: wallet } = await supabase
+    .from('ft_wallets')
+    .select('detailed_description')
+    .eq('wallet_id', walletId)
+    .single()
+
+  if (!wallet) {
+    console.warn(`[rotate-pnl-winners] Wallet ${walletId} not found, skipping`)
+    return false
+  }
+
+  let prev: Record<string, unknown> = {}
+  try {
+    if (wallet.detailed_description && typeof wallet.detailed_description === 'string') {
+      prev = JSON.parse(wallet.detailed_description)
+    }
+  } catch { /* use empty */ }
+
+  const nextFilters = { ...prev, target_traders: traders }
+  const { error } = await supabase
+    .from('ft_wallets')
+    .update({
+      detailed_description: JSON.stringify(nextFilters),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('wallet_id', walletId)
+
+  if (error) {
+    console.error(`[rotate-pnl-winners] Update ${walletId} failed:`, error)
+    return false
+  }
+
+  console.log(`[rotate-pnl-winners] Updated ${walletId}: ${traders.length} traders`)
+  return true
+}
+
 async function rotatePnlWinners(): Promise<Response> {
   const supabase = createAdminServiceClient()
 
   try {
-    // 1. Fetch top 10 by yesterday's realized PnL
     const { data: dailyRows, error: errDaily } = await supabase.rpc('get_top_pnl_wallets', {
       p_window: '1d',
       p_limit: TOP_N,
@@ -39,13 +89,9 @@ async function rotatePnlWinners(): Promise<Response> {
 
     if (errDaily) {
       console.error('[rotate-pnl-winners] RPC 1d failed:', errDaily)
-      return NextResponse.json(
-        { success: false, error: errDaily.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ success: false, error: errDaily.message }, { status: 500 })
     }
 
-    // 2. Fetch top 10 by last 7 days realized PnL
     const { data: rows7d, error: err7d } = await supabase.rpc('get_top_pnl_wallets', {
       p_window: '7d',
       p_limit: TOP_N,
@@ -53,104 +99,35 @@ async function rotatePnlWinners(): Promise<Response> {
 
     if (err7d) {
       console.error('[rotate-pnl-winners] RPC 7d failed:', err7d)
-      return NextResponse.json(
-        { success: false, error: err7d.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ success: false, error: err7d.message }, { status: 500 })
     }
 
-    const dailyWallets = (dailyRows ?? []).map((r: { wallet_address: string }) =>
+    const dailyTraders = (dailyRows ?? []).map((r: { wallet_address: string }) =>
       (r.wallet_address || '').toLowerCase()
     ).filter(Boolean)
 
-    const wallets7d = (rows7d ?? []).map((r: { wallet_address: string }) =>
+    const weeklyTraders = (rows7d ?? []).map((r: { wallet_address: string }) =>
       (r.wallet_address || '').toLowerCase()
     ).filter(Boolean)
 
-    // 3. Update FT_TOP_DAILY_WINNERS
-    const { data: walletDaily } = await supabase
-      .from('ft_wallets')
-      .select('detailed_description')
-      .eq('wallet_id', WALLET_DAILY)
-      .single()
-
-    if (walletDaily) {
-      const prev = (walletDaily.detailed_description && typeof walletDaily.detailed_description === 'string')
-        ? (() => {
-            try {
-              return JSON.parse(walletDaily.detailed_description as string) as Record<string, unknown>
-            } catch {
-              return {}
-            }
-          })()
-        : {}
-
-      const nextFilters = { ...prev, target_traders: dailyWallets }
-      const { error: updDaily } = await supabase
-        .from('ft_wallets')
-        .update({
-          detailed_description: JSON.stringify(nextFilters),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('wallet_id', WALLET_DAILY)
-
-      if (updDaily) {
-        console.error('[rotate-pnl-winners] Update daily failed:', updDaily)
-      } else {
-        console.log(`[rotate-pnl-winners] Updated ${WALLET_DAILY}: ${dailyWallets.length} traders`)
-      }
-    } else {
-      console.warn(`[rotate-pnl-winners] Wallet ${WALLET_DAILY} not found, skipping`)
+    let updated = 0
+    for (const wid of DAILY_WALLETS) {
+      if (await updateTargetTraders(supabase, wid, dailyTraders)) updated++
     }
-
-    // 4. Update FT_TOP_7D_WINNERS
-    const { data: wallet7d } = await supabase
-      .from('ft_wallets')
-      .select('detailed_description')
-      .eq('wallet_id', WALLET_7D)
-      .single()
-
-    if (wallet7d) {
-      const prev = (wallet7d.detailed_description && typeof wallet7d.detailed_description === 'string')
-        ? (() => {
-            try {
-              return JSON.parse(wallet7d.detailed_description as string) as Record<string, unknown>
-            } catch {
-              return {}
-            }
-          })()
-        : {}
-
-      const nextFilters = { ...prev, target_traders: wallets7d }
-      const { error: upd7d } = await supabase
-        .from('ft_wallets')
-        .update({
-          detailed_description: JSON.stringify(nextFilters),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('wallet_id', WALLET_7D)
-
-      if (upd7d) {
-        console.error('[rotate-pnl-winners] Update 7d failed:', upd7d)
-      } else {
-        console.log(`[rotate-pnl-winners] Updated ${WALLET_7D}: ${wallets7d.length} traders`)
-      }
-    } else {
-      console.warn(`[rotate-pnl-winners] Wallet ${WALLET_7D} not found, skipping`)
+    for (const wid of WEEKLY_WALLETS) {
+      if (await updateTargetTraders(supabase, wid, weeklyTraders)) updated++
     }
 
     return NextResponse.json({
       success: true,
-      daily: { count: dailyWallets.length, wallets: dailyWallets },
-      '7d': { count: wallets7d.length, wallets: wallets7d },
+      updated_wallets: updated,
+      daily: { count: dailyTraders.length, wallets: dailyTraders, targets: DAILY_WALLETS },
+      '7d': { count: weeklyTraders.length, wallets: weeklyTraders, targets: WEEKLY_WALLETS },
     })
   } catch (err) {
     console.error('[rotate-pnl-winners] Error:', err)
     return NextResponse.json(
-      {
-        success: false,
-        error: err instanceof Error ? err.message : 'Unknown error',
-      },
+      { success: false, error: err instanceof Error ? err.message : 'Unknown error' },
       { status: 500 }
     )
   }
