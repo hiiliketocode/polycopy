@@ -645,7 +645,7 @@ function ProfilePageContent() {
         let page = 1;
         let hasMore = true;
         const PAGE_SIZE = 200;
-        const MAX_PAGES = 50;
+        const MAX_PAGES = 25;
         let totalTradesFromApi: number | null = null;
 
         while (hasMore && page <= MAX_PAGES) {

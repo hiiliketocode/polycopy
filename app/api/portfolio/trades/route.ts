@@ -3,9 +3,9 @@ import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { createClient as createAuthClient } from '@/lib/supabase/server'
 import { getAppBaseUrl } from '@/lib/app-url'
 
-const PRICE_STALE_MS = 15_000 // T2b: 15s — open positions need fresh price from Price API
-const PRICE_FETCH_BATCH = 8
-const PRICE_FETCH_MAX = 50
+const PRICE_STALE_MS = 60_000 // 60s — use DB cache for up to 1 min before refreshing
+const PRICE_FETCH_BATCH = 10
+const PRICE_FETCH_MAX = 30
 const APP_BASE_URL = getAppBaseUrl()
 
 const toNumber = (value: number | string | null | undefined) => {
@@ -277,7 +277,7 @@ export async function GET(request: Request) {
         const results = await Promise.allSettled(
           batch.map(async (marketId) => {
             const controller = new AbortController()
-            const timeout = setTimeout(() => controller.abort(), 8000)
+            const timeout = setTimeout(() => controller.abort(), 4000)
             try {
               const resp = await fetch(
                 `${APP_BASE_URL}/api/polymarket/price?conditionId=${encodeURIComponent(marketId)}&tier=T2b`,

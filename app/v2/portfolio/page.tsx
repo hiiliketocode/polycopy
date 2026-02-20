@@ -605,13 +605,12 @@ export default function PortfolioPage() {
       setCopiedTrades(sortTrades(Array.from(tradeMap.values())))
       setLoadingTrades(false) // Unblock trades section early
 
-      // Fetch remaining pages in background to get complete enriched data
-      // Use larger page size for background loads (200 instead of 50) and load up to 10K trades
+      // Fetch remaining pages in background — larger pages, progressive UI updates
       if (firstPageResult.hasMore) {
         let page = 2
         let hasMore = true
         const BG_PAGE_SIZE = 200
-        const MAX_BG_PAGES = 50
+        const MAX_BG_PAGES = 25
         while (hasMore && page <= MAX_BG_PAGES) {
           try {
             const res = await fetch(
@@ -627,11 +626,14 @@ export default function PortfolioPage() {
             }
             hasMore = data.hasMore === true
             page++
+            // Update UI every 3 pages so user sees trades appearing
+            if (page % 3 === 0) {
+              setCopiedTrades(sortTrades(Array.from(tradeMap.values())))
+            }
           } catch {
             break
           }
         }
-        // Update with full dataset
         setCopiedTrades(sortTrades(Array.from(tradeMap.values())))
       }
     } catch (err) {
