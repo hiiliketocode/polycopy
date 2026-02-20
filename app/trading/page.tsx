@@ -31,6 +31,7 @@ import {
   Brain,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PerformanceCharts } from '@/components/ft/performance-charts';
 
 type SortField = 'name' | 'started' | 'balance' | 'pnl' | 'pnl_pct' | 'taken' | 'pct_made' | 'avg_trade_size' | 'open' | 'won' | 'lost' | 'win_rate' | 'cash' | 'realized' | 'unrealized' | 'max_drawdown' | 'sharpe';
 type CompareSortField = 'name' | 'pnl' | 'started' | 'use_model' | 'model_threshold' | 'price_min' | 'price_max' | 'min_edge' | 'allocation' | 'bet_size' | 'min_bet' | 'max_bet' | 'kelly' | 'min_trades' | 'min_conviction';
@@ -308,7 +309,7 @@ interface Totals {
 export default function TradingStrategiesPage() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const initialTab = (tabParam === 'performance' || tabParam === 'compare' || tabParam === 'live' || tabParam === 'settings' || tabParam === 'alpha') ? tabParam : 'performance';
+  const initialTab = (tabParam === 'performance' || tabParam === 'compare' || tabParam === 'charts' || tabParam === 'live' || tabParam === 'settings' || tabParam === 'alpha') ? tabParam : 'performance';
   const [wallets, setWallets] = useState<FTWallet[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loading, setLoading] = useState(true);
@@ -320,7 +321,7 @@ export default function TradingStrategiesPage() {
   const [lastAutoSync, setLastAutoSync] = useState<Date | null>(null);
   const [sortField, setSortField] = useState<SortField>('pnl_pct');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [activeTab, setActiveTab] = useState<'performance' | 'compare' | 'live' | 'settings' | 'alpha'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'performance' | 'compare' | 'charts' | 'live' | 'settings' | 'alpha'>(initialTab);
   const [compareSortField, setCompareSortField] = useState<CompareSortField>('pnl');
   const [compareSortDir, setCompareSortDir] = useState<SortDir>('desc');
   const [ltStrategyFtIds, setLtStrategyFtIds] = useState<Set<string>>(new Set());
@@ -634,7 +635,7 @@ export default function TradingStrategiesPage() {
 
   // Sync initial tab from URL
   useEffect(() => {
-    if (tabParam) setActiveTab(tabParam as 'performance' | 'compare' | 'live' | 'settings' | 'alpha');
+    if (tabParam) setActiveTab(tabParam as 'performance' | 'compare' | 'charts' | 'live' | 'settings' | 'alpha');
   }, [tabParam]);
 
   // Auto-sync every 30 seconds
@@ -984,7 +985,7 @@ export default function TradingStrategiesPage() {
       )}
 
       {/* Tabs: Performance | Compare Strategies | Live | Alpha AI | Settings */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'performance' | 'compare' | 'live' | 'settings' | 'alpha')}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'performance' | 'compare' | 'charts' | 'live' | 'settings' | 'alpha')}>
         <TabsList className="mb-4">
           <TabsTrigger value="performance" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -993,6 +994,10 @@ export default function TradingStrategiesPage() {
           <TabsTrigger value="compare" className="flex items-center gap-2">
             <Settings2 className="h-4 w-4" />
             Compare
+          </TabsTrigger>
+          <TabsTrigger value="charts" className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Charts
           </TabsTrigger>
           <TabsTrigger value="live" className="flex items-center gap-2">
             <Activity className="h-4 w-4" />
@@ -1406,6 +1411,10 @@ export default function TradingStrategiesPage() {
           </div>
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="charts" className="mt-0">
+          <PerformanceCharts />
         </TabsContent>
 
         <TabsContent value="live" className="mt-0">
