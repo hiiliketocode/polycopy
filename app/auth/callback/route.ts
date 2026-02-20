@@ -32,19 +32,26 @@ export async function GET(request: NextRequest) {
       const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code)
       
       if (sessionError) {
-        console.error('Session error:', sessionError)
+        console.error('Session error:', JSON.stringify({
+          message: sessionError.message,
+          status: sessionError.status,
+          name: sessionError.name,
+          code: (sessionError as any).code,
+        }))
         
-        // Check if it's a token expiration error
-        const isExpired = sessionError.message?.includes('expired') || 
-                         sessionError.message?.includes('invalid') ||
-                         sessionError.status === 400
+        const msg = sessionError.message?.toLowerCase() ?? ''
+        const isExpired = msg.includes('expired') || msg.includes('otp has expired')
+        const isUsed = msg.includes('already used') || msg.includes('already been used')
         
         if (isExpired) {
-          console.error('Magic link has expired - took too long to click')
           return NextResponse.redirect(`${requestUrl.origin}/login?error=link_expired`)
         }
+        if (isUsed) {
+          return NextResponse.redirect(`${requestUrl.origin}/login?error=link_used`)
+        }
         
-        return NextResponse.redirect(`${requestUrl.origin}/login?error=auth_failed`)
+        const debugMsg = encodeURIComponent(sessionError.message ?? 'unknown')
+        return NextResponse.redirect(`${requestUrl.origin}/login?error=auth_failed&detail=${debugMsg}`)
       }
       
       // Get the user

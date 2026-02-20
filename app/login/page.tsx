@@ -20,10 +20,13 @@ function LoginForm() {
     
     // Check for auth errors in URL
     const urlError = searchParams.get('error');
+    const detail = searchParams.get('detail');
     if (urlError === 'link_expired') {
       setError('Your magic link has expired. This usually happens when the email takes too long to arrive. Please request a new one.');
+    } else if (urlError === 'link_used') {
+      setError('This magic link has already been used. Some email apps pre-scan links which can consume them. Please request a new one and click quickly.');
     } else if (urlError === 'auth_failed') {
-      setError('Authentication failed. Please try again.');
+      setError(`Authentication failed${detail ? `: ${detail}` : ''}. Please try again.`);
     } else if (urlError === 'auth_error') {
       setError('An authentication error occurred. Please try again.');
     }

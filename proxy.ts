@@ -12,12 +12,17 @@ const DEFAULT_FRAME_ANCESTORS =
  */
 function applySecurityHeaders(response: NextResponse) {
   // Allow embedding in iframes from feedback tools (Huddlekit, Ruttl) or from ALLOW_FRAME_ANCESTORS.
+  // Set ALLOW_FRAME_ANCESTORS=* to allow any origin (for testing; prefer explicit list in prod).
   const envList = process.env.ALLOW_FRAME_ANCESTORS?.trim()
-  const allowedOrigins = envList
-    ? envList.split(',').map((o) => o.trim()).filter(Boolean).join(' ')
-    : DEFAULT_FRAME_ANCESTORS
   const frameAncestorsValue =
-    allowedOrigins.length > 0 ? `'self' ${allowedOrigins}` : "'none'"
+    envList === '*'
+      ? '*'
+      : (() => {
+          const allowedOrigins = envList
+            ? envList.split(',').map((o) => o.trim()).filter(Boolean).join(' ')
+            : DEFAULT_FRAME_ANCESTORS
+          return allowedOrigins.length > 0 ? `'self' ${allowedOrigins}` : "'none'"
+        })()
 
   // Content Security Policy - Prevents XSS attacks
   // Allows resources only from trusted sources
