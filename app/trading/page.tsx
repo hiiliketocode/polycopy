@@ -343,6 +343,7 @@ export default function TradingStrategiesPage() {
   const [ltError, setLtError] = useState<string | null>(null);
   const [showLtInTable, setShowLtInTable] = useState(true);
   const [tableFilter, setTableFilter] = useState<'all' | 'ft' | 'lt'>('all');
+  const [showPaused, setShowPaused] = useState(false);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -410,6 +411,9 @@ export default function TradingStrategiesPage() {
     } else {
       walletsToSort = [...wallets, ...ltWallets];
     }
+    if (!showPaused) {
+      walletsToSort = walletsToSort.filter(w => w.is_active);
+    }
     return [...walletsToSort].sort((a, b) => {
       let aVal: number | string = 0;
       let bVal: number | string = 0;
@@ -453,7 +457,7 @@ export default function TradingStrategiesPage() {
       }
       return sortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
-  }, [wallets, ltWallets, showLtInTable, tableFilter, sortField, sortDir]);
+  }, [wallets, ltWallets, showLtInTable, tableFilter, sortField, sortDir, showPaused]);
 
   // Compute display totals from the currently visible wallets (respects table filter)
   const displayTotals: Totals | null = useMemo(() => {
@@ -492,7 +496,8 @@ export default function TradingStrategiesPage() {
   };
 
   const sortedCompareWallets = useMemo(() => {
-    return [...wallets].sort((a, b) => {
+    const filtered = showPaused ? wallets : wallets.filter(w => w.is_active);
+    return [...filtered].sort((a, b) => {
       let aVal: number | string = '';
       let bVal: number | string = '';
       switch (compareSortField) {
@@ -517,7 +522,7 @@ export default function TradingStrategiesPage() {
       }
       return compareSortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
     });
-  }, [wallets, compareSortField, compareSortDir]);
+  }, [wallets, compareSortField, compareSortDir, showPaused]);
 
   const fetchWallets = useCallback(async (silent = false) => {
     try {
@@ -858,6 +863,15 @@ export default function TradingStrategiesPage() {
                 LT Only
               </Button>
             </div>
+            <Button
+              variant={showPaused ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setShowPaused(!showPaused)}
+              className="h-7 text-xs"
+            >
+              {showPaused ? <Pause className="h-3 w-3 mr-1" /> : null}
+              {showPaused ? 'Showing Paused' : 'Show Paused'}
+            </Button>
             <Link href="/lt/logs">
               <Button variant="outline" size="sm" className="h-7 text-xs border-[#FDB022] text-[#FDB022]">
                 <Activity className="h-3 w-3 mr-1" />
