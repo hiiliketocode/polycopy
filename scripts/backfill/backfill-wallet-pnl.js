@@ -175,10 +175,20 @@ async function fetchAllClosedPositions(wallet) {
   return allPositions
 }
 
-function deriveRows(wallet, closedPositions) {
-  if (closedPositions.length === 0) return []
+async function fetchOpenPositions(wallet) {
+  const url = `${POLYMARKET_DATA_API}/positions?user=${wallet}&limit=200&sortBy=CASHPNL&sortDirection=DESC`
+  try {
+    const res = await fetchWithRetry(url, {})
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
 
+function deriveRows(wallet, closedPositions, openPositions = []) {
   const dailyMap = new Map()
+
   for (const pos of closedPositions) {
     let ts = Number(pos.timestamp)
     if (!Number.isFinite(ts)) continue
@@ -188,6 +198,18 @@ function deriveRows(wallet, closedPositions) {
     if (!Number.isFinite(pnl)) continue
     dailyMap.set(date, (dailyMap.get(date) ?? 0) + pnl)
   }
+
+  // Include unredeemed resolved positions (redeemable=true, curPrice~0)
+  for (const pos of openPositions) {
+    if (!pos.redeemable || Number(pos.curPrice ?? 1) > 0.01) continue
+    const endDate = (pos.endDate || '').slice(0, 10)
+    if (!endDate || endDate === '1970-01-01') continue
+    const loss = -(Number(pos.initialValue ?? pos.totalBought ?? 0))
+    if (!Number.isFinite(loss) || loss === 0) continue
+    dailyMap.set(endDate, (dailyMap.get(endDate) ?? 0) + loss)
+  }
+
+  if (dailyMap.size === 0) return []
 
   const sortedDates = Array.from(dailyMap.keys()).sort()
   const rows = []
@@ -353,8 +375,11 @@ async function backfillWallet(wallet, options = {}) {
     return { upserted: 0, hadData: false, skipped: true, reason: 'up-to-date', latestDate, ordersSynced: 0 }
   }
 
-  const closedPositions = await fetchAllClosedPositions(lower)
-  const rows = deriveRows(lower, closedPositions)
+  const [closedPositions, openPositions] = await Promise.all([
+    fetchAllClosedPositions(lower),
+    fetchOpenPositions(lower),
+  ])
+  const rows = deriveRows(lower, closedPositions, openPositions)
   const upserted = rows.length ? await upsertRows(rows) : 0
 
   // Sync per-order PnL using the same closed positions data (replaces sync-polymarket-pnl)

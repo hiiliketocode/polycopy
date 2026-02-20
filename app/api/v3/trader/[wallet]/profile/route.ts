@@ -139,6 +139,7 @@ interface TraderProfileResponse {
   }
   trades: ActivityTrade[]
   dailyPnl: DailyPnlRow[]
+  tradingDaysActive: number
   winRate: number | null
   followerCount: number
   hasStats: boolean
@@ -246,20 +247,35 @@ async function fetchAllClosedPositions(wallet: string): Promise<ClosedPosition[]
   return allPositions
 }
 
-function computeDailyPnl(closedPositions: ClosedPosition[]): DailyPnlRow[] {
-  if (closedPositions.length === 0) return []
-
-  // Group closed positions by the day they were closed, summing realizedPnl
+function computeDailyPnl(
+  closedPositions: ClosedPosition[],
+  openPositions: PolymarketPosition[]
+): DailyPnlRow[] {
   const dailyMap = new Map<string, number>()
 
+  // Closed positions grouped by the day they were closed
   for (const pos of closedPositions) {
     let ts = pos.timestamp
-    if (ts < 10000000000) ts = ts * 1000 // Convert seconds to ms
+    if (ts < 10000000000) ts = ts * 1000
     const date = new Date(ts).toISOString().slice(0, 10)
     dailyMap.set(date, (dailyMap.get(date) ?? 0) + (pos.realizedPnl ?? 0))
   }
 
-  // Sort by date and compute cumulative
+  // Unredeemed resolved positions: markets resolved against the trader but
+  // shares haven't been redeemed yet.  They sit in the positions API with
+  // redeemable=true and curPrice~0.  Attribute their loss to the market's
+  // endDate (the resolution date).
+  for (const pos of openPositions) {
+    if (!pos.redeemable || pos.curPrice > 0.01) continue
+    const date = pos.endDate?.slice(0, 10)
+    if (!date || date === '1970-01-01') continue
+    const loss = -(pos.initialValue ?? pos.totalBought ?? 0)
+    if (loss === 0) continue
+    dailyMap.set(date, (dailyMap.get(date) ?? 0) + loss)
+  }
+
+  if (dailyMap.size === 0) return []
+
   const sortedDates = Array.from(dailyMap.keys()).sort()
   let cumulative = 0
   const rows: DailyPnlRow[] = sortedDates.map((date) => {
@@ -429,8 +445,8 @@ export async function GET(
       hasStats = true
     }
 
-    // ----- Compute daily P&L from closed positions (accurate realized P&L) -----
-    const dailyPnl = computeDailyPnl(allClosedPositions)
+    // ----- Compute daily P&L from closed + unredeemed resolved positions -----
+    const dailyPnl = computeDailyPnl(allClosedPositions, Array.isArray(openPositions) ? openPositions : [])
 
     // ----- Compute win rate from all closed positions -----
     let winRate: number | null = null
@@ -438,6 +454,16 @@ export async function GET(
       const wins = allClosedPositions.filter((p) => (p.realizedPnl ?? 0) > 0).length
       winRate = (wins / allClosedPositions.length) * 100
     }
+
+    // ----- Compute trading days active from trade activity -----
+    const safeActivityTrades = Array.isArray(activityTrades) ? activityTrades : []
+    const tradingDaysActive = new Set(
+      safeActivityTrades.map((t) => {
+        let ts = t.timestamp
+        if (ts < 10000000000) ts *= 1000
+        return new Date(ts).toISOString().slice(0, 10)
+      })
+    ).size
 
     // ----- Build response -----
     const response: TraderProfileResponse = {
@@ -461,8 +487,9 @@ export async function GET(
         open: Array.isArray(openPositions) ? openPositions : [],
         closed: Array.isArray(closedPositions) ? closedPositions : [],
       },
-      trades: Array.isArray(activityTrades) ? activityTrades : [],
+      trades: safeActivityTrades,
       dailyPnl,
+      tradingDaysActive,
       winRate,
       followerCount,
       hasStats,

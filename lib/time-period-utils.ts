@@ -133,11 +133,14 @@ export function filterByTimePeriodTraderProfile(
 }
 
 /**
- * Calculate stats for a time period from filtered daily PnL data
+ * Calculate stats for a time period from filtered daily PnL data.
+ * @param tradingDaysOverride - if provided and greater than the PnL-row count,
+ *   use it as `daysActive` (derived from trade activity data).
  */
 export function calculatePeriodStats(
   data: DailyPnlRow[],
-  totalVolume: number | null
+  totalVolume: number | null,
+  tradingDaysOverride?: number
 ): PeriodStats {
   if (!data.length) {
     return {
@@ -147,33 +150,27 @@ export function calculatePeriodStats(
       volume: totalVolume || 0,
       trades: 0,
       avgReturn: 0,
-      daysActive: 0,
+      daysActive: tradingDaysOverride || 0,
       daysUp: 0,
       daysDown: 0,
     }
   }
 
-  // Calculate total P&L
   const totalPnL = data.reduce((sum, row) => sum + (row.realized_pnl || 0), 0)
 
-  // Count days
-  const daysActive = data.length
+  const pnlDaysActive = data.filter((row) => row.realized_pnl !== 0).length
+  const daysActive = Math.max(pnlDaysActive, tradingDaysOverride || 0)
   const daysUp = data.filter((row) => row.realized_pnl > 0).length
   const daysDown = data.filter((row) => row.realized_pnl < 0).length
 
-  // Calculate win rate (days up / days active)
   const winRate = daysActive > 0 ? (daysUp / daysActive) * 100 : 0
 
-  // Calculate ROI
   const volume = totalVolume || 0
   const roi = volume > 0 ? (totalPnL / volume) * 100 : 0
 
-  // Calculate average return
   const avgReturn = daysActive > 0 ? totalPnL / daysActive : 0
 
-  // For trader cards, we don't have exact trade count per period
-  // This would need to come from actual trade data
-  const trades = daysActive // Approximate
+  const trades = daysActive
 
   return {
     totalPnL,

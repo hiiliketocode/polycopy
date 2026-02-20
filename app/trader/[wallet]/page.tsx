@@ -219,6 +219,7 @@ interface V3ProfileResponse {
   };
   trades: any[];
   dailyPnl: Array<{ date: string; realized_pnl: number; pnl_to_date: number }>;
+  tradingDaysActive?: number;
   winRate: number | null;
   followerCount: number;
   hasStats: boolean;
@@ -1713,20 +1714,21 @@ export default function TraderProfilePage({
   }, [v3Profile, pnlWindow]);
 
   const realizedSummary = useMemo(() => {
-    // Use leaderboard P&L as the authoritative Total P&L when available.
-    // The chart data (from closed positions) only shows realized P&L from closed positions,
-    // but the leaderboard includes both realized and unrealized P&L.
     const chartPnl = realizedWindowRows.reduce((acc, row) => acc + (row.realized_pnl || 0), 0);
     const totalPnl = leaderboardPerfForWindow?.pnl ?? chartPnl;
 
-    const daysActive = realizedWindowRows.filter((row) => row.realized_pnl !== 0).length;
+    const pnlDaysActive = realizedWindowRows.filter((row) => row.realized_pnl !== 0).length;
+    const apiTradingDays = v3Profile?.tradingDaysActive ?? 0;
+    const daysActive = pnlWindow === 'ALL'
+      ? Math.max(pnlDaysActive, apiTradingDays)
+      : Math.max(pnlDaysActive, 1);
     const avgDaily = daysActive > 0 ? totalPnl / daysActive : 0;
     const daysUp = realizedWindowRows.filter((row) => row.realized_pnl > 0).length;
     const daysDown = realizedWindowRows.filter((row) => row.realized_pnl < 0).length;
     const rank = leaderboardPerfForWindow?.rank ?? 0;
-    
+
     return { totalPnl, avgDaily, daysUp, daysDown, daysActive, rank };
-  }, [realizedWindowRows, leaderboardPerfForWindow]);
+  }, [realizedWindowRows, leaderboardPerfForWindow, v3Profile?.tradingDaysActive, pnlWindow]);
 
   const rankInfo = useMemo(() => {
     return rankingsByWindow[pnlWindow] ?? { rank: null, total: null, delta: null, previousRank: null };
@@ -1747,9 +1749,11 @@ export default function TraderProfilePage({
     if (realizedWindowRows.length === 0) return pnlWindowLabel;
     const start = new Date(`${realizedWindowRows[0].date}T00:00:00Z`);
     const end = new Date(`${realizedWindowRows[realizedWindowRows.length - 1].date}T00:00:00Z`);
-    const format = (date: Date) =>
-      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-    return `${format(start)} - ${format(end)}`;
+    const spansDifferentYears = start.getUTCFullYear() !== end.getUTCFullYear();
+    const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', timeZone: 'UTC' };
+    if (spansDifferentYears) opts.year = 'numeric';
+    const fmt = (date: Date) => date.toLocaleDateString('en-US', opts);
+    return `${fmt(start)} - ${fmt(end)}`;
   }, [realizedWindowRows, pnlWindowLabel]);
 
   const dailyBarSize = useMemo(() => {

@@ -288,6 +288,7 @@ export default function TraderProfilePage({
   const [pnlWindow, setPnlWindow] = useState<PnlWindow>("30D")
   const [pnlView, setPnlView] = useState<"daily" | "cumulative">("daily")
   const [traderVolume, setTraderVolume] = useState<number | null>(null)
+  const [tradingDaysActive, setTradingDaysActive] = useState(0)
 
   /* ── My copy stats ── */
   const [myStats, setMyStats] = useState<MyTradeStats | null>(null)
@@ -428,6 +429,9 @@ export default function TraderProfilePage({
               pnl_to_date: row.pnl_to_date != null ? Number(row.pnl_to_date) : null,
             })))
           }
+          if (typeof data.tradingDaysActive === "number") {
+            setTradingDaysActive(data.tradingDaysActive)
+          }
         }
 
         // Check follow status (still from Supabase)
@@ -546,7 +550,10 @@ export default function TraderProfilePage({
   const windowSummary = useMemo(() => {
     const summaryForWindow = pnlSummaries.find((s) => s.label === pnlWindow)
     const totalPnl = summaryForWindow?.pnl ?? realizedWindowRows.reduce((s, r) => s + r.realized_pnl, 0)
-    const daysActive = realizedWindowRows.length
+    const pnlDaysActive = realizedWindowRows.filter((r) => r.realized_pnl !== 0).length
+    const daysActive = pnlWindow === "ALL"
+      ? Math.max(pnlDaysActive, tradingDaysActive)
+      : Math.max(pnlDaysActive, 1)
     const daysUp = realizedWindowRows.filter((r) => r.realized_pnl > 0).length
     const daysDown = realizedWindowRows.filter((r) => r.realized_pnl < 0).length
     const avgDaily = daysActive > 0 ? totalPnl / daysActive : 0
@@ -556,7 +563,7 @@ export default function TraderProfilePage({
     const roi = volume > 0 ? (totalPnl / volume) * 100 : 0
 
     return { totalPnl, avgDaily, rank: ranking?.rank, daysActive, daysUp, daysDown, roi }
-  }, [pnlSummaries, realizedWindowRows, pnlRankings, pnlWindow, traderVolume, trader?.volume])
+  }, [pnlSummaries, realizedWindowRows, pnlRankings, pnlWindow, traderVolume, trader?.volume, tradingDaysActive])
 
   // Category distribution from trades
   const categoryDistribution = useMemo(() => {
