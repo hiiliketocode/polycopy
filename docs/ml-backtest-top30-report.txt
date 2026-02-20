@@ -1,0 +1,149 @@
+
+==========================================================================================
+  ML Score Backtest — Top 30 traders (last 30d PnL) only
+==========================================================================================
+
+  Data: ft_orders (forward test orders) with outcome WON/LOST and model_probability set.
+  ML score = model_probability × 100 (0–100 scale). Buckets use the value stored per order.
+  Filter: only orders where trader_address is in top 30 by last 30d PnL.
+  PnL/size below are our forward-test copy PnL (virtual), not the original trader’s.
+
+  ... fetched 10000 orders
+  ... fetched 20000 orders
+  ... fetched 30000 orders
+  ... fetched 40000 orders
+  ... fetched 50000 orders
+  ... fetched 60000 orders
+  ... fetched 70000 orders
+  ... fetched 80000 orders
+  ... fetched 90000 orders
+  ... fetched 100000 orders
+  ... fetched 110000 orders
+  ... fetched 120000 orders
+  ... fetched 130000 orders
+  ... fetched 140000 orders
+  ... fetched 150000 orders
+  ... fetched 160000 orders
+  ... fetched 170000 orders
+  ... fetched 180000 orders
+  Top 30 traders (30d PnL): 30 wallets.
+
+  Top 30: 6865 orders | Others: 174312 orders (181177 total).
+
+--- Data range ---
+  Resolved trades with ML score (top 30 traders only): 6865
+  Others (traders not in top 30): 174312
+  Order time range: 2026-02-08T00:00:43+00:00 → 2026-02-20T19:28:28+00:00
+
+--- ML score validation (sanity check) ---
+  Orders with model_probability set: 6865 (of 6865)
+  model_probability in [0, 1]: 6865; > 1 (would need /100): 0
+  Sample rows (raw model_probability → score% → bucket → outcome, pnl, size):
+    mp=0.5000 → 50.0% → 41-50 | WON pnl=8.97 size=8.00
+    mp=0.5000 → 50.0% → 41-50 | WON pnl=1.47 size=5.00
+    mp=0.4140 → 41.4% → 41-50 | LOST pnl=-5.00 size=5.00
+    mp=0.7020 → 70.2% → 71-80 | WON pnl=3.75 size=5.00
+    mp=0.5000 → 50.0% → 41-50 | LOST pnl=-2.43 size=2.43
+    mp=0.9530 → 95.3% → 91-100 | WON pnl=0.10 size=5.00
+    mp=0.5000 → 50.0% → 41-50 | LOST pnl=-5.00 size=5.00
+    mp=0.5000 → 50.0% → 41-50 | LOST pnl=-5.72 size=5.72
+
+==========================================================================================
+  Results by ML score (deciles: 0–10, 11–20, …)
+==========================================================================================
+
+  Decile buckets (ML score 0–100)
+  Bucket       |  Trades |   Won |  Lost |      WR |     ROI% |   Total PnL |   Avg PnL |    PF |   AvgWin |  AvgLoss
+  ---------------------------------------------------------------------------------------------------------
+  31-40        |     327 |    41 |   286 |   12.5% |   -52.1% |   $-1462.39 |    $-4.47 |  0.42 |   $25.95 |   $-8.83
+  41-50        |    4047 |  1559 |  2488 |   38.5% |    -9.4% |   $-2744.94 |    $-0.68 |  0.85 |   $10.32 |   $-7.57
+  51-60        |    1472 |   703 |   769 |   47.8% |    +0.4% |      $38.22 |     $0.03 |  1.01 |    $8.00 |   $-7.27
+  61-70        |      96 |    58 |    38 |   60.4% |    -7.6% |     $-39.22 |    $-0.41 |  0.81 |    $2.94 |   $-5.52
+  71-80        |     337 |   204 |   133 |   60.5% |   -11.4% |    $-191.82 |    $-0.57 |  0.71 |    $2.31 |   $-4.99
+  81-90        |      54 |    43 |    11 |   79.6% |    -7.8% |     $-21.23 |    $-0.39 |  0.61 |    $0.79 |   $-5.00
+  91-100       |     122 |   115 |     7 |   94.3% |    -0.7% |      $-4.11 |    $-0.03 |  0.88 |    $0.27 |   $-5.00
+
+==========================================================================================
+  Results by ML score (quartiles: 0–25, 26–50, …)
+==========================================================================================
+
+  Quartile buckets
+  Bucket       |  Trades |   Won |  Lost |      WR |     ROI% |   Total PnL |   Avg PnL |    PF |   AvgWin |  AvgLoss
+  ---------------------------------------------------------------------------------------------------------
+  26-50        |    4381 |  1600 |  2781 |   36.5% |   -13.3% |   $-4272.50 |    $-0.98 |  0.80 |   $10.72 |   $-7.70
+  51-75        |    1911 |   970 |   941 |   50.8% |    -0.6% |     $-71.72 |    $-0.04 |  0.99 |    $6.60 |   $-6.88
+  76-100       |     260 |   222 |    38 |   85.4% |    -2.2% |     $-28.87 |    $-0.11 |  0.85 |    $0.73 |   $-5.00
+
+==========================================================================================
+  Summary: Is higher ML score better?
+==========================================================================================
+  Segment        |  Trades |      WR |     ROI% |   Total PnL |   Avg PnL
+  -----------------------------------------------------------------
+  All (with ML)  |    6865 |   42.3% |    -9.9% |   $-4779.61 |    $-0.70
+  ML ≥ 55%       |    1516 |   59.0% |    -4.2% |    $-392.68 |    $-0.26
+  ML < 55%       |    5349 |   37.6% |   -11.2% |   $-4386.93 |    $-0.82
+
+==========================================================================================
+  Comparison: Top 30 traders vs Others
+==========================================================================================
+
+  Segment        |  Trades |   Won |  Lost |      WR |     ROI% |   Total PnL |   Avg PnL
+  -------------------------------------------------------------------------------------
+  Top 30 traders |    6865 |  2904 |  3961 |   42.3% |    -9.9% |   $-4779.61 |    $-0.70
+  Others         |  174312 | 71547 | 102765 |   41.0% |    -7.0% |  $-77192.53 |    $-0.44
+  All            |  181177 | 74451 | 106726 |   41.1% |    -7.1% |  $-81972.14 |    $-0.45
+
+
+==========================================================================================
+  Why can "top" traders show worse or negative copy results?
+==========================================================================================
+  • "Top 30" = traders currently ranked by their *own* last-30-day PnL. We measure *our* copy PnL.
+  • We do not copy every trade they make. We only copy trades that pass our filters (ML threshold,
+    price band, edge, conviction, etc.). So the set of trades we copy can perform differently from
+    their full set — e.g. we might copy more marginal trades and miss some of their biggest wins.
+  • Our PnL uses *our* virtual bet sizes (per FT wallet), not theirs. So dollar results differ.
+  • The ranking is a *current* snapshot. Trades in the backtest span the full date range; some
+    may be from when a trader was not in the top 30 or in a different regime.
+  • So: "best traders by PnL" does not guarantee "best copy portfolio" when we filter and size.
+
+
+--- Metrics explained ---
+  WR       = Win rate (wins / (wins + losses))
+  ROI%     = (Total PnL / Total cost) × 100. Cost = sum of order sizes ($).
+  Total PnL = Sum of realized PnL in the bucket.
+  Avg PnL  = Average PnL per trade (expectancy).
+  PF       = Profit factor = gross wins / gross losses (>1 = profitable).
+  AvgWin   = Average $ per winning trade. AvgLoss = average $ lost per losing trade.
+
+
+==========================================================================================
+  How the ML score is calculated
+==========================================================================================
+  The score stored in ft_orders.model_probability is the model's predicted win probability (0–1).
+  It is computed per trade when we sync, by calling the predict-trade Edge Function.
+
+  INPUTS (per trade) — the function builds 41 features and sends them to the model:
+
+  • From the trade: entry_price, side (LONG/SHORT), size, condition_id, timestamp.
+  • From the market: final_niche (e.g. NBA, POLITICS), bet_structure (STANDARD/O/U/SPREAD),
+    volume/liquidity, market_duration_days, market_age_bucket, minutes_to_start, hours_to_close.
+  • From the trader (Supabase/Dome): global_win_rate, D30/D7 win_rate, lifetime/D30/D7 roi_pct,
+    total_lifetime_trades, avg_bet_size_usdc, stddev_bet_size_usdc, recent_win_rate.
+  • Profile waterfall: niche + structure + price_bracket → niche_win_rate, trader_historical_roi_pct.
+  • Trends (V11): win_rate_trend_short/long, roi_trend_short/long, performance_regime.
+  • Behavior: conviction_z_score, trade_sequence, total_exposure_log, trader_tempo_seconds,
+    is_chasing_price_up, is_averaging_down, is_hedging, trader_sells_ratio, is_with_crowd.
+  • Trade context: trade_size_tier, trade_size_log, position_direction, volume_momentum_ratio,
+    liquidity_impact_ratio, trader_selectivity, price_vs_trader_avg, niche_experience_pct,
+    is_in_best_niche, trader_experience_bucket.
+
+  HOW THE SCORE IS CALCULATED:
+  • The features are passed to either (1) BigQuery ML model polycopy_v1.poly_predictor_v11, or
+    (2) a local ML API that replicates it. The model is a classifier trained on historical
+    resolved trades; it outputs predicted_outcome_probs (probability of WON vs LOST).
+  • We take the probability for outcome WON (winProb). That value (0.0–1.0) is stored as
+    model_probability in ft_orders. The weights are inside the trained model (BigQuery or
+    local), not in app code.
+  • Sync uses prediction.probability or valuation.ai_fair_value from the Edge Function
+    response; both are set to winProb. If the API returns a value > 1, we divide by 100.
+

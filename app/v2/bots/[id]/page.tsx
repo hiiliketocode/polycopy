@@ -228,11 +228,66 @@ function PerformanceChart({
 
 type Tab = "analysis" | "trades" | "signal_log"
 
+type TradesTimeWindow = "24h" | "yesterday" | "7d" | "30d" | "all"
+
+function getResolvedTimeMs(t: FTOrder): number {
+  const r = t.resolved_time
+  if (!r) return 0
+  const raw = typeof r === "string" ? r : r.value
+  return new Date(raw).getTime()
+}
+
+function filterTradesByWindow(trades: FTOrder[], window: TradesTimeWindow): FTOrder[] {
+  if (window === "all") return trades
+  const now = Date.now()
+  const oneDayMs = 24 * 60 * 60 * 1000
+
+  if (window === "24h") {
+    const cutoff = now - oneDayMs
+    return trades.filter((t) => getResolvedTimeMs(t) >= cutoff)
+  }
+
+  if (window === "yesterday") {
+    const todayStart = new Date()
+    todayStart.setUTCHours(0, 0, 0, 0)
+    const yesterdayEnd = todayStart.getTime() - 1
+    const yesterdayStart = yesterdayEnd - oneDayMs + 1
+    return trades.filter((t) => {
+      const ms = getResolvedTimeMs(t)
+      return ms >= yesterdayStart && ms <= yesterdayEnd
+    })
+  }
+
+  if (window === "7d") {
+    const cutoff = now - 7 * oneDayMs
+    return trades.filter((t) => getResolvedTimeMs(t) >= cutoff)
+  }
+
+  if (window === "30d") {
+    const cutoff = now - 30 * oneDayMs
+    return trades.filter((t) => getResolvedTimeMs(t) >= cutoff)
+  }
+
+  return trades
+}
+
+function getWindowLabel(w: TradesTimeWindow): string {
+  switch (w) {
+    case "24h": return "Last 24 hours"
+    case "yesterday": return "Yesterday"
+    case "7d": return "7D"
+    case "30d": return "30D"
+    case "all": return "All"
+    default: return "All"
+  }
+}
+
 export default function BotDetailPage() {
   const params = useParams()
   const router = useRouter()
   const botId = params.id as string
   const [activeTab, setActiveTab] = useState<Tab>("analysis")
+  const [tradesTimeWindow, setTradesTimeWindow] = useState<TradesTimeWindow>("all")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -366,6 +421,15 @@ export default function BotDetailPage() {
     return formatVolume((stats.total_trades || 0) * ((stats as any).avg_trade_size || 0))
   }, [stats])
 
+  const avgTradesPerDayLifetime = useMemo(() => {
+    if (!wallet?.start_date || !stats?.total_trades) return null
+    const raw = typeof wallet.start_date === "string" ? wallet.start_date : (wallet.start_date as { value?: string })?.value
+    if (!raw) return null
+    const startMs = new Date(raw).getTime()
+    const daysActive = Math.max(1, Math.floor((Date.now() - startMs) / 86400000))
+    return stats.total_trades / daysActive
+  }, [wallet?.start_date, stats?.total_trades])
+
   const riskProfile = useMemo(() => {
     return wallet ? deriveRiskProfile(wallet) : { label: "MODERATE", color: "text-poly-yellow" }
   }, [wallet])
@@ -374,6 +438,27 @@ export default function BotDetailPage() {
     if (!wallet) return false
     return !FREE_BOT_NAMES.some(n => wallet.display_name?.includes(n))
   }, [wallet])
+
+  // Trades filtered by selected time window
+  const filteredTrades = useMemo(
+    () => filterTradesByWindow(recentTrades, tradesTimeWindow),
+    [recentTrades, tradesTimeWindow]
+  )
+
+  // Avg trades per day for the selected window (for display in Trades tab)
+  const tradesWindowDays = useMemo(() => {
+    if (tradesTimeWindow === "all") return null
+    if (tradesTimeWindow === "24h") return 1
+    if (tradesTimeWindow === "yesterday") return 1
+    if (tradesTimeWindow === "7d") return 7
+    if (tradesTimeWindow === "30d") return 30
+    return null
+  }, [tradesTimeWindow])
+
+  const avgTradesPerDayInWindow =
+    tradesWindowDays != null && tradesWindowDays > 0 && filteredTrades.length > 0
+      ? filteredTrades.length / tradesWindowDays
+      : null
 
   // Best performing trades last 7 days (resolved, sorted by PnL desc)
   const bestTrades7d = useMemo(() => {
@@ -738,6 +823,14 @@ export default function BotDetailPage() {
                   <p className="mt-0.5 font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
                     LIFETIME_EXECUTION
                   </p>
+                  {avgTradesPerDayLifetime != null && avgTradesPerDayLifetime > 0 && (
+                    <p className="mt-2 font-body text-xs font-semibold tabular-nums text-foreground">
+                      {avgTradesPerDayLifetime < 1
+                        ? avgTradesPerDayLifetime.toFixed(1)
+                        : avgTradesPerDayLifetime.toFixed(0)}{" "}
+                      avg/day
+                    </p>
+                  )}
                 </div>
                 <div className="border border-border bg-card p-5">
                   <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -828,21 +921,46 @@ export default function BotDetailPage() {
         {/* ────── TRADES TAB ────── */}
         {activeTab === "trades" && (
           <div>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="font-sans text-lg font-bold uppercase tracking-wide text-foreground">
                   TRADE HISTORY
                 </h2>
                 <p className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground">
-                  {recentTrades.length} RESOLVED TRADES
+                  {filteredTrades.length} RESOLVED TRADES
+                  {tradesTimeWindow !== "all" && ` (${getWindowLabel(tradesTimeWindow)})`}
+                  {avgTradesPerDayInWindow != null && (
+                    <span className="ml-1.5 font-normal text-muted-foreground">
+                      · {avgTradesPerDayInWindow.toFixed(1)} avg/day
+                    </span>
+                  )}
                 </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                {(["24h", "yesterday", "7d", "30d", "all"] as TradesTimeWindow[]).map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => setTradesTimeWindow(w)}
+                    className={cn(
+                      "shrink-0 px-3 py-2 font-sans text-xs font-bold uppercase tracking-widest transition-all",
+                      tradesTimeWindow === w
+                        ? "bg-poly-yellow text-poly-black"
+                        : "border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                  >
+                    {getWindowLabel(w)}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {recentTrades.length === 0 ? (
+            {filteredTrades.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <p className="font-body text-sm text-muted-foreground">
-                  No resolved trades yet for this strategy.
+                  {recentTrades.length === 0
+                    ? "No resolved trades yet for this strategy."
+                    : `No resolved trades in ${getWindowLabel(tradesTimeWindow).toLowerCase()}. Try another window.`}
                 </p>
               </div>
             ) : (
@@ -877,7 +995,7 @@ export default function BotDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {recentTrades.slice(0, 100).map((trade, i) => {
+                    {filteredTrades.slice(0, 100).map((trade, i) => {
                       const pnl = trade.pnl || 0
                       return (
                         <tr key={i} className="border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">

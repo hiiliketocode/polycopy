@@ -91,6 +91,7 @@ export async function GET() {
         total_trades: total,
         test_status,
         is_active: w.is_active ?? true,
+        start_date: w.start_date,
       };
     });
 

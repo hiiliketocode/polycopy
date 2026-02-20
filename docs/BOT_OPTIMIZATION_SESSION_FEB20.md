@@ -196,4 +196,28 @@ Four wallets had `use_model=true` but `model_threshold=NULL`, so sync never call
 
 ---
 
+---
+
+## 11. Trading volume and batching (why trades come in batches)
+
+### Why batches every few hours?
+- **Trader activity is bursty**: We copy leaderboard/target traders; they trade in clusters (news, events). So new ft_orders arrive in bursts, then quiet periods.
+- **Cadence**: FT sync every 5 min, LT execute every 2 min. No new Polymarket trades from our traders → no new ft_orders → no new LT trades.
+- **Per-strategy time budget**: 15s per strategy per run. Large OPEN backlogs are processed in chunks every 2 min until done.
+
+So "batches every few hours" is expected. Volume = how often our traders trade × how many pass our filters × capital.
+
+### After the FT sync cron fix
+We now sync every 5 min, so we no longer miss hours of activity. We also raised the OPEN ft_orders fetch limit to 2000 (from default 1000) so newer signals are not starved when there are many OPEN positions. You should see fewer long dead gaps; total volume still depends on trader activity and filters.
+
+### Trading quality checklist
+- **Audit**: `npx tsx scripts/audit-ft-orders-qualification.ts 1000` — expect 0 violations (no non-qualifying trade taken).
+- **Rejections**: Check lt_orders.rejection_reason (CASH_CHECK, DEAD_MARKET, RISK_CHECK) to see why attempts did not fill.
+- **Safeguards**: FT filters (price, ML, conviction), LT dead market guard, risk limits, capital lock. See executor-v2 and ft/sync.
+
+---
+
+## 11. Volume and batching
+Trades come in batches because (1) leaderboard traders trade in bursts, (2) FT sync runs every 5 min and LT execute every 2 min, and (3) each strategy gets 15s per run so big backlogs are chunked. After the FT sync cron fix we no longer miss long gaps; we also raised OPEN ft_orders fetch limit to 2000. Quality: run `npx tsx scripts/audit-ft-orders-qualification.ts 1000` (expect 0 violations); check lt_orders.rejection_reason for CASH_CHECK, DEAD_MARKET, RISK_CHECK.
+
 *Generated Feb 20, 2026. Re-run audit Feb 27.*

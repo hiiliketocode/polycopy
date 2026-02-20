@@ -14,6 +14,8 @@ export interface BotData {
     return_pct: number
     win_rate: number
     total_trades: number
+    /** Average resolved trades per day (lifetime). */
+    avg_trades_per_day: number
     sparkline_data: number[]
   }
   risk_level: "LOW" | "MEDIUM" | "HIGH"
@@ -169,7 +171,7 @@ export function BotCard({
       </div>
 
       {/* ── Stats Row ── */}
-      <div className="mx-5 grid grid-cols-2 border-t border-border py-3 sm:grid-cols-4">
+      <div className="mx-5 grid grid-cols-2 border-t border-border py-3 sm:grid-cols-5">
         <div>
           <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
             WIN_RATE
@@ -184,6 +186,18 @@ export function BotCard({
           </p>
           <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
             {formatTrades(bot.performance.total_trades)}
+          </p>
+        </div>
+        <div>
+          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+            AVG/DAY
+          </p>
+          <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-foreground">
+            {bot.performance.avg_trades_per_day > 0
+              ? bot.performance.avg_trades_per_day < 1
+                ? bot.performance.avg_trades_per_day.toFixed(1)
+                : bot.performance.avg_trades_per_day.toFixed(0)
+              : "—"}
           </p>
         </div>
         <div>

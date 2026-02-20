@@ -102,6 +102,13 @@ function transformWalletToBot(wallet: any): BotData {
   const isFree = FREE_BOT_NAMES.some(n => wallet.display_name?.includes(n))
   const riskLevel = deriveRiskLevel(wallet)
 
+  const totalTrades = wallet.total_trades || 0
+  const startDate = wallet.start_date ? new Date(wallet.start_date).getTime() : null
+  const daysActive = startDate
+    ? Math.max(1, Math.floor((Date.now() - startDate) / 86400000))
+    : 1
+  const avgTradesPerDay = totalTrades > 0 ? totalTrades / daysActive : 0
+
   return {
     id: wallet.wallet_id,
     name: (wallet.display_name || wallet.wallet_id).toUpperCase(),
@@ -109,7 +116,8 @@ function transformWalletToBot(wallet: any): BotData {
     performance: {
       return_pct: Math.round(pnlPct * 10) / 10,
       win_rate: Math.round(winRate * 10) / 10,
-      total_trades: wallet.total_trades || 0,
+      total_trades: totalTrades,
+      avg_trades_per_day: Math.round(avgTradesPerDay * 10) / 10,
       sparkline_data: generateSparkline(wallet.wallet_id?.length || 1),
     },
     risk_level: riskLevel,

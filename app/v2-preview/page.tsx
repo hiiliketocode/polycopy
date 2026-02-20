@@ -48,6 +48,7 @@ const mockBot: BotData = {
     return_pct: 12.4,
     win_rate: 72,
     total_trades: 156,
+    avg_trades_per_day: 5.2,
     sparkline_data: Array.from({ length: 30 }, (_, i) => 100 + i * 1.2 + (Math.random() - 0.5) * 5),
   },
   volume: "$250K",

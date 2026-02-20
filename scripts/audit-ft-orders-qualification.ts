@@ -2,6 +2,8 @@
 /**
  * Audit: last N FT orders - confirm each passed its wallet filters (no non-qualifying trade taken).
  * Run: npx tsx scripts/audit-ft-orders-qualification.ts [500|1000]
+ *
+ * See also: scripts/why-no-trades-diagnostic.ts for "why no trades in last hour" (ft_orders, lt_orders, capital, logs).
  */
 import { config } from 'dotenv';
 import path from 'path';
