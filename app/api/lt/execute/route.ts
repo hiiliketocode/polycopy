@@ -20,6 +20,7 @@ import { processAllCooldowns } from '@/lib/live-trading/capital-manager';
 import { resetDailyRiskState } from '@/lib/live-trading/risk-manager-v2';
 import { getActiveStrategies, executeTrade, type LTStrategy } from '@/lib/live-trading/executor-v2';
 import { batchResolveTokenIds } from '@/lib/live-trading/token-cache';
+import { detectTraderSells, executeSell } from '@/lib/live-trading/sell-manager';
 import { type FTWallet, type EnrichedTrade, getSourceTradeId, FT_SLIPPAGE_PCT } from '@/lib/ft-sync/shared-logic';
 
 const FT_LOOKBACK_HOURS = 12;  // Look back 12 hours for FT orders (was 6h; extended so we don't miss orders)
@@ -245,8 +246,30 @@ export async function POST(request: Request) {
         const totalExecuted = Object.values(results).reduce((s, r) => s + r.executed, 0);
         const totalErrors = Object.values(results).reduce((s, r) => s + r.errors, 0);
 
-        await logger.info('EXECUTION_END', `LT execution complete: ${totalExecuted} executed, ${totalErrors} errors across ${strategies.length} strategies`, {
+        // ── Step 6: Detect and execute trader sells ──
+        let totalSells = 0;
+        try {
+            const sellCandidates = await detectTraderSells(supabase, logger);
+            if (sellCandidates.length > 0) {
+                await logger.info('SELL_DETECT', `Found ${sellCandidates.length} positions where trader sold`);
+                for (const candidate of sellCandidates) {
+                    const sellResult = await executeSell(supabase, candidate, 1.0, logger);
+                    if (sellResult.success) {
+                        totalSells++;
+                        await logger.info('SELL_EXECUTE', `Sold ${sellResult.shares_sold} shares @ $${sellResult.sell_price?.toFixed(4)} = $${sellResult.sell_proceeds?.toFixed(2)}`, {
+                            lt_order_id: candidate.lt_order_id,
+                            strategy_id: candidate.strategy_id,
+                        });
+                    }
+                }
+            }
+        } catch (sellErr: any) {
+            await logger.warn('SELL_ERROR', `Sell detection error (non-fatal): ${sellErr.message}`);
+        }
+
+        await logger.info('EXECUTION_END', `LT execution complete: ${totalExecuted} buys, ${totalSells} sells, ${totalErrors} errors across ${strategies.length} strategies`, {
             total_executed: totalExecuted,
+            total_sells: totalSells,
             total_errors: totalErrors,
         });
 
@@ -255,6 +278,7 @@ export async function POST(request: Request) {
             executed_at: now.toISOString(),
             strategies_processed: strategies.length,
             total_executed: totalExecuted,
+            total_sells: totalSells,
             total_errors: totalErrors,
             cooldown_released: cooldownResult.totalReleased,
             daily_reset_count: resetCount,

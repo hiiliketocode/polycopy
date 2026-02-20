@@ -281,6 +281,7 @@ export async function GET() {
         open_positions: openOrders.length,
         won: orders.filter((o: { outcome: string }) => o.outcome === 'WON').length,
         lost: orders.filter((o: { outcome: string }) => o.outcome === 'LOST').length,
+        sold: orders.filter((o: { outcome: string }) => o.outcome === 'SOLD').length,
         realized_pnl: orders.filter((o: { outcome: string }) => o.outcome !== 'OPEN').reduce((sum: number, o: { pnl?: number }) => sum + (o.pnl || 0), 0),
         unrealized_pnl: 0,
         open_exposure: openOrders.reduce((sum: number, o: { size?: number }) => sum + (o.size || 0), 0),

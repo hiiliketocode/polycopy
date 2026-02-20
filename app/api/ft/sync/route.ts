@@ -352,7 +352,7 @@ export async function POST(request: Request) {
         const rawTrades: PolymarketTrade[] = await response.json();
         if (!Array.isArray(rawTrades) || rawTrades.length === 0) break;
 
-        for (const trade of rawTrades.filter(t => t.side === 'BUY' && t.conditionId)) {
+        for (const trade of rawTrades.filter(t => (t.side === 'BUY' || t.side === 'SELL') && t.conditionId)) {
           const tradeTime = parseTimestamp(trade.timestamp);
           if (tradeTime && (!oldestInTrader || tradeTime < oldestInTrader)) oldestInTrader = tradeTime;
           const size = Number(trade.size ?? 0);
@@ -421,9 +421,9 @@ export async function POST(request: Request) {
         if (data.length < 200) break;
       }
 
-      // ── 2. Filter: BUY trades only, after sinceMs ──
+      // ── 2. Filter: BUY and SELL trades, after sinceMs ──
       const buyFills = allActivity.filter(a => {
-        if (a.type !== 'TRADE' || a.side !== 'BUY' || !a.conditionId) return false;
+        if (a.type !== 'TRADE' || (a.side !== 'BUY' && a.side !== 'SELL') || !a.conditionId) return false;
         const ts = Number(a.timestamp);
         const ms = ts < 1e10 ? ts * 1000 : ts;
         return ms > sinceMs;
@@ -931,6 +931,86 @@ export async function POST(request: Request) {
           } else {
             results[wallet.wallet_id].inserted++;
             runningOpenExposure += effectiveBetSize;
+          }
+        }
+
+        // ═══ SELL DETECTION: Close positions when copied trader sells ═══
+        // Universal: applies to ALL wallets. When a trader we copied sells
+        // on a condition_id where we have an OPEN position, close it at the
+        // trader's sell price. This is proportional — if we have multiple
+        // positions from the same trader on the same market, all are closed.
+        const sellTrades = allTrades.filter(t => (t.side === 'SELL') && t.traderWallet);
+        if (sellTrades.length > 0 && walletOrders && walletOrders.length > 0) {
+          const openPositions = (walletOrders || []).filter(o => o.outcome === 'OPEN');
+          if (openPositions.length > 0) {
+            // Build index: (trader_address, condition_id) -> open orders
+            const openByTraderMarket = new Map<string, Array<{ order_id?: string; source_trade_id: string; entry_price: number; size: number }>>();
+            for (const op of openPositions) {
+              // source_trade_id contains the original trade's ID; we need trader_address + condition_id
+              // but walletOrders only has outcome, size, pnl, source_trade_id from the select
+              // We need to match by source_trade_id against the original BUY trades
+            }
+
+            // Simpler approach: for each SELL trade, check if this wallet has OPEN orders
+            // from the same trader on the same condition_id (query DB directly)
+            const sellTraderConditions = new Map<string, { sellPrice: number; sellTime: Date }>();
+            for (const st of sellTrades) {
+              const sellTime = parseTimestamp(st.timestamp);
+              if (!sellTime || sellTime <= lastSyncTime) continue;
+              const key = `${(st.traderWallet || '').toLowerCase()}::${st.conditionId}`;
+              const sellPrice = Number(st.price || 0);
+              if (sellPrice > 0 && !sellTraderConditions.has(key)) {
+                sellTraderConditions.set(key, { sellPrice, sellTime });
+              }
+            }
+
+            if (sellTraderConditions.size > 0) {
+              // Get OPEN orders for this wallet with trader_address and condition_id
+              const { data: openWithDetails } = await supabase
+                .from('ft_orders')
+                .select('order_id, trader_address, condition_id, entry_price, size, token_label')
+                .eq('wallet_id', wallet.wallet_id)
+                .eq('outcome', 'OPEN')
+                .limit(5000);
+
+              let sellsClosed = 0;
+              for (const op of openWithDetails || []) {
+                const key = `${(op.trader_address || '').toLowerCase()}::${op.condition_id}`;
+                const sellInfo = sellTraderConditions.get(key);
+                if (!sellInfo) continue;
+
+                const entryPrice = Number(op.entry_price) || 0;
+                const size = Number(op.size) || 0;
+                if (entryPrice <= 0 || size <= 0) continue;
+
+                // PnL on sell: shares * (sell_price - entry_price)
+                // shares = size / entry_price (for BUY orders, size is the cost)
+                const shares = size / entryPrice;
+                const pnl = +(shares * sellInfo.sellPrice - size).toFixed(2);
+
+                const { error: sellUpdateErr } = await supabase
+                  .from('ft_orders')
+                  .update({
+                    outcome: 'SOLD',
+                    exit_price: sellInfo.sellPrice,
+                    close_reason: 'trader_sell',
+                    pnl,
+                    resolved_time: sellInfo.sellTime.toISOString(),
+                  })
+                  .eq('order_id', op.order_id)
+                  .eq('outcome', 'OPEN'); // Optimistic lock: only close if still OPEN
+
+                if (!sellUpdateErr) {
+                  sellsClosed++;
+                  runningOpenExposure -= size;
+                }
+              }
+
+              if (sellsClosed > 0) {
+                reasons['sells_closed'] = sellsClosed;
+                console.log(`[ft/sync] ${wallet.wallet_id}: closed ${sellsClosed} positions (trader sell)`);
+              }
+            }
           }
         }
 
