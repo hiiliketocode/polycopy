@@ -1623,6 +1623,12 @@ export default function TradingStrategiesPage() {
                 </CardTitle>
                 <CardDescription>
                   Recent live orders across all LT strategies. Click a strategy to open its detail page.
+                  {' '}
+                  Seeing lots of &quot;Insufficient cash&quot;? Check{' '}
+                  <a href="/api/lt/diagnose-capital" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                    Diagnose capital
+                  </a>
+                  {' '}for per-strategy cash state and interpretation.
                 </CardDescription>
               </div>
               <Button variant="outline" size="sm" onClick={fetchLtOrders} disabled={ltOrdersLoading}>
@@ -1652,7 +1658,7 @@ export default function TradingStrategiesPage() {
                         <th className="text-right py-2 px-2 font-medium text-muted-foreground">Size</th>
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Timestamp</th>
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Outcome</th>
-                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Rejection reason</th>
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground min-w-[280px]">Rejection reason</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1678,7 +1684,7 @@ export default function TradingStrategiesPage() {
                             {o.order_placed_at ? new Date(o.order_placed_at).toLocaleString() : '—'}
                           </td>
                           <td className="py-2 px-2 text-foreground">{o.outcome ?? '—'}</td>
-                          <td className="py-2 px-2 max-w-[220px] truncate text-muted-foreground" title={o.rejection_reason || ''}>
+                          <td className="py-2 px-2 text-muted-foreground text-xs whitespace-normal break-words min-w-[280px] max-w-[400px]" title={o.rejection_reason || ''}>
                             {o.rejection_reason ?? '—'}
                           </td>
                         </tr>
