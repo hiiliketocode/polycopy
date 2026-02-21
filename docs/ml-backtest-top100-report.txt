@@ -16,3 +16,112 @@
   ... fetched 70000 orders
   ... fetched 80000 orders
   ... fetched 90000 orders
+  ... fetched 100000 orders
+  ... fetched 110000 orders
+  ... fetched 120000 orders
+  ... fetched 130000 orders
+  ... fetched 140000 orders
+  ... fetched 150000 orders
+  ... fetched 160000 orders
+  ... fetched 170000 orders
+  ... fetched 180000 orders
+  Unique trades (after dedupe): 149891.
+  Top 100 traders (30d PnL): 100 wallets.
+
+  Top 100: 22732 unique trades | Others: 127159 (149891 total).
+
+--- Data range ---
+  Unique trades with ML score (top 100 traders only): 22732
+  Others (traders not in top 100): 127159 unique trades
+  Order time range: 2026-02-08T00:00:43+00:00 → 2026-02-21T00:03:06+00:00
+  Scope: We only have ML scores for trades that were evaluated by sync (considered for copy).
+  So this is the set of trades we scored — each counted once. Not every trade the trader ever made.
+
+--- ML score validation (sanity check) ---
+  Orders with model_probability set: 22732 (of 22732)
+  model_probability in [0, 1]: 22732; > 1 (would need /100): 0
+  Sample rows (raw model_probability → score% → bucket → outcome, pnl, size):
+    mp=0.5000 → 50.0% → 41-50 | LOST unit_profit=-1.000
+    mp=0.5090 → 50.9% → 51-60 | LOST unit_profit=-1.000
+    mp=0.4990 → 49.9% → 41-50 | LOST unit_profit=-1.000
+    mp=0.5060 → 50.6% → 51-60 | WON unit_profit=1.695
+    mp=0.5720 → 57.2% → 51-60 | WON unit_profit=0.994
+    mp=0.5270 → 52.7% → 51-60 | LOST unit_profit=-1.000
+    mp=0.5060 → 50.6% → 51-60 | LOST unit_profit=-1.000
+    mp=0.5060 → 50.6% → 51-60 | LOST unit_profit=-1.000
+
+==========================================================================================
+  Results by ML score (deciles: 0–10, 11–20, …)
+==========================================================================================
+
+  Decile buckets (ML score 0–100)
+  Bucket       |  Trades |   Won |  Lost |      WR | Unit ROI% |   Unit PnL | Avg/trade |    PF |   AvgWin |  AvgLoss
+  ------------------------------------------------------------------------------------------------------------
+  31-40        |     532 |    78 |   454 |   14.7% |    -17.3% |     -92.29 |    -0.173 |  0.80 |    4.637 |   -1.000
+  41-50        |   13050 |  4967 |  8083 |   38.1% |     -2.2% |    -291.08 |    -0.022 |  0.96 |    1.569 |   -1.000
+  51-60        |    4100 |  1832 |  2268 |   44.7% |     -2.5% |    -102.93 |    -0.025 |  0.95 |    1.182 |   -1.000
+  61-70        |     905 |   544 |   361 |   60.1% |     +0.9% |       8.34 |     0.009 |  1.02 |    0.679 |   -1.000
+  71-80        |    1637 |  1092 |   545 |   66.7% |     -2.1% |     -34.61 |    -0.021 |  0.94 |    0.467 |   -1.000
+  81-90        |     173 |   145 |    28 |   83.8% |     -3.3% |      -5.65 |    -0.033 |  0.80 |    0.154 |   -1.000
+  91-100       |     460 |   448 |    12 |   97.4% |     +0.6% |       2.71 |     0.006 |  1.23 |    0.033 |   -1.000
+
+==========================================================================================
+  Results by ML score (quartiles: 0–25, 26–50, …)
+==========================================================================================
+
+  Quartile buckets
+  Bucket       |  Trades |   Won |  Lost |      WR | Unit ROI% |   Unit PnL | Avg/trade |    PF |   AvgWin |  AvgLoss
+  ------------------------------------------------------------------------------------------------------------
+  26-50        |   13601 |  5048 |  8553 |   37.1% |     -2.8% |    -375.17 |    -0.028 |  0.96 |    1.620 |   -1.000
+  51-75        |    6741 |  3445 |  3296 |   51.1% |     -2.0% |    -137.70 |    -0.020 |  0.96 |    0.917 |   -1.000
+  76-100       |    1063 |   907 |   156 |   85.3% |     -1.1% |     -12.18 |    -0.011 |  0.92 |    0.159 |   -1.000
+
+==========================================================================================
+  Summary: Is higher ML score better?
+==========================================================================================
+  Segment        |  Trades |      WR | Unit ROI% |   Unit PnL | Avg/trade
+  --------------------------------------------------------------------
+  All (with ML)  |   22732 |   43.4% |     -3.1% |    -704.13 |    -0.031
+  ML ≥ 55%       |    6188 |   62.2% |     -0.5% |     -32.71 |    -0.005
+  ML < 55%       |   16544 |   36.4% |     -4.1% |    -671.41 |    -0.041
+
+--- Metrics explained (pure signal) ---
+  WR         = Win rate (wins / (wins + losses)).
+  Unit ROI%  = (Total unit PnL / number of trades) × 100. Assumes 1 unit risked per trade.
+  Unit PnL   = Sum of unit profits: WON => (1/entry_price - 1), LOST => -1.
+  Avg/trade  = Average unit profit per trade (expectancy per 1 unit risked).
+  PF         = Profit factor = gross unit wins / gross unit losses (>1 = profitable).
+  Scope      = Each unique trade counted once (deduped by source_trade_id). No FT/bot sizing.
+
+
+==========================================================================================
+  How the ML score is calculated
+==========================================================================================
+  The score stored in ft_orders.model_probability is the model's predicted win probability (0–1).
+  It is computed per trade when we sync, by calling the predict-trade Edge Function.
+
+  INPUTS (per trade) — the function builds 41 features and sends them to the model:
+
+  • From the trade: entry_price, side (LONG/SHORT), size, condition_id, timestamp.
+  • From the market: final_niche (e.g. NBA, POLITICS), bet_structure (STANDARD/O/U/SPREAD),
+    volume/liquidity, market_duration_days, market_age_bucket, minutes_to_start, hours_to_close.
+  • From the trader (Supabase/Dome): global_win_rate, D30/D7 win_rate, lifetime/D30/D7 roi_pct,
+    total_lifetime_trades, avg_bet_size_usdc, stddev_bet_size_usdc, recent_win_rate.
+  • Profile waterfall: niche + structure + price_bracket → niche_win_rate, trader_historical_roi_pct.
+  • Trends (V11): win_rate_trend_short/long, roi_trend_short/long, performance_regime.
+  • Behavior: conviction_z_score, trade_sequence, total_exposure_log, trader_tempo_seconds,
+    is_chasing_price_up, is_averaging_down, is_hedging, trader_sells_ratio, is_with_crowd.
+  • Trade context: trade_size_tier, trade_size_log, position_direction, volume_momentum_ratio,
+    liquidity_impact_ratio, trader_selectivity, price_vs_trader_avg, niche_experience_pct,
+    is_in_best_niche, trader_experience_bucket.
+
+  HOW THE SCORE IS CALCULATED:
+  • The features are passed to either (1) BigQuery ML model polycopy_v1.poly_predictor_v11, or
+    (2) a local ML API that replicates it. The model is a classifier trained on historical
+    resolved trades; it outputs predicted_outcome_probs (probability of WON vs LOST).
+  • We take the probability for outcome WON (winProb). That value (0.0–1.0) is stored as
+    model_probability in ft_orders. The weights are inside the trained model (BigQuery or
+    local), not in app code.
+  • Sync uses prediction.probability or valuation.ai_fair_value from the Edge Function
+    response; both are set to winProb. If the API returns a value > 1, we divide by 100.
+
