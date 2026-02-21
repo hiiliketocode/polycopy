@@ -735,6 +735,7 @@ async function recordRejectedOrder(
     rejectionReason: string,
     riskCheckFailed?: string,
 ): Promise<void> {
+    const attemptedAt = new Date().toISOString();
     // Upsert: may already have row from prior retry — update rejection details
     await supabase.from('lt_orders').upsert({
         lt_order_id: randomUUID(),
@@ -757,6 +758,7 @@ async function recordRejectedOrder(
         risk_check_passed: false,
         risk_check_reason: riskCheckFailed || null,
         rejection_reason: rejectionReason,
+        order_placed_at: attemptedAt,
         is_force_test: false,
         is_shadow: false,
     }, { onConflict: 'strategy_id,source_trade_id' });

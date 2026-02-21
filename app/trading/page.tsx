@@ -1665,7 +1665,7 @@ export default function TradingStrategiesPage() {
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Market</th>
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Status</th>
                         <th className="text-right py-2 px-2 font-medium text-muted-foreground">Size</th>
-                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Timestamp</th>
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground" title="When the order was placed (filled/pending) or attempted (rejected)">Attempted</th>
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Outcome</th>
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Rejection reason</th>
                       </tr>
@@ -1689,8 +1689,8 @@ export default function TradingStrategiesPage() {
                           <td className="py-2 px-2 text-right font-mono">
                             ${Number(o.executed_size_usd ?? o.signal_size_usd ?? 0).toFixed(2)}
                           </td>
-                          <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">
-                            {o.order_placed_at ? new Date(o.order_placed_at).toLocaleString() : '—'}
+                          <td className="py-2 px-2 text-muted-foreground whitespace-nowrap" title={o.order_placed_at || o.created_at ? `UTC: ${(o.order_placed_at || o.created_at)}` : undefined}>
+                            {(o.order_placed_at || o.created_at) ? new Date(o.order_placed_at || o.created_at).toLocaleString() : '—'}
                           </td>
                           <td className="py-2 px-2 text-foreground">{o.outcome ?? '—'}</td>
                           <td className="py-2 px-2 text-muted-foreground text-xs whitespace-normal break-words" style={{ minWidth: '380px' }} title={o.rejection_reason || ''}>
