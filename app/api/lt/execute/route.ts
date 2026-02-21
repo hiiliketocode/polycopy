@@ -17,6 +17,7 @@ import { createAdminServiceClient } from '@/lib/admin';
 import { requireAdminOrCron } from '@/lib/ft-auth';
 import { createLTLogger } from '@/lib/live-trading/lt-logger';
 import { processAllCooldowns } from '@/lib/live-trading/capital-manager';
+import { runCapitalReconciliation } from '@/lib/live-trading/capital-reconciliation';
 import { resetDailyRiskState } from '@/lib/live-trading/risk-manager-v2';
 import { getActiveStrategies, executeTrade, type LTStrategy } from '@/lib/live-trading/executor-v2';
 import { batchResolveTokenIds } from '@/lib/live-trading/token-cache';
@@ -48,6 +49,12 @@ export async function POST(request: Request) {
         const cooldownResult = await processAllCooldowns(supabase);
         if (cooldownResult.totalReleased > 0) {
             await logger.info('COOLDOWN_PROCESS', `Released $${cooldownResult.totalReleased.toFixed(2)} from cooldown across ${cooldownResult.processed} strategies`);
+        }
+
+        // ── Step 2.5: Capital reconciliation (so available_cash is correct before we lock) ──
+        const recon = await runCapitalReconciliation(supabase, { now, log: true });
+        if (recon.strategiesReconciled > 0) {
+            await logger.info('CASH', `Reconciled ${recon.strategiesReconciled} strategies, freed $${recon.capitalReconciled.toFixed(2)}`);
         }
 
         // ── Step 3: Get active strategies ──
