@@ -78,6 +78,15 @@ function applySecurityHeaders(response: NextResponse) {
 }
 
 export async function proxy(request: NextRequest) {
+  // Block v2 routes in production unless ENABLE_V2 is set
+  if (
+    request.nextUrl.pathname.startsWith('/v2') &&
+    process.env.NODE_ENV === 'production' &&
+    process.env.ENABLE_V2 !== 'true'
+  ) {
+    return new NextResponse('Not Found', { status: 404 })
+  }
+
   let response = NextResponse.next({
     request,
   })

@@ -29,83 +29,75 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { BigQuery } from "npm:@google-cloud/bigquery@^7.0.0"
 
 // ============================================================================
-// DOME API INTEGRATION
+// GAMMA API INTEGRATION (replaced Dome API)
 // ============================================================================
 
-async function fetchMarketFromDome(conditionId: string): Promise<any | null> {
-  const domeApiKey = Deno.env.get("DOME_API_KEY");
-  if (!domeApiKey) {
-    console.warn("[predict-trade] DOME_API_KEY not set, skipping Dome fetch");
-    return null;
-  }
-
+async function fetchMarketFromGamma(conditionId: string): Promise<any | null> {
   try {
-    const url = new URL("https://api.domeapi.io/v1/polymarket/markets");
-    url.searchParams.append("condition_id", conditionId);
-    url.searchParams.set("limit", "1");
-
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      Authorization: `Bearer ${domeApiKey}`,
-    };
-
-    const res = await fetch(url.toString(), { headers, cache: "no-store" });
+    const url = `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Dome request failed (${res.status}): ${body || res.statusText}`);
+      throw new Error(`Gamma request failed (${res.status}): ${body || res.statusText}`);
     }
-
-    const json = await res.json();
-    const markets = Array.isArray(json?.markets) ? json.markets : Array.isArray(json) ? json : [];
+    const data = await res.json();
+    const markets = Array.isArray(data) ? data : [];
     return markets.length > 0 ? markets[0] : null;
   } catch (error) {
-    console.error("[predict-trade] Error fetching from Dome API:", error);
+    console.error("[predict-trade] Error fetching from Gamma API:", error);
     return null;
   }
 }
 
-function mapDomeMarketToRow(market: any) {
-  const toIsoFromUnix = (seconds: number | null | undefined) => {
-    if (!Number.isFinite(seconds)) return null;
-    return new Date((seconds as number) * 1000).toISOString();
-  };
-
-  const toIsoFromGameStart = (raw: string | null | undefined) => {
+function mapGammaMarketToRow(market: any) {
+  const toIso = (raw: string | null | undefined): string | null => {
     if (!raw || typeof raw !== "string") return null;
-    const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
-    const withZone = normalized.endsWith("Z") ? normalized : `${normalized}Z`;
-    const parsed = new Date(withZone);
+    const parsed = new Date(raw);
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   };
 
+  const toUnix = (raw: string | null | undefined): number | null => {
+    if (!raw) return null;
+    const ms = new Date(raw).getTime();
+    return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
+  };
+
+  let outcomes: unknown[] = [];
+  try {
+    outcomes = typeof market?.outcomes === "string" ? JSON.parse(market.outcomes) : market?.outcomes ?? [];
+  } catch { outcomes = []; }
+
   return {
-    condition_id: market?.condition_id ?? null,
-    market_slug: market?.market_slug ?? null,
-    title: market?.title ?? null,
-    start_time_unix: Number.isFinite(market?.start_time) ? market.start_time : null,
-    end_time_unix: Number.isFinite(market?.end_time) ? market.end_time : null,
-    completed_time_unix: Number.isFinite(market?.completed_time) ? market.completed_time : null,
-    close_time_unix: Number.isFinite(market?.close_time) ? market.close_time : null,
-    game_start_time_raw: market?.game_start_time ?? null,
-    start_time: toIsoFromUnix(market?.start_time),
-    end_time: toIsoFromUnix(market?.end_time),
-    completed_time: toIsoFromUnix(market?.completed_time),
-    close_time: toIsoFromUnix(market?.close_time),
-    game_start_time: toIsoFromGameStart(market?.game_start_time),
-    tags: market?.tags ?? null,
-    volume_1_week: market?.volume_1_week ?? null,
-    volume_1_month: market?.volume_1_month ?? null,
-    volume_1_year: market?.volume_1_year ?? null,
-    volume_total: market?.volume_total ?? null,
-    resolution_source: market?.resolution_source ?? null,
+    condition_id: market?.conditionId ?? null,
+    market_slug: market?.slug ?? null,
+    title: market?.question ?? null,
+    start_time_unix: toUnix(market?.startDate),
+    end_time_unix: toUnix(market?.endDate),
+    completed_time_unix: market?.closedTime ? toUnix(market.closedTime) : null,
+    close_time_unix: market?.closedTime ? toUnix(market.closedTime) : null,
+    game_start_time_raw: null,
+    start_time: toIso(market?.startDate),
+    end_time: toIso(market?.endDate),
+    completed_time: toIso(market?.closedTime),
+    close_time: toIso(market?.closedTime),
+    game_start_time: null,
+    tags: null,
+    volume_1_week: market?.volume1wk != null ? Number(market.volume1wk) : null,
+    volume_1_month: market?.volume1mo != null ? Number(market.volume1mo) : null,
+    volume_1_year: market?.volume1yr != null ? Number(market.volume1yr) : null,
+    volume_total: market?.volume != null ? Number(market.volume) : null,
+    resolution_source: market?.resolutionSource ?? null,
     image: market?.image ?? null,
     description: market?.description ?? null,
-    negative_risk_id: market?.negative_risk_id ?? null,
-    side_a: market?.side_a ?? null,
-    side_b: market?.side_b ?? null,
-    winning_side: market?.winning_side ?? null,
-    status: market?.status ?? null,
-    extra_fields: market?.extra_fields ?? null,
+    negative_risk_id: market?.negRisk ? (market.clobTokenIds ?? null) : null,
+    side_a: Array.isArray(outcomes) && outcomes.length >= 1 ? outcomes[0] : null,
+    side_b: Array.isArray(outcomes) && outcomes.length >= 2 ? outcomes[1] : null,
+    winning_side: null,
+    status: market?.resolvedBy ? "resolved" : market?.closed ? "closed" : market?.active ? "active" : "unknown",
+    extra_fields: null,
     raw_dome: market ?? {},
     updated_at: new Date().toISOString(),
   };
@@ -558,11 +550,11 @@ serve(async (req) => {
         console.error('[predict-trade] Error fetching market:', error);
       }
       
-      // If market not in DB, fetch from Dome and upsert
+      // If market not in DB, fetch from Gamma and upsert
       if (!marketData) {
-        const domeMarket = await fetchMarketFromDome(conditionId);
-        if (domeMarket) {
-          const marketRow = mapDomeMarketToRow(domeMarket);
+        const gammaMarket = await fetchMarketFromGamma(conditionId);
+        if (gammaMarket) {
+          const marketRow = mapGammaMarketToRow(gammaMarket);
           await supabase.from('markets').upsert(marketRow, { onConflict: 'condition_id' });
           marketData = marketRow;
         }

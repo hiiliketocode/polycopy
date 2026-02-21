@@ -1,21 +1,14 @@
 /**
- * Alpha Agent - Dome API Tool
+ * Alpha Agent - Market Data Tool
  * 
- * Read-only access to the Dome API for live market data:
+ * Read-only access to Polymarket market data via the free Gamma API:
  * - Market lookup by condition_id, slug, or search
  * - Current prices and volumes
  * - Market metadata (start/end times, tags, resolution)
  * - Event groupings
  */
 
-const DOME_BASE_URL = process.env.DOME_BASE_URL || 'https://api.domeapi.io/v1';
-const DOME_API_KEY = process.env.DOME_API_KEY || null;
-
-function getHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (DOME_API_KEY) headers.Authorization = `Bearer ${DOME_API_KEY}`;
-  return headers;
-}
+const GAMMA_BASE_URL = 'https://gamma-api.polymarket.com';
 
 export interface DomeMarketResult {
   condition_id: string;
@@ -35,7 +28,7 @@ export interface DomeMarketResult {
 }
 
 /**
- * Look up markets by condition IDs
+ * Look up markets by condition IDs (via Gamma API)
  */
 export async function domeGetMarkets(conditionIds: string[]): Promise<{
   success: boolean;
@@ -45,19 +38,36 @@ export async function domeGetMarkets(conditionIds: string[]): Promise<{
   if (conditionIds.length === 0) return { success: true, markets: [] };
 
   try {
-    const url = new URL(`${DOME_BASE_URL}/polymarket/markets`);
-    conditionIds.slice(0, 20).forEach(id => url.searchParams.append('condition_id', id));
-    url.searchParams.set('limit', String(Math.min(100, conditionIds.length)));
-
-    const res = await fetch(url.toString(), { headers: getHeaders(), cache: 'no-store' });
-    if (!res.ok) {
-      const body = await res.text();
-      return { success: false, error: `Dome API ${res.status}: ${body.substring(0, 200)}` };
+    const results: DomeMarketResult[] = [];
+    for (const id of conditionIds.slice(0, 20)) {
+      const url = `${GAMMA_BASE_URL}/markets?condition_id=${encodeURIComponent(id)}`;
+      const res = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const markets = Array.isArray(data) ? data : [];
+      if (markets.length > 0) {
+        const m = markets[0];
+        let outcomes: unknown[] = [];
+        try { outcomes = typeof m.outcomes === 'string' ? JSON.parse(m.outcomes) : m.outcomes ?? []; } catch { outcomes = []; }
+        results.push({
+          condition_id: m.conditionId ?? id,
+          title: m.question ?? m.title ?? '',
+          market_slug: m.slug ?? '',
+          event_slug: null,
+          status: m.resolvedBy ? 'resolved' : m.closed ? 'closed' : m.active ? 'active' : 'unknown',
+          start_time: m.startDate ? Math.floor(new Date(m.startDate).getTime() / 1000) : null,
+          end_time: m.endDate ? Math.floor(new Date(m.endDate).getTime() / 1000) : null,
+          game_start_time: null,
+          tags: null,
+          volume_total: m.volume ? Number(m.volume) : null,
+          side_a: Array.isArray(outcomes) && outcomes.length >= 1 ? outcomes[0] : null,
+          side_b: Array.isArray(outcomes) && outcomes.length >= 2 ? outcomes[1] : null,
+          winning_side: null,
+          description: m.description ?? null,
+        });
+      }
     }
-
-    const json = await res.json();
-    const markets = Array.isArray(json?.markets) ? json.markets : [];
-    return { success: true, markets };
+    return { success: true, markets: results };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -129,7 +139,7 @@ export async function domeGetPrice(conditionId: string): Promise<{
   }
 }
 
-export const DOME_API_DESCRIPTION = `### Dome/Gamma API (Live Market Data)
+export const DOME_API_DESCRIPTION = `### Gamma API (Live Market Data)
 You can look up any Polymarket market in real-time:
 - Search markets by keyword (e.g., "NBA Finals", "Bitcoin 100k")
 - Get current prices and volumes for any market by condition_id

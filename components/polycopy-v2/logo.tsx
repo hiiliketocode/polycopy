@@ -26,17 +26,15 @@ export function Logo({
 }: LogoProps) {
   const height = SIZE_MAP[size][variant]
   
-  // Map variant to expected file names
   const fileMap = {
     icon: "/logos/polycopy_icon_mark.svg",
-    horizontal: "/logos/polycopy_logo_poster.png",
-    poster: "/logos/polycopy_logo_poster.png",
+    horizontal: "/logos/polycopy_logo_horizontal.svg",
+    poster: "/logos/polycopy_logo_poster.svg",
   }
 
   const logoSrc = fileMap[variant]
 
-  // For the poster-style image used in nav, compute width from aspect ratio (~1.5:1)
-  const aspectRatio = variant === "icon" ? 1 : 1.5
+  const aspectRatio = variant === "horizontal" ? 5 : variant === "icon" ? 1 : 1.5
   const width = Math.round(height * aspectRatio)
 
   const logo = (

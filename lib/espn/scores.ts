@@ -455,73 +455,53 @@ function detectSportType(
   }
 
   const soccerClubHints = [
-    'real madrid',
-    'barcelona',
-    'atletico',
-    'athletic',
-    'real sociedad',
-    'real betis',
-    'sevilla',
-    'valencia',
-    'villarreal',
-    'juventus',
-    'inter',
-    'milan',
-    'napoli',
-    'roma',
-    'lazio',
-    'bayern',
-    'dortmund',
-    'leverkusen',
-    'arsenal',
-    'chelsea',
-    'liverpool',
-    'tottenham',
-    'manchester',
-    'man city',
-    'man utd',
-    'psg',
-    'marseille',
-    'lyon',
-    'monaco',
-    'ajax',
-    'psv',
-    'feyenoord',
-    'benfica',
-    'porto',
-    'sporting',
-    'celtic',
-    'rangers',
-    'galatasaray',
-    'fenerbahce',
-    'besiktas',
-    'boca',
-    'river',
-    'flamengo',
-    'palmeiras',
-    'corinthians',
-    'santos',
-    'tigres',
-    'monterrey',
-    'chivas',
-    'pumas',
-    'cruz azul',
-    'club america',
-    'atlas',
-    'pachuca',
-    'toluca',
-    'leon',
-    'santos laguna',
-    'necaxa',
-    'queretaro',
-    'tijuana',
-    'juarez',
-    'mazatlan',
-    'inter miami',
-    'al nassr',
-    'al hilal',
-    'al ittihad',
-    'al ahli',
+    // La Liga
+    'real madrid', 'barcelona', 'atletico', 'athletic', 'real sociedad',
+    'real betis', 'sevilla', 'valencia', 'villarreal', 'celta vigo',
+    'getafe', 'osasuna', 'girona', 'mallorca', 'alaves', 'las palmas',
+    'rayo vallecano', 'cadiz', 'almeria', 'granada',
+    // Serie A
+    'juventus', 'inter', 'milan', 'napoli', 'roma', 'lazio', 'atalanta',
+    'fiorentina', 'torino', 'monza', 'bologna', 'sassuolo', 'udinese',
+    'lecce', 'empoli', 'genoa', 'cagliari', 'verona', 'salernitana', 'frosinone',
+    // Bundesliga
+    'bayern', 'dortmund', 'leverkusen', 'rb leipzig', 'leipzig',
+    'wolfsburg', 'frankfurt', 'gladbach', 'hoffenheim', 'freiburg',
+    'stuttgart', 'union berlin', 'werder', 'mainz', 'augsburg', 'heidenheim',
+    // Premier League
+    'arsenal', 'chelsea', 'liverpool', 'tottenham', 'manchester',
+    'man city', 'man utd', 'newcastle', 'west ham', 'brighton',
+    'aston villa', 'crystal palace', 'wolves', 'fulham', 'bournemouth',
+    'nottingham', 'everton', 'brentford', 'burnley', 'luton',
+    'sheffield', 'ipswich', 'leicester',
+    // Ligue 1
+    'psg', 'paris saint-germain', 'marseille', 'lyon', 'monaco', 'lille',
+    'rennes', 'nice', 'lens', 'strasbourg', 'nantes', 'toulouse',
+    'montpellier', 'reims', 'brest', 'lorient', 'clermont',
+    // Eredivisie
+    'ajax', 'psv', 'feyenoord', 'az alkmaar', 'twente',
+    // Portuguese
+    'benfica', 'porto', 'sporting',
+    // Scottish
+    'celtic', 'rangers',
+    // Turkish
+    'galatasaray', 'fenerbahce', 'besiktas', 'trabzonspor',
+    // South American
+    'boca', 'river', 'flamengo', 'palmeiras', 'corinthians', 'santos',
+    'sao paulo', 'gremio', 'cruzeiro', 'atletico mineiro',
+    // Liga MX
+    'tigres', 'monterrey', 'chivas', 'pumas', 'cruz azul',
+    'club america', 'atlas', 'pachuca', 'toluca', 'leon',
+    'santos laguna', 'necaxa', 'queretaro', 'tijuana', 'juarez', 'mazatlan',
+    // MLS
+    'inter miami', 'la galaxy', 'lafc', 'atlanta united',
+    'seattle sounders', 'nycfc', 'columbus crew', 'new england',
+    // Saudi / Middle East
+    'al nassr', 'al hilal', 'al ittihad', 'al ahli', 'al ain',
+    // International
+    'argentina', 'brazil', 'france', 'germany', 'spain', 'italy',
+    'england', 'portugal', 'netherlands', 'belgium', 'croatia',
+    'uruguay', 'colombia', 'mexico', 'japan', 'south korea', 'australia',
   ];
 
   if (
@@ -531,7 +511,7 @@ function detectSportType(
     return 'soccer';
   }
 
-  if (titleLower.match(/\b(tennis|wimbledon|roland garros|australian open|us open|atp|wta)\b/)) {
+  if (titleLower.match(/\b(tennis|wimbledon|roland garros|french open|australian open|us open|atp|wta|grand slam|indian wells|miami open|madrid open|rome open|monte carlo|cincinnati open|shanghai masters|paris masters)\b/)) {
     return 'tennis';
   }
 
@@ -720,8 +700,12 @@ function getStartDateKey(value: string): string | null {
   return parsed.toISOString().slice(0, 10);
 }
 
+function stripDiacritics(s: string): string {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function normalizeTeamTokens(value: string): string[] {
-  return value
+  return stripDiacritics(value)
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .split(/\s+/)
@@ -735,9 +719,9 @@ function buildTeamAbbrev(value: string): string {
 }
 
 function scoreTeamMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): number {
-  const marketLower = marketTeam.toLowerCase().trim();
-  const espnLower = espnTeamName.toLowerCase().trim();
-  const abbrevLower = espnAbbrev.toLowerCase().trim();
+  const marketLower = stripDiacritics(marketTeam.toLowerCase().trim());
+  const espnLower = stripDiacritics(espnTeamName.toLowerCase().trim());
+  const abbrevLower = stripDiacritics(espnAbbrev.toLowerCase().trim());
 
   if (!marketLower || !espnLower) return 0;
 
@@ -789,9 +773,9 @@ function scoreTeamMatch(marketTeam: string, espnTeamName: string, espnAbbrev: st
 
 // Check if two team names match (flexible matching)
 export function teamsMatch(marketTeam: string, espnTeamName: string, espnAbbrev: string): boolean {
-  const marketLower = marketTeam.toLowerCase().trim();
-  const espnLower = espnTeamName.toLowerCase().trim();
-  const abbrevLower = espnAbbrev.toLowerCase().trim();
+  const marketLower = stripDiacritics(marketTeam.toLowerCase().trim());
+  const espnLower = stripDiacritics(espnTeamName.toLowerCase().trim());
+  const abbrevLower = stripDiacritics(espnAbbrev.toLowerCase().trim());
   
   // Direct match
   if (marketLower === espnLower || (abbrevLower && marketLower === abbrevLower)) return true;

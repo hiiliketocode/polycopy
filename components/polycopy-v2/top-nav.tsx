@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Bell, Shield, Zap } from "lucide-react"
+import { Bell, Settings, Shield, Zap } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Logo } from "./logo"
 import { UpgradeModal } from "./upgrade-modal"
@@ -61,7 +61,7 @@ export function TopNav() {
         role="navigation"
         aria-label="Main navigation"
       >
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
+        <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between px-4">
           {/* Horizontal wordmark */}
           <Logo variant="horizontal" size="sm" href="/v2/feed" />
 
@@ -127,10 +127,10 @@ export function TopNav() {
             </button>
             <Link
               href="/v2/settings"
-              className="flex h-11 w-11 items-center justify-center bg-poly-yellow font-sans text-xs font-black text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
+              className="flex h-11 w-11 items-center justify-center bg-poly-yellow text-poly-black transition-all hover:bg-poly-black hover:text-poly-yellow"
               aria-label="Settings"
             >
-              P
+              <Settings className="h-5 w-5" />
             </Link>
           </div>
         </div>

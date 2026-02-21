@@ -110,6 +110,7 @@ type FilterState = {
   status: FilterStatus;
   positionsOnly: boolean;
   tradeSizeMin: number;
+  polyScoreMin: number;
   tradingStrategies: TradingStrategy[];
   resolvingWindow: ResolvingWindow;
   priceMinCents: number;
@@ -206,11 +207,19 @@ const PRICE_PRESET_OPTIONS = [
 // How often to refresh copied-trade snapshots when the "Your positions" filter is active
 const COPIED_TRADES_REFRESH_MS = 20_000;
 
+const POLYSCORE_OPTIONS = [
+  { value: 0, label: 'Any' },
+  { value: 50, label: '50+' },
+  { value: 60, label: '60+' },
+  { value: 75, label: '75+' },
+];
+
 const defaultFilters: FilterState = {
   category: "all",
   status: "all",
   positionsOnly: false,
   tradeSizeMin: 0,
+  polyScoreMin: 0,
   tradingStrategies: [],
   resolvingWindow: "any",
   priceMinCents: PRICE_RANGE.min,
@@ -278,6 +287,10 @@ const normalizeFilters = (value: Partial<FilterState> | null): FilterState => {
     typeof value.tradeSizeMin === 'number' && value.tradeSizeMin >= 0
       ? value.tradeSizeMin
       : fallback.tradeSizeMin;
+  const polyScoreMin =
+    typeof value.polyScoreMin === 'number' && value.polyScoreMin >= 0
+      ? value.polyScoreMin
+      : fallback.polyScoreMin;
   const rawStrategies = Array.isArray(value.tradingStrategies)
     ? value.tradingStrategies
     : [];
@@ -318,6 +331,7 @@ const normalizeFilters = (value: Partial<FilterState> | null): FilterState => {
     status,
     positionsOnly,
     tradeSizeMin,
+    polyScoreMin,
     tradingStrategies,
     resolvingWindow,
     priceMinCents: normalizedMin,
@@ -687,6 +701,7 @@ export default function FeedPage() {
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [customTradeSizeInput, setCustomTradeSizeInput] = useState('');
   const [appliedFilters, setAppliedFilters] = useState<FilterState>(defaultFilters);
   const [draftFilters, setDraftFilters] = useState<FilterState>(defaultFilters);
   const [traderSearch, setTraderSearch] = useState('');
@@ -917,6 +932,7 @@ export default function FeedPage() {
     if (filters.status !== 'all') count += 1;
     if (filters.positionsOnly) count += 1;
     if (filters.tradeSizeMin > 0) count += 1;
+    if (filters.polyScoreMin > 0) count += 1;
     if (filters.traderIds.length > 0) count += 1;
     if (filters.tradingStrategies.length > 0) count += 1;
     if (filters.resolvingWindow !== 'any') count += 1;
@@ -975,12 +991,15 @@ export default function FeedPage() {
     setTraderSearch('');
     setShowAllTraders(false);
     setShowMoreFilters(false);
+    const isPreset = TRADE_SIZE_OPTIONS.some((o) => o.value === appliedFilters.tradeSizeMin);
+    setCustomTradeSizeInput(isPreset ? '' : appliedFilters.tradeSizeMin > 0 ? String(appliedFilters.tradeSizeMin) : '');
     setFiltersOpen(true);
   }, [appliedFilters]);
 
   const closeFilters = useCallback(() => {
     setDraftFilters(appliedFilters);
     setShowMoreFilters(false);
+    setCustomTradeSizeInput('');
     setFiltersOpen(false);
   }, [appliedFilters]);
 
@@ -3411,6 +3430,13 @@ export default function FeedPage() {
       }
     }
 
+    if (appliedFilters.polyScoreMin > 0) {
+      const score = trade.polySignalScore ?? trade.fireScore ?? 0;
+      if (score < appliedFilters.polyScoreMin) {
+        return false;
+      }
+    }
+
     if (appliedFilters.status === 'live' && !isLiveMarket(trade)) {
       return false;
     }
@@ -3855,7 +3881,13 @@ export default function FeedPage() {
           <div className="rounded-none border border-border bg-accent/70 p-2.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-foreground">Category</span>
-              <span className="text-xs font-medium text-muted-foreground">{draftCategoryLabel}</span>
+              <button
+                type="button"
+                onClick={closeFilters}
+                className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Close
+              </button>
             </div>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {CATEGORY_OPTIONS.map((category) => (
@@ -3896,8 +3928,10 @@ export default function FeedPage() {
               <span
                 aria-hidden="true"
                 className={cn(
-                  "h-2 w-2 rounded-none",
-                  draftFilters.status === 'live' ? "bg-emerald-500" : "bg-muted-foreground"
+                  "h-2.5 w-2.5 rounded-none",
+                  draftFilters.status === 'live'
+                    ? "bg-emerald-500"
+                    : "border border-muted-foreground bg-transparent"
                 )}
               />
               Live Games Only
@@ -3919,40 +3953,114 @@ export default function FeedPage() {
               <span
                 aria-hidden="true"
                 className={cn(
-                  "h-2 w-2 rounded-none",
-                  draftFilters.positionsOnly ? "bg-emerald-500" : "bg-muted-foreground"
+                  "h-2.5 w-2.5 rounded-none",
+                  draftFilters.positionsOnly
+                    ? "bg-emerald-500"
+                    : "border border-muted-foreground bg-transparent"
                 )}
               />
               My Positions Only
             </button>
           </div>
 
-          <div className="rounded-none border border-border bg-accent/70 p-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-semibold text-foreground">Trade Size</span>
-              <span className="text-xs font-medium text-muted-foreground">{draftTradeSizeLabel}</span>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-none border border-border bg-accent/70 p-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-foreground">Trade Size</span>
+                <span className="text-xs font-medium text-muted-foreground">{draftTradeSizeLabel}</span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {TRADE_SIZE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => {
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        tradeSizeMin: option.value,
+                      }));
+                      setCustomTradeSizeInput('');
+                    }}
+                    aria-pressed={draftFilters.tradeSizeMin === option.value && customTradeSizeInput === ''}
+                    className={cn(
+                      filterTabBase,
+                      draftFilters.tradeSizeMin === option.value && customTradeSizeInput === ''
+                        ? filterTabActive
+                        : filterTabInactive
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+                <div className="relative">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground pointer-events-none">$</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    placeholder="Custom"
+                    value={customTradeSizeInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCustomTradeSizeInput(val);
+                      const num = parseInt(val, 10);
+                      if (Number.isFinite(num) && num > 0) {
+                        setDraftFilters((prev) => ({ ...prev, tradeSizeMin: num }));
+                      } else if (val === '') {
+                        setDraftFilters((prev) => ({ ...prev, tradeSizeMin: 0 }));
+                      }
+                    }}
+                    className={cn(
+                      "w-[80px] rounded-none py-2.5 pl-5 pr-2 text-[11px] font-medium transition-all appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+                      customTradeSizeInput !== ''
+                        ? "bg-poly-yellow text-poly-black shadow-sm border-0"
+                        : "bg-card border border-border text-foreground placeholder:text-muted-foreground focus:border-poly-yellow focus:outline-none"
+                    )}
+                  />
+                </div>
+              </div>
             </div>
-            <div className="mt-1.5 flex flex-wrap gap-2">
-              {TRADE_SIZE_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  onClick={() =>
-                    setDraftFilters((prev) => ({
-                      ...prev,
-                      tradeSizeMin: option.value,
-                    }))
-                  }
-                  aria-pressed={draftFilters.tradeSizeMin === option.value}
-                  className={cn(
-                    filterTabBase,
-                    draftFilters.tradeSizeMin === option.value
-                      ? filterTabActive
-                      : filterTabInactive
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
+
+            <div className={cn(
+              "rounded-none border border-border bg-accent/70 p-2.5 relative",
+              !hasPremiumAccess && "opacity-60"
+            )}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-semibold text-foreground">PolyScore</span>
+                  {!hasPremiumAccess && <Lock className="h-3 w-3 text-muted-foreground" />}
+                </div>
+                <span className="text-xs font-medium text-muted-foreground">
+                  {POLYSCORE_OPTIONS.find((o) => o.value === draftFilters.polyScoreMin)?.label ?? 'Any'}
+                </span>
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {POLYSCORE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    disabled={!hasPremiumAccess}
+                    onClick={() =>
+                      setDraftFilters((prev) => ({
+                        ...prev,
+                        polyScoreMin: option.value,
+                      }))
+                    }
+                    aria-pressed={draftFilters.polyScoreMin === option.value}
+                    className={cn(
+                      filterTabBase,
+                      !hasPremiumAccess && "cursor-not-allowed",
+                      draftFilters.polyScoreMin === option.value
+                        ? filterTabActive
+                        : filterTabInactive
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {!hasPremiumAccess && (
+                <p className="mt-1.5 text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Crown className="h-2.5 w-2.5 text-poly-yellow" /> Upgrade to filter by PolyScore
+                </p>
+              )}
             </div>
           </div>
 

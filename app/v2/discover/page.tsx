@@ -182,14 +182,24 @@ const categoryMap: Record<string, string> = {
   Politics: "POLITICS",
   Crypto: "CRYPTO",
   "Pop Culture": "CULTURE",
+  Business: "FINANCE",
+  Economics: "ECONOMICS",
+  Tech: "TECH",
+  Weather: "WEATHER",
 }
 
-const categories = ["All", "Sports", "Politics", "Crypto", "Pop Culture"]
+const categories = ["All", "Sports", "Politics", "Crypto", "Pop Culture", "Business", "Economics", "Tech", "Weather"]
 
 const sortMetricOptions: Array<{ value: "roi" | "pnl" | "volume"; label: string }> = [
   { value: "pnl", label: "PNL" },
   { value: "roi", label: "ROI" },
   { value: "volume", label: "Volume" },
+]
+
+const timePeriodOptions: Array<{ value: "30d" | "7d" | "all"; label: string }> = [
+  { value: "30d", label: "30 Days" },
+  { value: "7d", label: "7 Days" },
+  { value: "all", label: "All Time" },
 ]
 
 /* ───── Main Component ───── */
@@ -207,7 +217,8 @@ function DiscoverPageContent() {
   const [selectedCategory, setSelectedCategory] = useState("OVERALL")
   const [sortMetric, setSortMetric] = useState<"roi" | "pnl" | "volume">("pnl")
   const [isSortMenuOpen, setIsSortMenuOpen] = useState(false)
-  const [visibleCount, setVisibleCount] = useState(5)
+  const [sortPeriod, setSortPeriod] = useState<"30d" | "7d" | "all">("30d")
+  const [visibleCount, setVisibleCount] = useState(10)
   const sortMenuRef = useRef<HTMLDivElement | null>(null)
 
   // Follows
@@ -240,8 +251,10 @@ function DiscoverPageContent() {
 
   // Fetch traders
   useEffect(() => {
+    const timePeriodMap = { "30d": "month", "7d": "week", "all": "all" } as const
+    const timePeriod = timePeriodMap[sortPeriod]
     setLoadingTraders(true)
-    fetch(`/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${selectedCategory}&timePeriod=month`)
+    fetch(`/api/polymarket/leaderboard?limit=50&orderBy=PNL&category=${selectedCategory}&timePeriod=${timePeriod}`)
       .then((r) => (r.ok ? r.json() : { traders: [] }))
       .then((data) => {
         const withROI = (data.traders || []).map((t: any) => ({ ...t, roi: t.volume > 0 ? (t.pnl / t.volume) * 100 : 0 }))
@@ -249,7 +262,7 @@ function DiscoverPageContent() {
       })
       .catch(() => setTraders([]))
       .finally(() => setLoadingTraders(false))
-  }, [selectedCategory])
+  }, [selectedCategory, sortPeriod])
 
   // Fetch yesterday winners
   useEffect(() => {
@@ -320,6 +333,12 @@ function DiscoverPageContent() {
 
   const sortedYesterdayWinners = useMemo(() => [...yesterdayWinners].sort((a, b) => b.pnl - a.pnl).slice(0, 5), [yesterdayWinners])
   const mostActiveTraders = useMemo(() => mostActiveFromPublicTrades.slice(0, 5), [mostActiveFromPublicTrades])
+
+  const mostCopiedTraders = useMemo(() => {
+    return [...traders]
+      .sort((a, b) => (b.followerCount || 0) - (a.followerCount || 0))
+      .slice(0, 5)
+  }, [traders])
 
   // Fetch realized daily PnL for wallets
   useEffect(() => {
@@ -498,18 +517,13 @@ function DiscoverPageContent() {
       {/* ─── TRENDING TRADERS ─── */}
       <div className="bg-card border-b border-border">
         <div className="mx-auto max-w-6xl px-4 py-8">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="font-sans text-lg font-bold uppercase tracking-wide text-foreground">
-                Trending Traders
-              </h2>
-              <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">
-                Most improved by realized PnL week-over-week
-              </p>
-            </div>
-            <Link href="/discover" className="font-sans text-xs font-bold uppercase tracking-wide text-muted-foreground hover:text-foreground transition">
-              View All Trending
-            </Link>
+          <div className="mb-4">
+            <h2 className="font-sans text-lg font-bold uppercase tracking-wide text-foreground">
+              Trending Traders
+            </h2>
+            <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">
+              Most improved by realized PnL week-over-week
+            </p>
           </div>
 
           {trendingTraders.length === 0 ? (
@@ -524,9 +538,10 @@ function DiscoverPageContent() {
                 const trader = entry.trader
                 const rows = realizedDailyMap[normalizeWallet(trader.wallet)] || []
                 const isFollowing = followedWallets.has(trader.wallet.toLowerCase())
+                const displayValue = entry.pctChange !== null ? formatPercentChange(entry.pctChange) : formatSignedLargeNumber(entry.diff)
                 const changeColor = entry.pctChange !== null
                   ? entry.pctChange > 0 ? "text-profit-green" : entry.pctChange < 0 ? "text-loss-red" : "text-foreground"
-                  : "text-muted-foreground"
+                  : entry.diff > 0 ? "text-profit-green" : entry.diff < 0 ? "text-loss-red" : "text-muted-foreground"
                 return (
                   <div
                     key={trader.wallet}
@@ -537,14 +552,13 @@ function DiscoverPageContent() {
                       <TraderAvatar displayName={trader.displayName} wallet={trader.wallet} src={trader.profileImage} size={36} className="ring-2 ring-border" />
                       <div className="min-w-0 flex-1">
                         <p className="font-sans text-xs font-bold text-foreground truncate">{formatDisplayName(trader.displayName, trader.wallet)}</p>
-                        <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">PnL_Growth</p>
                       </div>
                     </div>
                     <p className={cn("mt-2 font-sans text-2xl font-bold tabular-nums", changeColor)}>
-                      {formatPercentChange(entry.pctChange)}
+                      {displayValue}
                     </p>
                     <div className="mt-2">
-                      <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Last 7 Days</p>
+                      <p className="font-sans text-[10px] font-bold uppercase tracking-widest text-muted-foreground">PnL_Growth: Last 7 Days</p>
                       <p className="font-body text-sm font-semibold tabular-nums text-foreground">{formatSignedLargeNumber(entry.weekly.last7)}</p>
                     </div>
                     <div className="mt-2 flex justify-center">
@@ -552,9 +566,14 @@ function DiscoverPageContent() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleFollowChange(trader.wallet, !isFollowing) }}
-                      className="mt-3 w-full bg-poly-yellow py-2.5 font-sans text-xs font-bold uppercase tracking-wide text-poly-black transition hover:bg-poly-yellow/90"
+                      className={cn(
+                        "mt-3 w-full py-2.5 font-sans text-xs font-bold uppercase tracking-wide transition",
+                        isFollowing
+                          ? "border border-poly-yellow bg-poly-yellow/10 text-poly-black hover:bg-poly-yellow/20"
+                          : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"
+                      )}
                     >
-                      {isFollowing ? "Following" : "Follow Trader"}
+                      {isFollowing ? <Check className="h-4 w-4 mx-auto" /> : "Follow Trader"}
                     </button>
                   </div>
                 )
@@ -567,11 +586,11 @@ function DiscoverPageContent() {
       {/* ─── TOP TRADERS TABLE ─── */}
       <div className="bg-card border-b border-border">
         <div className="mx-auto max-w-6xl px-4 py-8">
+          <h2 className="mb-4 font-sans text-lg font-bold uppercase tracking-wide text-foreground">
+            Top Traders By
+          </h2>
           <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="font-sans text-lg font-bold uppercase tracking-wide text-foreground">
-                Top Traders By
-              </h2>
               <div ref={sortMenuRef} className="relative">
                 <button
                   type="button"
@@ -598,23 +617,42 @@ function DiscoverPageContent() {
                   </div>
                 )}
               </div>
+              <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
+                {categories.map((cat) => {
+                  const val = categoryMap[cat]
+                  const isActive = selectedCategory === val
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategory(val)}
+                      className={cn(
+                        "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border",
+                        isActive
+                          ? "bg-poly-black text-white border-poly-black"
+                          : "bg-card text-muted-foreground border-border hover:bg-accent hover:text-foreground"
+                      )}
+                    >
+                      {cat}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-            <div className="flex gap-1.5 overflow-x-auto scrollbar-hide">
-              {categories.map((cat) => {
-                const val = categoryMap[cat]
-                const isActive = selectedCategory === val
+            <div className="flex gap-1">
+              {timePeriodOptions.map((opt) => {
+                const isActive = sortPeriod === opt.value
                 return (
                   <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(val)}
+                    key={opt.value}
+                    onClick={() => setSortPeriod(opt.value)}
                     className={cn(
-                      "px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border",
+                      "rounded-full px-3 py-1.5 font-sans text-[11px] font-semibold transition whitespace-nowrap border",
                       isActive
-                        ? "bg-poly-black text-white border-poly-black"
-                        : "bg-card text-muted-foreground border-border hover:bg-accent hover:text-foreground"
+                        ? "border-poly-black bg-poly-black text-white"
+                        : "border-border bg-white text-muted-foreground hover:border-foreground/30"
                     )}
                   >
-                    {cat}
+                    {opt.label}
                   </button>
                 )
               })}
@@ -649,8 +687,8 @@ function DiscoverPageContent() {
                   >
                     <div className="text-center font-body text-sm font-semibold tabular-nums text-muted-foreground">{index + 1}</div>
                     <Link href={`/v2/trader/${trader.wallet}`} className="flex items-center gap-2.5 min-w-0">
-                      <TraderAvatar displayName={trader.displayName} wallet={trader.wallet} src={trader.profileImage} size={32} className="ring-1 ring-border" />
-                      <p className="font-sans text-sm font-bold text-foreground truncate">{formatDisplayName(trader.displayName, trader.wallet)}</p>
+                      <TraderAvatar displayName={trader.displayName} wallet={trader.wallet} src={trader.profileImage} size={32} className="ring-1 ring-border flex-shrink-0" />
+                      <p className="font-sans text-sm font-bold text-foreground truncate max-w-[180px]">{formatDisplayName(trader.displayName, trader.wallet)}</p>
                     </Link>
                     <div className={cn("text-center font-body text-sm font-semibold tabular-nums", (trader.roi ?? 0) > 0 ? "text-profit-green" : (trader.roi ?? 0) < 0 ? "text-loss-red" : "text-foreground")}>
                       {(trader.roi ?? 0) > 0 ? "+" : ""}{(trader.roi ?? 0).toFixed(1)}%
@@ -667,7 +705,12 @@ function DiscoverPageContent() {
                     <div className="flex justify-center">
                       <button
                         onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
-                        className="bg-poly-yellow px-4 py-2 font-sans text-xs font-bold uppercase tracking-wide text-poly-black transition hover:bg-poly-yellow/90"
+                        className={cn(
+                          "w-[80px] py-2 font-sans text-xs font-bold uppercase tracking-wide transition",
+                          isFollowing
+                            ? "border border-poly-yellow bg-poly-yellow/10 text-poly-black hover:bg-poly-yellow/20"
+                            : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"
+                        )}
                       >
                         {isFollowing ? <Check className="h-3.5 w-3.5 mx-auto" /> : "Follow"}
                       </button>
@@ -682,7 +725,7 @@ function DiscoverPageContent() {
                     onClick={() => setVisibleCount((p) => Math.min(p + 10, rankedTraders.length))}
                     className="font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition"
                   >
-                    Load_More_Records_001
+                    Load_More
                   </button>
                 </div>
               )}
@@ -691,10 +734,10 @@ function DiscoverPageContent() {
         </div>
       </div>
 
-      {/* ─── BOTTOM 3 COLUMNS ─── */}
+      {/* ─── BOTTOM TABLES (2x2) ─── */}
       <div className="bg-poly-cream">
         <div className="mx-auto max-w-6xl px-4 py-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Most Consistent */}
             <div className="border border-border bg-card">
               <div className="border-b border-border px-4 py-3">
@@ -705,21 +748,31 @@ function DiscoverPageContent() {
                 {mostConsistentEntries.length === 0 ? (
                   <div className="px-4 py-6 text-center font-body text-sm text-muted-foreground">No traders yet</div>
                 ) : (
-                  mostConsistentEntries.map((entry, i) => (
-                    <Link
-                      key={entry.trader.wallet}
-                      href={`/v2/trader/${entry.trader.wallet}`}
-                      className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <TraderAvatar displayName={entry.trader.displayName} wallet={entry.trader.wallet} src={entry.trader.profileImage} size={24} showRing={false} />
-                        <p className="font-body text-sm text-foreground truncate">
-                          {formatDisplayName(entry.trader.displayName, entry.trader.wallet)}
-                        </p>
+                  mostConsistentEntries.map((entry, i) => {
+                    const isFollowing = followedWallets.has(entry.trader.wallet.toLowerCase())
+                    return (
+                      <div key={entry.trader.wallet} className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent">
+                        <Link href={`/v2/trader/${entry.trader.wallet}`} className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="font-body text-xs font-semibold tabular-nums text-muted-foreground w-4 text-center flex-shrink-0">{i + 1}</span>
+                          <p className="font-body text-sm text-foreground truncate">
+                            {formatDisplayName(entry.trader.displayName, entry.trader.wallet)}
+                          </p>
+                        </Link>
+                        <span className="font-body text-sm font-semibold tabular-nums text-foreground flex-shrink-0 mr-3">{entry.daysUp}</span>
+                        <button
+                          onClick={() => handleFollowChange(entry.trader.wallet, !isFollowing)}
+                          className={cn(
+                            "w-[80px] py-1.5 font-sans text-[10px] font-bold uppercase tracking-wide transition flex-shrink-0",
+                            isFollowing
+                              ? "border border-poly-yellow bg-poly-yellow/10 text-poly-black hover:bg-poly-yellow/20"
+                              : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"
+                          )}
+                        >
+                          {isFollowing ? <Check className="h-3.5 w-3.5 mx-auto" /> : "Follow"}
+                        </button>
                       </div>
-                      <span className="font-body text-sm font-semibold tabular-nums text-foreground flex-shrink-0">{entry.daysUp}</span>
-                    </Link>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </div>
@@ -734,23 +787,33 @@ function DiscoverPageContent() {
                 {sortedYesterdayWinners.length === 0 ? (
                   <div className="px-4 py-6 text-center font-body text-sm text-muted-foreground">No winners yet</div>
                 ) : (
-                  sortedYesterdayWinners.map((trader, i) => (
-                    <Link
-                      key={trader.wallet}
-                      href={`/v2/trader/${trader.wallet}`}
-                      className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="font-body text-xs font-semibold tabular-nums text-muted-foreground w-4 text-center flex-shrink-0">{i + 1}</span>
-                        <p className="font-body text-sm text-foreground truncate">
-                          {formatDisplayName(trader.displayName, trader.wallet)}
-                        </p>
+                  sortedYesterdayWinners.map((trader, i) => {
+                    const isFollowing = followedWallets.has(trader.wallet.toLowerCase())
+                    return (
+                      <div key={trader.wallet} className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent">
+                        <Link href={`/v2/trader/${trader.wallet}`} className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="font-body text-xs font-semibold tabular-nums text-muted-foreground w-4 text-center flex-shrink-0">{i + 1}</span>
+                          <p className="font-body text-sm text-foreground truncate">
+                            {formatDisplayName(trader.displayName, trader.wallet)}
+                          </p>
+                        </Link>
+                        <span className={cn("font-body text-sm font-semibold tabular-nums flex-shrink-0 mr-3", trader.pnl > 0 ? "text-profit-green" : "text-loss-red")}>
+                          {formatLargeNumber(trader.pnl)}
+                        </span>
+                        <button
+                          onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
+                          className={cn(
+                            "w-[80px] py-1.5 font-sans text-[10px] font-bold uppercase tracking-wide transition flex-shrink-0",
+                            isFollowing
+                              ? "border border-poly-yellow bg-poly-yellow/10 text-poly-black hover:bg-poly-yellow/20"
+                              : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"
+                          )}
+                        >
+                          {isFollowing ? <Check className="h-3.5 w-3.5 mx-auto" /> : "Follow"}
+                        </button>
                       </div>
-                      <span className={cn("font-body text-sm font-semibold tabular-nums flex-shrink-0", trader.pnl > 0 ? "text-profit-green" : "text-loss-red")}>
-                        {formatLargeNumber(trader.pnl)}
-                      </span>
-                    </Link>
-                  ))
+                    )
+                  })
                 )}
               </div>
             </div>
@@ -769,21 +832,68 @@ function DiscoverPageContent() {
                 ) : mostActiveTraders.length === 0 ? (
                   <div className="px-4 py-6 text-center font-body text-sm text-muted-foreground">No active traders yet</div>
                 ) : (
-                  mostActiveTraders.map((trader, i) => (
-                    <Link
-                      key={trader.wallet}
-                      href={`/v2/trader/${trader.wallet}`}
-                      className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="font-body text-xs font-semibold tabular-nums text-muted-foreground w-4 text-center flex-shrink-0">{i + 1}</span>
-                        <p className="font-body text-sm text-foreground truncate">
-                          {formatDisplayName(trader.displayName, trader.wallet)}
-                        </p>
+                  mostActiveTraders.map((trader, i) => {
+                    const isFollowing = followedWallets.has(trader.wallet.toLowerCase())
+                    return (
+                      <div key={trader.wallet} className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent">
+                        <Link href={`/v2/trader/${trader.wallet}`} className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="font-body text-xs font-semibold tabular-nums text-muted-foreground w-4 text-center flex-shrink-0">{i + 1}</span>
+                          <p className="font-body text-sm text-foreground truncate">
+                            {formatDisplayName(trader.displayName, trader.wallet)}
+                          </p>
+                        </Link>
+                        <button
+                          onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
+                          className={cn(
+                            "w-[80px] py-1.5 font-sans text-[10px] font-bold uppercase tracking-wide transition flex-shrink-0",
+                            isFollowing
+                              ? "border border-poly-yellow bg-poly-yellow/10 text-poly-black hover:bg-poly-yellow/20"
+                              : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"
+                          )}
+                        >
+                          {isFollowing ? <Check className="h-3.5 w-3.5 mx-auto" /> : "Follow"}
+                        </button>
                       </div>
-                      <span className="font-sans text-xs font-bold uppercase tracking-wide text-muted-foreground flex-shrink-0">Trader</span>
-                    </Link>
-                  ))
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Most Copied */}
+            <div className="border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <h3 className="font-sans text-sm font-bold uppercase tracking-wide text-foreground">Most Copied</h3>
+                <p className="font-sans text-xs font-medium uppercase tracking-widest text-muted-foreground">Ranked by popularity</p>
+              </div>
+              <div className="divide-y divide-border">
+                {mostCopiedTraders.length === 0 ? (
+                  <div className="px-4 py-6 text-center font-body text-sm text-muted-foreground">No copied traders yet</div>
+                ) : (
+                  mostCopiedTraders.map((trader, i) => {
+                    const isFollowing = followedWallets.has(trader.wallet.toLowerCase())
+                    return (
+                      <div key={trader.wallet} className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-accent">
+                        <Link href={`/v2/trader/${trader.wallet}`} className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="font-body text-xs font-semibold tabular-nums text-muted-foreground w-4 text-center flex-shrink-0">{i + 1}</span>
+                          <p className="font-body text-sm text-foreground truncate">
+                            {formatDisplayName(trader.displayName, trader.wallet)}
+                          </p>
+                        </Link>
+                        <button
+                          onClick={() => handleFollowChange(trader.wallet, !isFollowing)}
+                          className={cn(
+                            "w-[80px] py-1.5 font-sans text-[10px] font-bold uppercase tracking-wide transition flex-shrink-0",
+                            isFollowing
+                              ? "border border-poly-yellow bg-poly-yellow/10 text-poly-black hover:bg-poly-yellow/20"
+                              : "bg-poly-yellow text-poly-black hover:bg-poly-yellow/90"
+                          )}
+                        >
+                          {isFollowing ? <Check className="h-3.5 w-3.5 mx-auto" /> : "Follow"}
+                        </button>
+                      </div>
+                    )
+                  })
                 )}
               </div>
             </div>

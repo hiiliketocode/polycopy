@@ -5,7 +5,7 @@ export const maxDuration = 300 // 5 minutes max duration for Vercel
 
 /**
  * GET /api/cron/backfill-wallet-pnl
- * Vercel Cron job that runs daily to backfill wallet PnL data from Dome API
+ * Vercel Cron job that runs daily to backfill wallet PnL data from Polymarket APIs
  * 
  * Schedule: Daily at 2 AM UTC (configured in vercel.json)
  * 

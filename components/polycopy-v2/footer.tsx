@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { Logo } from "./logo"
 
 export function V2Footer() {
   return (
@@ -8,9 +9,8 @@ export function V2Footer() {
         <div className="grid grid-cols-1 gap-12 md:grid-cols-5">
           {/* Brand column */}
           <div className="md:col-span-1">
-            <div className="mb-5 flex items-center gap-1 font-sans text-xl font-black uppercase tracking-tight">
-              <span className="border border-poly-yellow px-1.5 py-0.5 text-poly-yellow">POLY</span>
-              <span>COPY</span>
+            <div className="mb-5">
+              <Logo variant="horizontal" size="sm" />
             </div>
             <p className="font-body text-sm leading-relaxed text-white/50">
               The ultimate command center for Polymarket copy trading.
@@ -22,7 +22,7 @@ export function V2Footer() {
           {/* Learn Hub */}
           <div>
             <h3 className="mb-5 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow">
-              LEARN_HUB
+              LEARN
             </h3>
             <ul className="flex flex-col gap-3">
               <li>
@@ -71,7 +71,7 @@ export function V2Footer() {
           {/* Product Core */}
           <div>
             <h3 className="mb-5 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow">
-              PRODUCT_CORE
+              PRODUCT
             </h3>
             <ul className="flex flex-col gap-3">
               <li>
@@ -128,7 +128,7 @@ export function V2Footer() {
           {/* Legal Dept */}
           <div>
             <h3 className="mb-5 font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-poly-yellow">
-              LEGAL_DEPT
+              LEGAL
             </h3>
             <ul className="flex flex-col gap-3">
               <li>

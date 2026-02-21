@@ -1053,10 +1053,10 @@ export function PredictionStats({
   if (loading) {
     return (
       <div className="mt-4 mb-4">
-        <div className="border border-slate-200 rounded-lg px-4 py-3 bg-slate-50/50">
+        <div className="border border-border rounded-none px-4 py-3 bg-accent/50">
           <div className="flex items-center justify-center gap-2">
-            <Loader2 className="h-4 w-4 animate-spin text-slate-600" />
-            <p className="text-xs text-slate-600 font-medium">Loading insights...</p>
+            <Loader2 className="h-4 w-4 animate-spin text-poly-yellow" />
+            <p className="font-body text-xs text-muted-foreground font-medium">Loading insights...</p>
           </div>
         </div>
       </div>
@@ -1066,40 +1066,27 @@ export function PredictionStats({
   if (error || !stats) {
     return (
       <div className="mt-4 mb-4">
-        <div className="border border-red-200 rounded-lg px-4 py-3 bg-red-50/50">
-          <p className="text-xs text-red-600 font-medium">{error || 'Failed to load insights'}</p>
+        <div className="border border-loss-red/30 rounded-none px-4 py-3 bg-loss-red/5">
+          <p className="font-body text-xs text-loss-red font-medium">{error || 'Failed to load insights'}</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="mt-4 mb-4">
-      {/* Header */}
+    <div className="mt-0 mb-0">
+      {/* Time Period Toggle */}
       <div className="mb-2">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2 flex-wrap">
-            <span>Trader insights</span>
-            <div className="inline-flex flex-wrap gap-1">
-              <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-                Market type bet type: {[resolvedNiche || stats.trade_profile?.split('_')?.[0] || 'other', (resolvedBetStructure || stats.trade_profile?.split('_')?.[1]) ?? 'standard'].filter(Boolean).map(s => s?.toString().toLowerCase()).join(' / ')}
-              </span>
-              <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[11px] font-medium">
-                Price: {(priceBracket || stats.trade_profile?.split('_')?.[2])?.toString().toLowerCase() ?? 'even'}
-              </span>
-            </div>
-          </h3>
-          
-          {/* Time Period Toggle */}
-          <div className="inline-flex rounded-md shadow-sm" role="group">
+        <div className="flex items-center justify-end flex-wrap gap-2">
+          <div className="inline-flex rounded-none border border-border" role="group">
             <button
               type="button"
               onClick={() => setTimePeriod('7d')}
               className={cn(
-                "px-2.5 py-1 text-[11px] font-medium rounded-l-md border transition-colors",
+                "px-2.5 py-1 font-sans text-[11px] font-bold uppercase tracking-wide transition-colors",
                 timePeriod === '7d'
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  ? "bg-poly-black text-white"
+                  : "bg-card text-muted-foreground hover:text-foreground"
               )}
             >
               7D
@@ -1108,10 +1095,10 @@ export function PredictionStats({
               type="button"
               onClick={() => setTimePeriod('30d')}
               className={cn(
-                "px-2.5 py-1 text-[11px] font-medium border-t border-b transition-colors",
+                "px-2.5 py-1 font-sans text-[11px] font-bold uppercase tracking-wide border-x border-border transition-colors",
                 timePeriod === '30d'
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  ? "bg-poly-black text-white"
+                  : "bg-card text-muted-foreground hover:text-foreground"
               )}
             >
               30D
@@ -1120,10 +1107,10 @@ export function PredictionStats({
               type="button"
               onClick={() => setTimePeriod('all')}
               className={cn(
-                "px-2.5 py-1 text-[11px] font-medium rounded-r-md border transition-colors",
+                "px-2.5 py-1 font-sans text-[11px] font-bold uppercase tracking-wide transition-colors",
                 timePeriod === 'all'
-                  ? "bg-slate-900 text-white border-slate-900"
-                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  ? "bg-poly-black text-white"
+                  : "bg-card text-muted-foreground hover:text-foreground"
               )}
             >
               All
@@ -1138,13 +1125,13 @@ export function PredictionStats({
         const cards: ReactElement[] = []
 
         cards.push(
-          <div key="trade-count" className="text-center md:border-l border-slate-200 first:border-l-0">
+          <div key="trade-count" className="text-center md:border-l border-border first:border-l-0">
             <div className="flex items-center justify-center gap-1 mb-1">
-              <p className="text-xs text-slate-500 font-medium">Trades</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Trades</p>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <button type="button" className="cursor-help focus:outline-none" aria-label="Trade Count information">
-                    <Info className="h-3 w-3 text-slate-400 hover:text-slate-600 transition-colors" />
+                    <Info className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs z-50" side="top" sideOffset={5}>
@@ -1154,53 +1141,53 @@ export function PredictionStats({
                 </TooltipContent>
               </Tooltip>
             </div>
-            <p className="text-sm md:text-base font-semibold text-slate-900 mb-0.5 tabular-nums">
+            <p className="font-body text-sm md:text-base font-semibold text-foreground mb-0.5 tabular-nums">
               {formatInteger(profileCount)}
             </p>
-            <p className="text-[10px] text-slate-500 font-medium">(All: {formatInteger(stats?.lifetime_global_trade_count ?? globalTradeCount)})</p>
+            <p className="text-[10px] text-muted-foreground font-medium">All: {formatInteger(stats?.lifetime_global_trade_count ?? globalTradeCount)}</p>
           </div>
         )
 
         cards.push(
-          <div key="win-rate" className="text-center md:border-l border-slate-200">
+          <div key="win-rate" className="text-center md:border-l border-border">
             <div className="flex items-center justify-center gap-1 mb-1">
-              <p className="text-xs text-slate-500 font-medium">Win Rate</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Win Rate</p>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <button type="button" className="cursor-help focus:outline-none" aria-label="Win Rate information">
-                    <Info className="h-3 w-3 text-slate-400 hover:text-slate-600 transition-colors" />
+                    <Info className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs z-50" side="top" sideOffset={5}>
                   <p className="text-xs">
-                    Trader's accuracy for this trade type vs. all trades.
+                    Trader&apos;s accuracy for this trade type vs. all trades.
                   </p>
                 </TooltipContent>
               </Tooltip>
               <FireIcon reason="win_rate" />
             </div>
             <p className={cn(
-              "text-sm md:text-base font-semibold text-slate-900 tabular-nums mb-0.5",
+              "font-body text-sm md:text-base font-semibold text-foreground tabular-nums mb-0.5",
               hasInsufficientData && "opacity-50",
               hasLowSampleSize && "opacity-75"
             )}>
               {hasInsufficientData ? 'N/A' : safeWinRateDisplay(tradeTypeWinRate)}
             </p>
             {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
-            <p className="text-[10px] text-slate-500 font-medium">
-              ({safeWinRateDisplay(allTradesWinRate)} all)
+            <p className="text-[10px] text-muted-foreground font-medium">
+              {safeWinRateDisplay(allTradesWinRate)} all
             </p>
           </div>
         )
 
         cards.push(
-          <div key="avg-pnl" className="text-center md:border-l border-slate-200">
+          <div key="avg-pnl" className="text-center md:border-l border-border">
             <div className="flex items-center justify-center gap-1 mb-1">
-              <p className="text-xs text-slate-500 font-medium">Ave PnL</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Ave PnL</p>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <button type="button" className="cursor-help focus:outline-none" aria-label="Average PnL information">
-                    <Info className="h-3 w-3 text-slate-400 hover:text-slate-600 transition-colors" />
+                    <Info className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs z-50" side="top" sideOffset={5}>
@@ -1220,21 +1207,21 @@ export function PredictionStats({
               {hasInsufficientData ? 'N/A' : `${formatCurrency(tradeTypeAvgPnl ?? 0)} (${formatPercent((tradeTypeRoiPct ?? 0) * 100)}%)`}
             </p>
             {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
-            <p className="text-[10px] text-slate-500 font-medium">
-              ({formatCurrency(allTradesAvgPnl)} / {formatPercent((allTradesRoiPct ?? 0) * 100)}% all)
+            <p className="text-[10px] text-muted-foreground font-medium">
+              {formatCurrency(allTradesAvgPnl)} / {formatPercent((allTradesRoiPct ?? 0) * 100)}% all
             </p>
           </div>
         )
 
         // Conviction card (always shown), slight spacing via padding
         cards.push(
-          <div key="conviction" className="text-center md:border-l border-slate-200 md:pl-4">
+          <div key="conviction" className="text-center md:border-l border-border md:pl-4">
             <div className="flex items-center justify-center gap-1 mb-1">
-              <p className="text-xs text-slate-500 font-medium">Conviction</p>
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Conviction</p>
               <Tooltip delayDuration={300}>
                 <TooltipTrigger asChild>
                   <button type="button" className="cursor-help focus:outline-none" aria-label="Conviction information">
-                    <Info className="h-3 w-3 text-slate-400 hover:text-slate-600 transition-colors" />
+                    <Info className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-xs z-50" side="top" sideOffset={5}>
@@ -1246,28 +1233,28 @@ export function PredictionStats({
               <FireIcon reason="conviction" />
             </div>
             <p className={cn(
-              "text-sm md:text-base font-semibold text-slate-900 tabular-nums mb-0.5",
+              "font-body text-sm md:text-base font-semibold text-foreground tabular-nums mb-0.5",
               hasInsufficientData && "opacity-50",
               hasLowSampleSize && "opacity-75"
             )}>
               {hasInsufficientData ? 'N/A' : positionConviction !== null ? `${formatMultiplier(positionConviction)}x` : 'N/A'}
             </p>
             {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
-            <p className="text-[10px] text-slate-500 font-medium">
-              ({tradeConviction !== null ? `${formatMultiplier(tradeConviction)}x` : 'N/A'} all)
+            <p className="text-[10px] text-muted-foreground font-medium">
+              {tradeConviction !== null ? `${formatMultiplier(tradeConviction)}x` : 'N/A'} all
             </p>
           </div>
         )
 
         if (showStreakCard) {
           cards.push(
-            <div key="win-streak" className="text-center md:border-l border-slate-200">
+            <div key="win-streak" className="text-center md:border-l border-border">
               <div className="flex items-center justify-center gap-1 mb-1">
-                <p className="text-xs text-slate-500 font-medium">Win Streak</p>
+                <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Win Streak</p>
                 <Tooltip delayDuration={300}>
                   <TooltipTrigger asChild>
                     <button type="button" className="cursor-help focus:outline-none" aria-label="Win Streak information">
-                      <Info className="h-3 w-3 text-slate-400 hover:text-slate-600 transition-colors" />
+                      <Info className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-xs z-50" side="top" sideOffset={5}>
@@ -1278,15 +1265,15 @@ export function PredictionStats({
                 </Tooltip>
               </div>
               <p className={cn(
-                "text-sm md:text-base font-semibold text-slate-900 tabular-nums mb-0.5",
+                "font-body text-sm md:text-base font-semibold text-foreground tabular-nums mb-0.5",
                 hasInsufficientData && "opacity-50",
                 hasLowSampleSize && "opacity-75"
               )}>
                 {hasInsufficientData ? 'N/A' : `🔥 ${tradeTypeStreak} Wins`}
               </p>
               {hasLowSampleSize && <p className="text-[9px] text-amber-600 font-medium mt-0.5">Low sample</p>}
-              <p className="text-[10px] text-slate-500 font-medium">
-                (🔥 {allTradesStreak} all)
+              <p className="text-[10px] text-muted-foreground font-medium">
+                🔥 {allTradesStreak} all
               </p>
             </div>
           )
@@ -1300,7 +1287,7 @@ export function PredictionStats({
         }[cards.length] || 'md:grid-cols-4'
 
         return (
-          <div className="border border-slate-200 rounded-lg px-4 py-3 bg-slate-50/50">
+          <div className="border border-border rounded-none px-4 py-3 bg-accent/50">
             <div className={`grid grid-cols-2 ${mdColsClass} gap-3 relative`}>
               {cards}
             </div>

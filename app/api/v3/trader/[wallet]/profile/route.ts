@@ -143,6 +143,8 @@ interface TraderProfileResponse {
   winRate: number | null
   followerCount: number
   hasStats: boolean
+  totalTradeCount: number
+  tradeCountCapped: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +205,44 @@ function parseLeaderboardEntry(data: LeaderboardEntry[] | null): PerformancePeri
     volume: entry.vol ?? 0,
     rank: parseInt(String(entry.rank), 10) || 0,
   }
+}
+
+async function fetchAllActivityTrades(wallet: string): Promise<{ trades: ActivityTrade[]; capped: boolean }> {
+  const PAGE_SIZE = 100
+  const MAX_OFFSET = 3000
+  const BATCH_SIZE = 6
+  const allTrades: ActivityTrade[] = []
+  let exhausted = false
+
+  for (let batchStart = 0; batchStart <= MAX_OFFSET && !exhausted; batchStart += PAGE_SIZE * BATCH_SIZE) {
+    const offsets = Array.from(
+      { length: BATCH_SIZE },
+      (_, i) => batchStart + i * PAGE_SIZE
+    ).filter((o) => o <= MAX_OFFSET)
+
+    const results = await Promise.all(
+      offsets.map((offset) =>
+        fetchJson<ActivityTrade[]>(
+          `https://data-api.polymarket.com/activity?user=${wallet}&type=TRADE&limit=${PAGE_SIZE}&offset=${offset}`
+        ).then((data) => ({ offset, data: data ?? [] }))
+      )
+    )
+
+    results.sort((a, b) => a.offset - b.offset)
+    for (const { data } of results) {
+      if (data.length === 0) {
+        exhausted = true
+        break
+      }
+      allTrades.push(...data)
+      if (data.length < PAGE_SIZE) {
+        exhausted = true
+        break
+      }
+    }
+  }
+
+  return { trades: allTrades, capped: !exhausted && allTrades.length >= MAX_OFFSET }
 }
 
 async function fetchAllClosedPositions(wallet: string): Promise<ClosedPosition[]> {
@@ -341,10 +381,8 @@ export async function GET(
       ),
       // 6: ALL closed positions (paginated — used for daily P&L computation)
       fetchAllClosedPositions(wallet),
-      // 7: Recent trade activity (first 100 for trades tab display)
-      fetchJson<ActivityTrade[]>(
-        `https://data-api.polymarket.com/activity?user=${wallet}&type=TRADE&limit=100`
-      ),
+      // 7: All trade activity (paginated)
+      fetchAllActivityTrades(wallet),
       // 8: Public profile
       fetchJson<PublicProfile>(
         `https://gamma-api.polymarket.com/public-profile?address=${wallet}`
@@ -378,7 +416,9 @@ export async function GET(
     const allClosedPositions = (allClosedPositionsResult.status === 'fulfilled' ? allClosedPositionsResult.value : null) ?? []
     // First 50 closed positions for display; full set for daily P&L
     const closedPositions = allClosedPositions.slice(0, 50)
-    const activityTrades = (activityResult.status === 'fulfilled' ? activityResult.value : null) ?? []
+    const activityData = activityResult.status === 'fulfilled' ? activityResult.value : null
+    const activityTrades = activityData?.trades ?? []
+    const tradeCountCapped = activityData?.capped ?? false
     const publicProfile = publicProfileResult.status === 'fulfilled' ? publicProfileResult.value : null
     const followerCount = followerResult.status === 'fulfilled' ? followerResult.value : 0
 
@@ -493,6 +533,8 @@ export async function GET(
       winRate,
       followerCount,
       hasStats,
+      totalTradeCount: safeActivityTrades.length,
+      tradeCountCapped,
     }
 
     // Cache and return

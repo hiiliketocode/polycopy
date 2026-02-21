@@ -48,83 +48,73 @@ function getSupabaseClient() {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
-// Fetch market from Dome API
-async function fetchMarketFromDome(conditionId: string): Promise<any | null> {
-  const domeApiKey = Deno.env.get("DOME_API_KEY");
-  if (!domeApiKey) {
-    console.warn("[PolyScore] DOME_API_KEY not set, skipping Dome fetch");
-    return null;
-  }
-
+// Fetch market from Gamma API (replaced Dome API)
+async function fetchMarketFromGamma(conditionId: string): Promise<any | null> {
   try {
-    const url = new URL("https://api.domeapi.io/v1/polymarket/markets");
-    url.searchParams.append("condition_id", conditionId);
-    url.searchParams.set("limit", "1");
-
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      Authorization: `Bearer ${domeApiKey}`,
-    };
-
-    const res = await fetch(url.toString(), { headers, cache: "no-store" });
+    const url = `https://gamma-api.polymarket.com/markets?condition_id=${encodeURIComponent(conditionId)}`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Dome request failed (${res.status}): ${body || res.statusText}`);
+      throw new Error(`Gamma request failed (${res.status}): ${body || res.statusText}`);
     }
-
-    const json = await res.json();
-    const markets = Array.isArray(json?.markets) ? json.markets : Array.isArray(json) ? json : [];
+    const data = await res.json();
+    const markets = Array.isArray(data) ? data : [];
     return markets.length > 0 ? markets[0] : null;
   } catch (error) {
-    console.error("[PolyScore] Error fetching from Dome API:", error);
+    console.error("[PolyScore] Error fetching from Gamma API:", error);
     return null;
   }
 }
 
-// Map Dome market to Supabase row format
-function mapDomeMarketToRow(market: any) {
-  const toIsoFromUnix = (seconds: number | null | undefined) => {
-    if (!Number.isFinite(seconds)) return null;
-    return new Date((seconds as number) * 1000).toISOString();
-  };
-
-  const toIsoFromGameStart = (raw: string | null | undefined) => {
+function mapGammaMarketToRow(market: any) {
+  const toIso = (raw: string | null | undefined): string | null => {
     if (!raw || typeof raw !== "string") return null;
-    const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
-    const withZone = normalized.endsWith("Z") ? normalized : `${normalized}Z`;
-    const parsed = new Date(withZone);
+    const parsed = new Date(raw);
     return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
   };
 
+  const toUnix = (raw: string | null | undefined): number | null => {
+    if (!raw) return null;
+    const ms = new Date(raw).getTime();
+    return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
+  };
+
+  let outcomes: unknown[] = [];
+  try {
+    outcomes = typeof market?.outcomes === "string" ? JSON.parse(market.outcomes) : market?.outcomes ?? [];
+  } catch { outcomes = []; }
+
   return {
-    condition_id: market?.condition_id ?? null,
-    market_slug: market?.market_slug ?? null,
-    // Skip event_slug to avoid relationship errors
-    title: market?.title ?? null,
-    start_time_unix: Number.isFinite(market?.start_time) ? market.start_time : null,
-    end_time_unix: Number.isFinite(market?.end_time) ? market.end_time : null,
-    completed_time_unix: Number.isFinite(market?.completed_time) ? market.completed_time : null,
-    close_time_unix: Number.isFinite(market?.close_time) ? market.close_time : null,
-    game_start_time_raw: market?.game_start_time ?? null,
-    start_time: toIsoFromUnix(market?.start_time),
-    end_time: toIsoFromUnix(market?.end_time),
-    completed_time: toIsoFromUnix(market?.completed_time),
-    close_time: toIsoFromUnix(market?.close_time),
-    game_start_time: toIsoFromGameStart(market?.game_start_time),
-    tags: market?.tags ?? null,
-    volume_1_week: market?.volume_1_week ?? null,
-    volume_1_month: market?.volume_1_month ?? null,
-    volume_1_year: market?.volume_1_year ?? null,
-    volume_total: market?.volume_total ?? null,
-    resolution_source: market?.resolution_source ?? null,
+    condition_id: market?.conditionId ?? null,
+    market_slug: market?.slug ?? null,
+    title: market?.question ?? null,
+    start_time_unix: toUnix(market?.startDate),
+    end_time_unix: toUnix(market?.endDate),
+    completed_time_unix: market?.closedTime ? toUnix(market.closedTime) : null,
+    close_time_unix: market?.closedTime ? toUnix(market.closedTime) : null,
+    game_start_time_raw: null,
+    start_time: toIso(market?.startDate),
+    end_time: toIso(market?.endDate),
+    completed_time: toIso(market?.closedTime),
+    close_time: toIso(market?.closedTime),
+    game_start_time: null,
+    tags: null,
+    volume_1_week: market?.volume1wk != null ? Number(market.volume1wk) : null,
+    volume_1_month: market?.volume1mo != null ? Number(market.volume1mo) : null,
+    volume_1_year: market?.volume1yr != null ? Number(market.volume1yr) : null,
+    volume_total: market?.volume != null ? Number(market.volume) : null,
+    resolution_source: market?.resolutionSource ?? null,
     image: market?.image ?? null,
     description: market?.description ?? null,
-    negative_risk_id: market?.negative_risk_id ?? null,
-    side_a: market?.side_a ?? null,
-    side_b: market?.side_b ?? null,
-    winning_side: market?.winning_side ?? null,
-    status: market?.status ?? null,
-    extra_fields: market?.extra_fields ?? null,
+    negative_risk_id: market?.negRisk ? (market.clobTokenIds ?? null) : null,
+    side_a: Array.isArray(outcomes) && outcomes.length >= 1 ? outcomes[0] : null,
+    side_b: Array.isArray(outcomes) && outcomes.length >= 2 ? outcomes[1] : null,
+    winning_side: null,
+    status: market?.resolvedBy ? "resolved" : market?.closed ? "closed" : market?.active ? "active" : "unknown",
+    extra_fields: null,
     raw_dome: market ?? {},
     updated_at: new Date().toISOString(),
   };
@@ -233,20 +223,14 @@ Deno.serve(async (req) => {
     const supabase = getSupabaseClient();
 
     // --- STEP 1: FETCH MARKET FROM DOME API (Skip Supabase query to avoid relationship errors) ---
-    // PostgREST tries to auto-resolve relationships when querying markets table due to event_slug column
-    // Since we don't have an events table, we'll skip the DB check and always fetch from Dome
-    // This ensures we always have fresh data and avoids relationship errors
-    console.log(`[PolyScore] Fetching market ${condition_id} from Dome API...`);
+    console.log(`[PolyScore] Fetching market ${condition_id} from Gamma API...`);
     let marketRow: any = null;
     
-    const domeMarket = await fetchMarketFromDome(condition_id);
+    const gammaMarket = await fetchMarketFromGamma(condition_id);
     
-    if (domeMarket) {
-      const marketData = mapDomeMarketToRow(domeMarket);
+    if (gammaMarket) {
+      const marketData = mapGammaMarketToRow(gammaMarket);
       
-      // Save to Supabase (without event_slug to avoid relationship errors)
-      // Note: We're not setting event_slug in mapDomeMarketToRow, so this should be safe
-      // If upsert fails due to relationship errors, we'll just use the Dome data
       try {
         const { error: upsertError } = await supabase
           .from("markets")
@@ -254,17 +238,14 @@ Deno.serve(async (req) => {
         
         if (upsertError) {
           const errorMsg = upsertError.message || JSON.stringify(upsertError);
-          // Check if it's a relationship error - if so, just log and continue
           if (errorMsg.includes("relationship") || errorMsg.includes("events") || errorMsg.includes("schema cache")) {
-            console.warn("[PolyScore] Relationship error during upsert (expected), continuing with Dome data:", errorMsg);
+            console.warn("[PolyScore] Relationship error during upsert (expected), continuing with Gamma data:", errorMsg);
           } else {
             console.warn("[PolyScore] Error saving market to Supabase:", upsertError);
           }
-          // Continue anyway - we have the data from Dome
         } else {
           console.log("[PolyScore] Market saved to Supabase");
         }
-        // Always use Dome data regardless of upsert success/failure
         marketRow = marketData;
       } catch (error: any) {
         const errorMsg = error?.message || String(error);
@@ -273,11 +254,10 @@ Deno.serve(async (req) => {
         } else {
           console.warn("[PolyScore] Exception saving market:", error);
         }
-        // Continue anyway - we have the data from Dome
         marketRow = marketData;
       }
     } else {
-      console.warn("[PolyScore] Could not fetch market from Dome API, using request body data");
+      console.warn("[PolyScore] Could not fetch market from Gamma API, using request body data");
     }
 
     // --- STEP 2: USE MARKET DATA (from Dome or request body) ---

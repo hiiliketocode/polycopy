@@ -173,12 +173,14 @@ interface Order {
   user_closed_at: string | null
   created_at: string | null
   copied_trader_wallet: string | null
+  copied_market_title: string | null
 }
 
 interface Position {
   tokenId: string
   marketId: string
   outcome: string
+  title: string | null
   marketResolved: boolean
   resolvedOutcome: string | null
   buys: Array<{ price: number; size: number; cost: number; timestamp: string }>
@@ -226,6 +228,7 @@ const buildPositionsMap = (orders: Order[]) => {
         tokenId: positionKey,
         marketId: marketId,
         outcome: order.outcome || '',
+        title: order.copied_market_title || null,
         marketResolved: Boolean(order.market_resolved),
         resolvedOutcome: order.resolved_outcome || null,
         buys: [],
@@ -528,7 +531,8 @@ export async function GET(
         user_exit_price,
         user_closed_at,
         created_at,
-        copied_trader_wallet
+        copied_trader_wallet,
+        copied_market_title
       `)
       .eq('copy_user_id', user.id)
       .order('created_at', { ascending: true })
@@ -573,10 +577,24 @@ export async function GET(
 
     const dailyPnl = buildDailyPnlSeries(traderPositions)
 
+    const topCopiedPositions = Array.from(traderPositions.values())
+      .filter((p) => p.closedByResolution || p.netSize <= POSITION_EPSILON)
+      .sort((a, b) => b.realizedPnl - a.realizedPnl)
+      .slice(0, 5)
+      .map((p) => ({
+        title: p.title,
+        outcome: p.outcome,
+        avgEntryPrice: p.avgEntryPrice,
+        totalCost: p.totalCost,
+        realizedPnl: p.realizedPnl,
+        roi: p.totalCost > 0 ? (p.realizedPnl / p.totalCost) * 100 : 0,
+      }))
+
     return NextResponse.json({
       trader: traderStats,
       overall: overallStats,
       dailyPnl,
+      topCopiedPositions,
       shares: {
         tradesPct,
         pnlPct,

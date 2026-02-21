@@ -596,7 +596,7 @@ export function TradeCard({
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [showTradeDetails, setShowTradeDetails] = useState(false)
   const [isInsightsDrawerOpen, setIsInsightsDrawerOpen] = useState(false)
-  const [insightsDrawerTab, setInsightsDrawerTab] = useState<"positions" | "indicators" | "insights" | "gemini">("positions")
+  const [insightsDrawerTab, setInsightsDrawerTab] = useState<"positions" | "indicators" | "insights">("positions")
   const [positionDrawerTab, setPositionDrawerTab] = useState<"trader" | "user">("trader")
   const [livePrice, setLivePrice] = useState<number | null>(
     typeof currentMarketPrice === "number" && !Number.isNaN(currentMarketPrice)
@@ -955,7 +955,7 @@ export function TradeCard({
   const combinedScoreLabel = statusBadgeVariant === "ended" ? "Ended" : "Live"
   const combinedScoreBadgeClass = cn(
     badgeBaseClass,
-    "relative h-auto min-h-[34px] flex-col gap-0 px-3 pt-1 pb-3 leading-none w-[200px] min-w-[200px]",
+    "w-[200px] min-w-[200px]",
     statusBadgeVariant === "live" && "bg-profit-green/10 text-profit-green border-profit-green/30",
     statusBadgeVariant === "ended" && "bg-loss-red/10 text-loss-red border-loss-red/30",
   )
@@ -1307,7 +1307,7 @@ export function TradeCard({
     return "--"
   }
 
-  const handleInsightsDrawerToggle = (preferredTab?: "positions" | "indicators" | "insights" | "gemini") => {
+  const handleInsightsDrawerToggle = (preferredTab?: "positions" | "indicators" | "insights") => {
     if (isInsightsDrawerOpen && (!preferredTab || insightsDrawerTab === preferredTab)) {
       setIsInsightsDrawerOpen(false)
       return
@@ -1315,7 +1315,6 @@ export function TradeCard({
     if (preferredTab) {
       setInsightsDrawerTab(preferredTab)
     } else if (!isInsightsDrawerOpen) {
-      // Default to positions if we have them, otherwise indicators
       setInsightsDrawerTab(hasAnyPositionBadge ? "positions" : "indicators")
     }
     if (!isInsightsDrawerOpen && hasAnyPositionBadge) {
@@ -1323,10 +1322,6 @@ export function TradeCard({
       setPositionDrawerTab(preferredPositionTab)
     }
     setIsInsightsDrawerOpen(true)
-    // Auto-run Gemini if switching to that tab and haven't fetched yet
-    if (preferredTab === "gemini" && isAdmin && !assessmentMessages.length && !assessmentLoading) {
-      runAssessment()
-    }
   }
 
   const formatPositionTimestamp = (timestamp?: number | null) => {
@@ -1341,11 +1336,11 @@ export function TradeCard({
   }
 
   const renderPositionDrawer = () => {
-    if (!isInsightsDrawerOpen || !activePositionBadge) return null
-    const trades = activePositionBadge.trades ?? []
-    if (trades.length === 0) return null
-    const visibleTrades = trades
+    if (!isInsightsDrawerOpen) return null
     const isUserTab = positionDrawerTab === "user"
+    const trades = activePositionBadge?.trades ?? []
+    if (trades.length === 0 && !isUserTab && !showTraderPositionBadge) return null
+    const visibleTrades = trades
     let netContracts = 0
     let netAmount = 0
     let hasContractData = false
@@ -1383,13 +1378,13 @@ export function TradeCard({
     const tabOptions = [
       {
         key: "trader" as const,
-        label: traderPositionsCount === 1 ? "Traders' Position" : "Traders' Positions",
+        label: traderPositionsCount === 1 ? "Trader's Position" : "Trader's Positions",
         enabled: showTraderPositionBadge,
       },
       {
         key: "user" as const,
         label: userPositionsCount === 1 ? "Your Position" : "Your Positions",
-        enabled: showUserPositionBadge,
+        enabled: true,
       },
     ].filter((option) => option.enabled)
 
@@ -1444,6 +1439,11 @@ export function TradeCard({
           </div>
         </div>
         <div className="mt-2 space-y-2">
+          {trades.length === 0 && isUserTab && (
+            <p className="font-body text-sm text-muted-foreground py-4 text-center">
+              You don&apos;t have any existing positions in this market.
+            </p>
+          )}
           {visibleTrades.map((trade, index) => {
             const sideLabel = trade.side === "SELL" ? "Sell" : "Buy"
             const sideClass = trade.side === "SELL" ? "text-loss-red" : "text-profit-green"
@@ -1480,7 +1480,7 @@ export function TradeCard({
               : investedLabel
             return (
               <div
-                key={`${trade.side}-${trade.outcome}-${trade.timestamp ?? index}`}
+                key={`${trade.side}-${trade.outcome}-${trade.timestamp ?? 0}-${index}`}
                 className="flex items-start justify-between gap-3 text-xs"
               >
                 <div className="min-w-0">
@@ -1505,30 +1505,32 @@ export function TradeCard({
             )
           })}
         </div>
-        <div className="mt-2 flex items-end justify-between gap-3 border-t border-border pt-2">
-          <div className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
-            Total{hasSellTrades ? " (Buys - Sells)" : ""}
-            <div className="font-body text-sm font-semibold tabular-nums text-foreground">{totalAmountLabel}</div>
-            <div className="font-body text-[11px] font-medium tabular-nums text-muted-foreground normal-case tracking-normal">
-              Ave Price {avgPriceLabel}
-            </div>
-            {showHedgingDetails ? (
-              <div className="text-[11px] font-medium text-muted-foreground">
-                {traderHedgingInfo.isEven || !traderHedgingInfo.longerOutcome ? (
-                  "Evenly hedged across outcomes"
-                ) : (
-                  <>
-                    Longer on{" "}
-                    <span className="font-semibold text-foreground">
-                      {formatOutcomeLabel(traderHedgingInfo.longerOutcome)}
-                    </span>{" "}
-                    by {hedgingDiffLabel} ({hedgingPercentLabel})
-                  </>
-                )}
+        {trades.length > 0 && (
+          <div className="mt-2 flex items-end justify-between gap-3 border-t border-border pt-2">
+            <div className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+              Total{hasSellTrades ? " (Buys - Sells)" : ""}
+              <div className="font-body text-sm font-semibold tabular-nums text-foreground">{totalAmountLabel}</div>
+              <div className="font-body text-[11px] font-medium tabular-nums text-muted-foreground normal-case tracking-normal">
+                Ave Price {avgPriceLabel}
               </div>
-            ) : null}
+              {showHedgingDetails ? (
+                <div className="text-[11px] font-medium text-muted-foreground">
+                  {traderHedgingInfo.isEven || !traderHedgingInfo.longerOutcome ? (
+                    "Evenly hedged across outcomes"
+                  ) : (
+                    <>
+                      Longer on{" "}
+                      <span className="font-semibold text-foreground">
+                        {formatOutcomeLabel(traderHedgingInfo.longerOutcome)}
+                      </span>{" "}
+                      by {hedgingDiffLabel} ({hedgingPercentLabel})
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     )
   }
@@ -2473,7 +2475,7 @@ export function TradeCard({
   const pendingStatusLabel = "Order pending at Polymarket"
   let statusLabel: string
   if (statusPhase === "filled") {
-    statusLabel = "Filled"
+    statusLabel = "Filled ✅"
   } else if (statusPhase === "partial") {
     statusLabel = "Partially filled"
   } else if (statusPhase === "timed_out") {
@@ -3066,11 +3068,6 @@ export function TradeCard({
     [assessmentMessages, buildAssessmentSnapshot, isAdmin]
   )
 
-  useEffect(() => {
-    if (isAdmin && isInsightsDrawerOpen && insightsDrawerTab === "gemini" && assessmentMessages.length === 0 && !assessmentLoading) {
-      runAssessment()
-    }
-  }, [isInsightsDrawerOpen, insightsDrawerTab, assessmentLoading, assessmentMessages.length, isAdmin, runAssessment])
 
   return (
     <div
@@ -3090,7 +3087,7 @@ export function TradeCard({
         {/* Header Row */}
         <div className="flex items-start justify-between mb-2 gap-3">
           <Link
-            href={`/trader/${trader.id || "1"}`}
+            href={`/v2/trader/${trader.address || trader.id || "1"}`}
             className="flex items-center gap-3 min-w-0 hover:opacity-70 transition-opacity"
           >
             <TraderAvatar
@@ -3111,17 +3108,12 @@ export function TradeCard({
                 Hedging
               </span>
             )}
-            {isSellTrade && (
-              <span className="h-6 px-2 inline-flex items-center font-sans text-[11px] font-bold uppercase tracking-wide bg-loss-red/10 text-loss-red border border-loss-red/40 whitespace-nowrap">
-                Sold
-              </span>
-            )}
             {/* Indicator score — colored square with number */}
             {indicatorScore != null && indicatorRecommendation && (
               <button
                 type="button"
                 onClick={() => handleInsightsDrawerToggle("indicators")}
-                aria-label={`PolySignal score ${indicatorScore}`}
+                aria-label={`PolyScore ${indicatorScore}`}
                 className={cn(
                   "flex items-center justify-center w-8 h-8 font-sans text-xs font-bold text-white transition-opacity hover:opacity-80",
                   indicatorRecommendation === 'STRONG_BUY' && "bg-profit-green",
@@ -3168,6 +3160,15 @@ export function TradeCard({
               </div>
             </div>
             <div className="flex w-full flex-wrap items-center justify-start gap-1.5 md:w-auto md:justify-end">
+              {isSellTrade && (
+                <Badge
+                  variant="secondary"
+                  className={cn(badgeBaseClass, "bg-loss-red/10 text-loss-red border-loss-red/40")}
+                >
+                  <Flag className="h-3.5 w-3.5" />
+                  Sold
+                </Badge>
+              )}
               {showEventTimeBadge && (
                 espnLink ? (
                   <Badge
@@ -3232,24 +3233,14 @@ export function TradeCard({
                   {espnLink ? (
                     <Badge asChild variant="secondary" className={combinedScoreBadgeClass}>
                       <a href={espnLink} target="_blank" rel="noopener noreferrer">
-                        <span className="flex items-center justify-center gap-1 w-full overflow-hidden">
-                          <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
-                        </span>
-                        <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-sans text-xs font-bold uppercase tracking-widest opacity-70">
-                          {combinedScoreLabel}
-                        </span>
+                        <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
+                        <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                       </a>
                     </Badge>
                   ) : (
                     <Badge variant="secondary" className={combinedScoreBadgeClass}>
-                      <span className="flex items-center justify-center gap-1 w-full overflow-hidden">
-                        <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
-                        <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
-                      </span>
-                      <span className="absolute bottom-1 left-1/2 -translate-x-1/2 font-sans text-xs font-bold uppercase tracking-widest opacity-70">
-                        {combinedScoreLabel}
-                      </span>
+                      <Trophy className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span className="truncate whitespace-nowrap">{cleanedLiveScore}</span>
                     </Badge>
                   )}
                 </div>
@@ -3290,7 +3281,7 @@ export function TradeCard({
 
         {/* Always-visible Insights Tabs */}
         <div className="mb-3">
-          <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border pb-0">
+          <div className="relative flex items-center gap-1.5 overflow-x-auto border-b border-border pb-0">
             {hasAnyPositionBadge && (
               <button
                 type="button"
@@ -3298,7 +3289,7 @@ export function TradeCard({
                 className={cn(
                   "px-3 py-2 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
                   isInsightsDrawerOpen && insightsDrawerTab === "positions"
-                    ? "text-foreground bg-card border-border -mb-px"
+                    ? "text-foreground bg-card border-border relative z-10 -mb-px after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-px after:bg-card"
                     : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
                 )}
               >
@@ -3311,14 +3302,11 @@ export function TradeCard({
               className={cn(
                 "px-3 py-2 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
                 isInsightsDrawerOpen && insightsDrawerTab === "indicators"
-                  ? "text-foreground bg-card border-border -mb-px"
+                  ? "text-foreground bg-card border-border relative z-10 -mb-px after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-px after:bg-card"
                   : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
               )}
             >
-              Indicators
-              {indicatorScore != null && (
-                <span className="ml-1.5 font-body tabular-nums">{indicatorScore}</span>
-              )}
+              PolyScore
             </button>
             <button
               type="button"
@@ -3326,30 +3314,20 @@ export function TradeCard({
               className={cn(
                 "px-3 py-2 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0",
                 isInsightsDrawerOpen && insightsDrawerTab === "insights"
-                  ? "text-foreground bg-card border-border -mb-px"
+                  ? "text-foreground bg-card border-border relative z-10 -mb-px after:absolute after:bottom-[-1px] after:left-0 after:right-0 after:h-px after:bg-card"
                   : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
               )}
             >
               Trader Insights
             </button>
-            {isAdmin && (
+            {isInsightsDrawerOpen && (
               <button
                 type="button"
-                onClick={() => {
-                  handleInsightsDrawerToggle("gemini")
-                  if (!assessmentMessages.length && !assessmentLoading) {
-                    runAssessment()
-                  }
-                }}
-                className={cn(
-                  "px-3 py-2 font-sans text-xs font-bold uppercase tracking-wide transition whitespace-nowrap border border-b-0 flex items-center gap-1.5",
-                  isInsightsDrawerOpen && insightsDrawerTab === "gemini"
-                    ? "text-foreground bg-card border-border -mb-px"
-                    : "text-muted-foreground hover:text-foreground border-transparent hover:border-border/50"
-                )}
+                onClick={() => setIsInsightsDrawerOpen(false)}
+                className="ml-auto px-2 py-2 text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                aria-label="Collapse drawer"
               >
-                <Sparkles className="w-3.5 h-3.5" />
-                Gemini
+                <ChevronUp className="h-4 w-4" />
               </button>
             )}
           </div>
@@ -3362,11 +3340,11 @@ export function TradeCard({
             >
               <div className="p-3">
                 {/* Positions Tab */}
-                {insightsDrawerTab === "positions" && hasAnyPositionBadge && activePositionBadge && (
+                {insightsDrawerTab === "positions" && (
                   renderPositionDrawer()
                 )}
 
-                {/* Indicators Tab (PolySignal) */}
+                {/* PolyScore Tab */}
                 {insightsDrawerTab === "indicators" && (
                   <PolySignal
                     data={polyScoreData}
@@ -3409,156 +3387,6 @@ export function TradeCard({
                   )
                 )}
 
-                {/* Gemini Verdict Tab */}
-                {insightsDrawerTab === "gemini" && isAdmin && (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-sans text-xs font-bold uppercase tracking-wide text-foreground">Gemini Trade Verdict</p>
-                        <p className="font-body text-xs text-muted-foreground">AI read on this trade with live context.</p>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        {assessmentLoading && <Loader2 className="h-4 w-4 animate-spin text-poly-yellow" />}
-                        {assessmentResult?.confidence !== undefined && (
-                          <span className="font-body font-semibold tabular-nums">{Math.round(assessmentResult.confidence)}% conf.</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {assessmentError && (
-                      <div className="rounded-none border border-loss-red/30 bg-loss-red/10 px-3 py-2 font-body text-sm text-loss-red">
-                        {assessmentError}
-                      </div>
-                    )}
-
-                    <div className="rounded-none border border-border bg-accent p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary" className="font-sans text-xs font-bold uppercase tracking-wide">
-                          Verdict: {(assessmentResult?.recommendation ?? "pending").replace(/_/g, " ")}
-                        </Badge>
-                        <Badge variant="secondary" className="font-sans text-xs font-bold uppercase tracking-wide">
-                          Size: {assessmentResult?.betSize ?? "—"}
-                        </Badge>
-                        {assessmentResult?.timingCallout && (
-                          <span className="bg-card px-3 py-1 font-sans text-xs font-bold text-foreground border border-border">
-                            {assessmentResult.timingCallout}
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        {assessmentResult?.headline ? (
-                          <p className="font-sans text-sm font-bold text-foreground">{assessmentResult.headline}</p>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">
-                            {assessmentLoading ? "Gemini is analyzing this trade…" : "Run Gemini to get a verdict."}
-                          </p>
-                        )}
-                        {assessmentResult?.rationale?.length ? (
-                          <ul className="list-disc space-y-1 pl-5 font-body text-sm text-foreground">
-                            {assessmentResult.rationale.slice(0, 4).map((item, idx) => (
-                              <li key={idx}>{item}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {assessmentResult?.liveInsights?.length ? (
-                          <div>
-                            <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Live Notes</p>
-                            <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-                              {assessmentResult.liveInsights.slice(0, 3).map((item, idx) => (
-                                <li key={idx}>{item}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                        {assessmentResult?.riskNotes?.length ? (
-                          <div>
-                            <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1">Risk</p>
-                            <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
-                              {assessmentResult.riskNotes.slice(0, 3).map((item, idx) => (
-                                <li key={idx}>{item}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                        {!assessmentResult?.headline && assessmentResult?.rawText && (
-                          <pre className="mt-2 max-h-40 overflow-auto rounded-none bg-poly-black/90 p-3 text-[11px] text-white/70">
-                            {assessmentResult.rawText}
-                          </pre>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-none border border-border bg-card p-3">
-                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Conversation</p>
-                      <div className="max-h-64 overflow-y-auto space-y-3">
-                        {assessmentMessages.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">No messages yet. Gemini will drop a verdict when you ask.</p>
-                        ) : (
-                          assessmentMessages.map((message, idx) => {
-                            const isAssistant = message.role === "assistant"
-                            return (
-                              <div
-                                key={`${message.role}-${idx}-${message.content.slice(0, 8)}`}
-                                className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}
-                              >
-                                <div
-                                  className={cn(
-                                    "max-w-[78%] rounded-none border px-3 py-2 font-body text-sm whitespace-pre-wrap",
-                                    isAssistant
-                                      ? "bg-accent border-border text-foreground"
-                                      : "bg-poly-black border-poly-black/80 text-white"
-                                  )}
-                                >
-                                  <p
-                                    className={cn(
-                                      "font-sans text-[11px] font-bold uppercase tracking-widest mb-1",
-                                      isAssistant ? "text-muted-foreground" : "text-white/80"
-                                    )}
-                                  >
-                                    {isAssistant ? "Gemini" : "You"}
-                                  </p>
-                                  {message.content}
-                                </div>
-                              </div>
-                            )
-                          })
-                        )}
-                        {assessmentLoading && (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader2 className="h-4 w-4 animate-spin text-poly-yellow" />
-                            <span>Gemini is thinking…</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-3 flex w-full items-center gap-2">
-                        <Input
-                          value={assessmentInput}
-                          onChange={(e) => setAssessmentInput(e.target.value)}
-                          placeholder="Ask Gemini about this trade..."
-                          disabled={assessmentLoading}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault()
-                              if (assessmentInput.trim()) {
-                                runAssessment(assessmentInput)
-                              }
-                            }
-                          }}
-                        />
-                        <Button
-                          onClick={() => assessmentInput.trim() && runAssessment(assessmentInput)}
-                          disabled={assessmentLoading || !assessmentInput.trim()}
-                          className="bg-poly-black text-white hover:bg-poly-black/90 font-sans font-bold uppercase tracking-wide"
-                        >
-                          {assessmentLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Send"}
-                        </Button>
-                      </div>
-                      <p className="mt-2 text-[11px] text-muted-foreground">
-                        Gemini only sees the snapshot we send (price, size, live score, timing, fire stats). No external browsing.
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           )}
@@ -3727,14 +3555,14 @@ export function TradeCard({
                       showCopyBuyCta
                         ? isMarketEnded
                           ? "bg-muted text-muted-foreground cursor-not-allowed"
-                          : "bg-poly-yellow hover:bg-poly-yellow-hover text-poly-black"
+                          : "bg-loss-red/15 hover:bg-loss-red/25 text-loss-red border border-loss-red/30"
                         : canSellAsWell
                           ? "bg-loss-red hover:bg-loss-red/90 text-white"
                           : "bg-muted text-muted-foreground cursor-not-allowed"
                     )}
                     size="lg"
                   >
-                    {showCopyBuyCta ? (isMarketEnded ? "Market Resolved" : copyCtaLabel) : "Sell As Well"}
+                    {showCopyBuyCta ? (isMarketEnded ? "Market Resolved" : "Trade Sold. Copy?") : "Sell As Well"}
                   </Button>
                 </div>
               </div>
@@ -3920,12 +3748,7 @@ export function TradeCard({
       </div>
 
         {!hideActions && (allowQuickCopyExperience || showCopyBuyCta) && isExpanded && shouldShowCopyCta && (
-        <div className="bg-card px-6 pb-3 pt-0">
-          <div className="-mt-4 mb-2 flex justify-center">
-            <div className="flex h-8 w-8 items-center justify-center rounded-none border border-border bg-card text-muted-foreground">
-              <ArrowDown className="h-4 w-4" />
-            </div>
-          </div>
+        <div className="bg-card px-6 pb-3 pt-2">
           <div className="relative mt-0.5 overflow-hidden rounded-none border border-border bg-accent px-4 pb-4 pt-3">
             {showFilledCelebration ? (
               <div key={celebrationKey} className="confetti-layer" aria-hidden="true">
@@ -4043,8 +3866,22 @@ export function TradeCard({
                 <div className="space-y-2">
                   <div className="flex flex-col items-center gap-2 sm:flex-row sm:items-end sm:justify-center">
                     <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
-                      <label className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground">
+                      <label className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground flex items-center gap-1">
                         {filledAmountValue !== null ? "Filled USD" : "Estimated max USD"}
+                        {filledAmountValue !== null && (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p className="text-xs">
+                                  The filled amount may differ from what you entered due to market movement and slippage. Your order executes at the best available price on Polymarket&apos;s order book, which may be slightly different from the price at the time you submitted.
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                       </label>
                     <div className="flex h-14 items-center rounded-none border border-border bg-card px-4 font-body text-base font-semibold tabular-nums text-foreground">
                       {formatCurrency(Number.isFinite(statusAmountValue) ? statusAmountValue : 0)}
@@ -4108,7 +3945,7 @@ export function TradeCard({
             ) : !isSuccess ? (
               <div className="space-y-5">
                 <div>
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center justify-end mb-3">
                     <button
                       type="button"
                       onClick={onToggleExpand}
@@ -4117,8 +3954,6 @@ export function TradeCard({
                     >
                       <ChevronUp className="w-4 h-4" />
                     </button>
-                    <h4 className="font-sans text-xs font-bold uppercase tracking-wide text-foreground">Copy</h4>
-                    <span className="w-[52px]" aria-hidden="true" />
                 </div>
 
                 {orderBookError && (
@@ -4131,7 +3966,7 @@ export function TradeCard({
                       <div className="flex w-full flex-col gap-2 sm:max-w-[240px]">
                         <div className="flex items-center justify-between gap-2">
                   <label htmlFor="amount" className="font-sans text-[11px] font-medium uppercase tracking-widest text-foreground">
-                    {amountMode === "usd" ? `USD (min $${minUsdLabel})` : "Contracts"}
+                    USD (min ${minUsdLabel})
                   </label>
                         </div>
                   <div className="relative">
@@ -4247,24 +4082,6 @@ export function TradeCard({
             }
           `}</style>
         </div>
-                      <button
-                        type="button"
-                        onClick={amountMode === "usd" ? handleSwitchToContracts : handleSwitchToUsd}
-                        className="flex h-10 w-10 items-center justify-center rounded-none border border-border bg-card text-muted-foreground hover:text-foreground hover:border-border sm:h-12 sm:w-12 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!amountInput.trim()}
-                        aria-label={`Switch to ${amountMode === "usd" ? "contracts" : "USD"}`}
-                      >
-                        <ArrowLeftRight className="h-4 w-4" />
-                      </button>
-                      <div className="flex h-14 w-full items-center justify-center rounded-none border border-border bg-card font-body text-base font-semibold tabular-nums text-foreground text-center sm:w-auto sm:min-w-[180px]">
-                        {amountMode === "usd"
-                          ? !hasAmountInput
-                            ? "—"
-                            : `≈ ${formatContractsDisplay(contractsValue, 1)} ${contractLabel}`
-                          : !hasAmountInput
-                            ? "—"
-                            : `≈ ${estimatedMaxCost !== null ? formatCurrency(estimatedMaxCost) : "—"} USD`}
-                      </div>
                       <div className="flex h-14 items-center font-body text-xs font-medium tabular-nums text-muted-foreground">
                         {sizePercentLabel} of original trade
                       </div>
@@ -4485,10 +4302,10 @@ export function TradeCard({
           )}
           </div>
           {showConfirmation && isFinalStatus && (
-            <div className="mt-3 flex justify-center">
+            <div className="mt-3 flex justify-center gap-2 max-w-[360px] mx-auto">
               <Button
                 onClick={resetConfirmation}
-                className={`w-full max-w-[360px] mx-auto rounded-none font-sans font-bold uppercase tracking-wide ${
+                className={`flex-1 rounded-none font-sans font-bold uppercase tracking-wide ${
                   isFilledStatus
                     ? "bg-poly-black text-white hover:bg-poly-black/90"
                     : "bg-poly-yellow text-poly-black hover:bg-poly-yellow-hover"
@@ -4497,6 +4314,16 @@ export function TradeCard({
               >
                 {isFilledStatus ? copyAgainLabel : "Try Again"}
               </Button>
+              {isFilledStatus && onSellPosition && (
+                <Button
+                  onClick={handleSellClick}
+                  variant="outline"
+                  className="flex-1 rounded-none font-sans font-bold uppercase tracking-wide border-loss-red/30 text-loss-red hover:bg-loss-red/10"
+                  size="lg"
+                >
+                  Sell
+                </Button>
+              )}
             </div>
           )}
         </div>

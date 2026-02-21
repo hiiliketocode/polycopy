@@ -619,7 +619,7 @@ export default function LandingPage() {
             </div>
             <h3 className="font-sans text-5xl font-black uppercase tracking-tighter">Start free, upgrade when ready</h3>
             <p className="mx-auto max-w-2xl text-sm font-medium leading-relaxed text-zinc-500">
-              Connect your wallet and start copy trading for free. Upgrade to Premium to unlock every bot strategy, zero trading fees, and AI-powered recommendations.
+              Connect your wallet and start copy trading for free. Upgrade to Premium to unlock every bot strategy, zero trading fees, and AI-powered insights.
             </p>
           </div>
 
@@ -674,7 +674,7 @@ export default function LandingPage() {
                   "Zero fees on all trades",
                   "All copy bot strategies",
                   "Auto-close positions",
-                  "AI / ML trade recommendations",
+                  "AI / ML trade insights",
                   "Priority support",
                 ].map((f) => (
                   <div key={f} className="flex items-center gap-3">

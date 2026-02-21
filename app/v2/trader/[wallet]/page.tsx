@@ -296,6 +296,7 @@ export default function TraderProfilePage({
 
   /* ── My copy stats ── */
   const [myStats, setMyStats] = useState<MyTradeStats | null>(null)
+  const [myBestCopies, setMyBestCopies] = useState<any[]>([])
   const [myStatsLoading, setMyStatsLoading] = useState(false)
 
   /* ── UI ── */
@@ -480,6 +481,7 @@ export default function TraderProfilePage({
         if (res.ok) {
           const data = await res.json()
           if (data?.trader) setMyStats(data.trader)
+          if (Array.isArray(data?.topCopiedPositions)) setMyBestCopies(data.topCopiedPositions)
         }
       } catch {
         // Ignore
@@ -1200,13 +1202,17 @@ export default function TraderProfilePage({
                   <h3 className="mb-4 font-sans text-base font-bold uppercase tracking-wide text-poly-black">
                     Best Copies
                   </h3>
-                  {topPerformingTrades.length === 0 ? (
+                  {myStatsLoading ? (
+                    <div className="flex items-center justify-center py-4">
+                      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : myBestCopies.length === 0 ? (
                     <p className="py-4 text-center font-body text-xs text-muted-foreground">
-                      No closed trades yet
+                      {myStats ? "No closed copies yet" : "Copy this trader to see your best trades"}
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {topPerformingTrades.map((t: any, i: number) => (
+                      {myBestCopies.map((t: any, i: number) => (
                         <div key={i} className="flex items-center justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <p className="font-sans text-sm font-bold text-poly-black line-clamp-1">

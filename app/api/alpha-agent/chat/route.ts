@@ -471,17 +471,17 @@ When the admin asks you to change something, do something, or you determine an a
     Tables: ft_orders, ft_wallets, lt_orders, lt_strategies, markets, traders, trader_global_stats, trader_profile_stats, ft_seen_trades, alpha_agent_bots, alpha_agent_memory, alpha_agent_runs, alpha_agent_snapshots, alpha_agent_hypotheses, alpha_agent_notes
     CRITICAL SCHEMA: ft_wallets has total_pnl (NOT pnl). For "top by PnL" use order_by: "total_pnl", ascending: false. ft_orders has pnl per trade.
 
-11. **search_markets** - Search Polymarket markets by keyword (Dome/Gamma API)
+11. **search_markets** - Search Polymarket markets by keyword (Gamma API)
     parameters: { query: "NBA Finals", limit: 10 }
     Use for: "find markets about X", "search for Y", "what markets exist on Z". Returns titles, prices, volumes.
 
-12. **get_market_price** - Get live price for a market (Dome API)
+12. **get_market_price** - Get live price for a market (Gamma API)
     parameters: { condition_id: "0x..." }
     Use for: "what's the price of market X", "current odds for condition_id Y". Returns outcome prices, volume, metadata.
 
 13. **none** - Just conversation, no action needed
 
-DOME & GAMMA: These are Polymarket's live market APIs. You access them via search_markets (keyword search) and get_market_price (by condition_id). When the admin asks about a specific market, price, or wants to search markets — use these actions.
+GAMMA API: Polymarket's live market API. You access it via search_markets (keyword search) and get_market_price (by condition_id). When the admin asks about a specific market, price, or wants to search markets — use these actions.
 
 IMPORTANT RULES:
 1. When you need data, USE query actions. Don't say "I would need to query" — actually query it.

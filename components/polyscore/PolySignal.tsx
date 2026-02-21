@@ -222,14 +222,25 @@ function ftIndicatorsToFactors(indicators: Record<string, { value: unknown; labe
         ? 'negative' as const
         : 'neutral' as const
       const Icon = iconMap[icon] || BarChart3
-      const detail = statusToDetail[ind.status] ?? (key === 'experience' ? `Total trades in this type` : `${name}: ${ind.label}`)
+      let detail: string
+      let displayLabel = ind.label
+      if (key === 'experience') {
+        const num = Number(ind.label)
+        if (Number.isFinite(num)) {
+          const formatted = num >= 1000 ? `${(num / 1000).toFixed(1).replace(/\.0$/, '')}K` : `${num}`
+          displayLabel = `${formatted} trades`
+        }
+        detail = `This trader has made ${Number(ind.label).toLocaleString()} trades in this market type. More experience generally means more reliable stats.`
+      } else {
+        detail = statusToDetail[ind.status] ?? `${name}: ${ind.label}`
+      }
       return {
         name,
         icon: Icon,
         value: 0,
         maxValue: 25,
         weight: '',
-        label: ind.label,
+        label: displayLabel,
         detail,
         sentiment,
       }
@@ -991,284 +1002,129 @@ export function PolySignal({ data, loading, entryPrice, currentPrice, walletAddr
     return calculatedSignal
   }, [data, entryPrice, currentPrice, traderStats, tradeSize, serverRecommendation, serverScore, serverIndicators, fetchedSignal])
   
-  // Loading state (polyScore or polysignal API)
   if (loading || (fetchedSignalLoading && !signal)) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 border border-slate-200">
-        <div className="w-5 h-5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-        <span className="text-sm font-medium text-slate-600">Analyzing trade...</span>
+      <div className="flex items-center gap-3 px-3 py-3 rounded-none bg-accent border border-border">
+        <Loader2 className="w-4 h-4 animate-spin text-poly-yellow" />
+        <span className="font-body text-sm text-muted-foreground">Analyzing trade...</span>
       </div>
     )
   }
   
-  // No data state (need either server data or polyScore data)
   if (!signal) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200">
-        <Brain className="w-5 h-5 text-slate-400" />
-        <span className="text-sm text-slate-500">Analysis unavailable</span>
+      <div className="flex items-center gap-3 px-3 py-3 rounded-none bg-accent border border-border">
+        <Brain className="w-4 h-4 text-muted-foreground" />
+        <span className="font-body text-sm text-muted-foreground">Analysis unavailable</span>
       </div>
     )
   }
   
   const config = RECOMMENDATION_CONFIG[signal.recommendation]
-  const { insights, priceMovement } = signal as SignalResult & { insights?: InsightData | null }
+  const { priceMovement } = signal as SignalResult & { insights?: InsightData | null }
   
+  const totalCols = signal.factors.length + 1
+  const colsClass = ({
+    3: 'md:grid-cols-3',
+    4: 'md:grid-cols-4',
+    5: 'md:grid-cols-5',
+    6: 'md:grid-cols-6',
+  } as Record<number, string>)[totalCols] ?? 'md:grid-cols-5'
+
   return (
     <TooltipProvider>
-      <div className="w-full">
-        {/* Compact badge – small pill, not full row */}
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className={cn(
-            "inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-all",
-            "hover:shadow-sm active:scale-[0.98] cursor-pointer",
-            config.bgColor,
-            config.borderColor
-          )}
-        >
+      <div className="w-full space-y-2">
+        {/* Price Movement Alert */}
+        {priceMovement && priceMovement.isMajor && (
           <div className={cn(
-            "flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white",
-            signal.recommendation === 'STRONG_BUY' && "bg-emerald-500",
-            signal.recommendation === 'BUY' && "bg-green-500",
-            signal.recommendation === 'NEUTRAL' && "bg-slate-500",
-            signal.recommendation === 'AVOID' && "bg-amber-500",
-            signal.recommendation === 'TOXIC' && "bg-red-500"
+            "flex items-center gap-2 px-3 py-2 rounded-none border text-sm",
+            priceMovement.direction === 'down' 
+              ? "bg-loss-red/5 text-loss-red border-loss-red/20" 
+              : "bg-profit-green/5 text-profit-green border-profit-green/20"
           )}>
-            {signal.score}
-          </div>
-          <span className={cn("text-xs font-semibold", config.textColor)}>
-            {config.label}
-          </span>
-          {isOpen ? <ChevronUp className="w-3.5 h-3.5 shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 shrink-0" />}
-        </button>
-        
-        {/* Expanded Drawer */}
-        {isOpen && (
-          <div className="mt-2 rounded-xl border border-slate-200 bg-white shadow-lg overflow-hidden">
-            
-            {/* Price Movement Alert (if significant) */}
-            {priceMovement && priceMovement.isMajor && (
-              <div className={cn(
-                "px-4 py-2 flex items-center gap-2 text-sm",
-                priceMovement.direction === 'down' 
-                  ? "bg-red-50 text-red-800 border-b border-red-100" 
-                  : "bg-emerald-50 text-emerald-800 border-b border-emerald-100"
-              )}>
-                {priceMovement.direction === 'down' ? (
-                  <TrendingDown className="w-4 h-4" />
-                ) : (
-                  <TrendingUp className="w-4 h-4" />
-                )}
-                <span className="font-medium">
-                  Price {priceMovement.direction === 'down' ? 'dropped' : 'increased'} {Math.abs(priceMovement.percent).toFixed(0)}% since entry
-                </span>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Info className="w-3.5 h-3.5 opacity-60" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="text-xs max-w-xs">{priceMovement.implication}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
+            {priceMovement.direction === 'down' ? (
+              <TrendingDown className="w-4 h-4 shrink-0" />
+            ) : (
+              <TrendingUp className="w-4 h-4 shrink-0" />
             )}
-            
-            {/* Indicators – hierarchical, for this trade type */}
-            <div className="px-4 py-3 border-b border-slate-100">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-slate-600">indicators</span>
-                <span className="text-sm font-semibold text-slate-800">{signal.score}/100</span>
-              </div>
-              <p className="text-[11px] text-slate-500 mb-3">Stats for this trade type (not general)</p>
-              <div className="space-y-2">
-                {signal.factors.map((factor) => {
-                  const Icon = factor.icon
-                  return (
-                    <div key={factor.name} className="flex items-start gap-2 py-1.5 border-b border-slate-50 last:border-0">
-                      <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className="text-xs font-medium text-slate-700">{factor.name}</span>
-                          <span className={cn(
-                            "text-xs font-medium shrink-0",
-                            factor.sentiment === 'positive' && "text-emerald-600",
-                            factor.sentiment === 'negative' && "text-red-600",
-                            factor.sentiment === 'neutral' && "text-slate-600"
-                          )}>
-                            {factor.label}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">{factor.detail}</p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-            
-            {/* Trader Insights Grid (only when we have full polyScore data) */}
-            {insights && (
-            <div className="px-4 py-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 mb-3">
-                <BarChart3 className="w-4 h-4 text-slate-500" />
-                <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                  Trader Insights
-                </span>
-                {insights.niche && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                    {insights.niche}
-                  </span>
-                )}
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {/* Trades Count */}
-                <div className="text-center p-2 rounded-lg bg-slate-50">
-                  <p className="text-[10px] text-slate-500 font-medium mb-0.5">Niche Trades</p>
-                  <p className="text-sm font-bold text-slate-900">
-                    {insights.profileTrades}
-                  </p>
-                  <p className="text-[9px] text-slate-400">
-                    (All: {insights.globalTrades || 'N/A'})
-                  </p>
-                </div>
-                
-                {/* Win Rate */}
-                <div className="text-center p-2 rounded-lg bg-slate-50">
-                  <p className="text-[10px] text-slate-500 font-medium mb-0.5">Win Rate</p>
-                  <p className={cn(
-                    "text-sm font-bold",
-                    (insights.profileWinRate ?? 0) >= 0.55 ? "text-emerald-600" :
-                    (insights.profileWinRate ?? 0) < 0.48 ? "text-red-600" : "text-slate-900"
-                  )}>
-                    {insights.profileWinRate !== null 
-                      ? `${(insights.profileWinRate * 100).toFixed(0)}%` 
-                      : 'N/A'}
-                  </p>
-                  <p className="text-[9px] text-slate-400">
-                    (All: {insights.globalWinRate !== null ? `${(insights.globalWinRate * 100).toFixed(0)}%` : 'N/A'})
-                  </p>
-                </div>
-                
-                {/* ROI */}
-                <div className="text-center p-2 rounded-lg bg-slate-50">
-                  <p className="text-[10px] text-slate-500 font-medium mb-0.5">Avg ROI</p>
-                  <p className={cn(
-                    "text-sm font-bold",
-                    (insights.profileRoiPct ?? 0) > 0 ? "text-emerald-600" :
-                    (insights.profileRoiPct ?? 0) < 0 ? "text-red-600" : "text-slate-900"
-                  )}>
-                    {insights.profileRoiPct !== null 
-                      ? formatPercent(insights.profileRoiPct * 100)
-                      : 'N/A'}
-                  </p>
-                  <p className="text-[9px] text-slate-400">
-                    ({insights.profileAvgPnl !== null ? formatCurrency(insights.profileAvgPnl) : 'N/A'}/trade)
-                  </p>
-                </div>
-                
-                {/* Conviction */}
-                <div className="text-center p-2 rounded-lg bg-slate-50">
-                  <p className="text-[10px] text-slate-500 font-medium mb-0.5">Conviction</p>
-                  <p className={cn(
-                    "text-sm font-bold",
-                    (insights.convictionMultiplier ?? 1) >= 1.5 ? "text-emerald-600" :
-                    (insights.convictionMultiplier ?? 1) < 0.5 ? "text-red-600" : "text-slate-900"
-                  )}>
-                    {formatMultiplier(insights.convictionMultiplier)}
-                  </p>
-                  <p className="text-[9px] text-slate-400">
-                    {insights.exposureUsd ? `$${insights.exposureUsd.toFixed(0)} exposure` : 'vs avg'}
-                  </p>
-                </div>
-              </div>
-              
-              {/* Additional Insights Row */}
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                {/* Momentum */}
-                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded bg-slate-50">
-                  <Activity className="w-3 h-3 text-slate-400" />
-                  <div>
-                    <p className="text-[9px] text-slate-500">Momentum</p>
-                    <p className={cn(
-                      "text-[11px] font-semibold",
-                      insights.isHot ? "text-amber-600" : "text-slate-700"
-                    )}>
-                      {insights.isHot ? `🔥 ${insights.currentStreak} streak` : 'Normal'}
-                    </p>
-                  </div>
-                </div>
-                
-                {/* AI Edge */}
-                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded bg-slate-50">
-                  <Brain className="w-3 h-3 text-slate-400" />
-                  <div>
-                    <p className="text-[9px] text-slate-500">AI Edge</p>
-                    <p className={cn(
-                      "text-[11px] font-semibold",
-                      insights.aiEdgePct > 5 ? "text-emerald-600" :
-                      insights.aiEdgePct < -5 ? "text-red-600" : "text-slate-700"
-                    )}>
-                      {insights.aiEdgePct >= 0 ? '+' : ''}{insights.aiEdgePct.toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Timing */}
-                <div className="flex items-center gap-1.5 px-2 py-1.5 rounded bg-slate-50">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  <div>
-                    <p className="text-[9px] text-slate-500">Timing</p>
-                    <p className="text-[11px] font-semibold text-slate-700 truncate">
-                      {insights.timing || 'N/A'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            )}
-            
-            {/* Flags */}
-            {(signal.greenFlags.length > 0 || signal.redFlags.length > 0) && (
-              <div className="px-4 py-3 border-b border-slate-100">
-                {signal.greenFlags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {signal.greenFlags.map((flag, idx) => (
-                      <span
-                        key={`green-${idx}`}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"
-                      >
-                        <CheckCircle className="w-2.5 h-2.5" />
-                        {flag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {signal.redFlags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5">
-                    {signal.redFlags.map((flag, idx) => (
-                      <span
-                        key={`red-${idx}`}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-700 border border-red-200"
-                      >
-                        <AlertTriangle className="w-2.5 h-2.5" />
-                        {flag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {/* Footer */}
-            <div className="px-4 py-2 bg-slate-50">
-              <p className="text-[10px] text-slate-400 text-center">
-                PolySignal • conviction, trader WR, entry band, edge, experience (learnings Feb 2026)
-              </p>
-            </div>
+            <span className="font-body font-medium text-xs">
+              Price {priceMovement.direction === 'down' ? 'dropped' : 'increased'} {Math.abs(priceMovement.percent).toFixed(0)}% since entry
+            </span>
           </div>
         )}
+
+        {/* Indicators Grid — matches trader insights box layout */}
+        <div className="border border-border rounded-none px-4 py-3 bg-accent/50">
+          <div className={cn("grid grid-cols-2 gap-3 relative", colsClass)}>
+            {/* Score cell */}
+            <div className="text-center md:border-l border-border first:border-l-0">
+              <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-1">PolyScore</p>
+              <p className={cn(
+                "font-body text-sm md:text-base font-semibold tabular-nums",
+                signal.recommendation === 'STRONG_BUY' && "text-profit-green",
+                signal.recommendation === 'BUY' && "text-profit-green",
+                signal.recommendation === 'NEUTRAL' && "text-foreground",
+                signal.recommendation === 'AVOID' && "text-poly-yellow",
+                signal.recommendation === 'TOXIC' && "text-loss-red"
+              )}>
+                {signal.score}
+              </p>
+            </div>
+
+            {/* Factor cells */}
+            {signal.factors.map((factor) => (
+              <Tooltip key={factor.name}>
+                <TooltipTrigger asChild>
+                  <div className="text-center md:border-l border-border cursor-help">
+                    <p className="font-sans text-[11px] font-medium uppercase tracking-widest text-muted-foreground mb-1">
+                      {factor.name}
+                    </p>
+                    <p className={cn(
+                      "font-body text-sm md:text-base font-semibold tabular-nums",
+                      factor.sentiment === 'positive' && "text-profit-green",
+                      factor.sentiment === 'negative' && "text-loss-red",
+                      factor.sentiment === 'neutral' && "text-foreground"
+                    )}>
+                      {factor.label}
+                    </p>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p className="text-xs">{factor.detail}</p>
+                </TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </div>
+
+        {/* Flags */}
+        {(signal.greenFlags.length > 0 || signal.redFlags.length > 0) && (
+          <div className="flex flex-wrap gap-1.5">
+            {signal.greenFlags.map((flag, idx) => (
+              <span
+                key={`green-${idx}`}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-none text-[10px] font-sans font-bold uppercase tracking-wide bg-profit-green/10 text-profit-green border border-profit-green/30"
+              >
+                <CheckCircle className="w-2.5 h-2.5" />
+                {flag}
+              </span>
+            ))}
+            {signal.redFlags.map((flag, idx) => (
+              <span
+                key={`red-${idx}`}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-none text-[10px] font-sans font-bold uppercase tracking-wide bg-loss-red/10 text-loss-red border border-loss-red/30"
+              >
+                <AlertTriangle className="w-2.5 h-2.5" />
+                {flag}
+              </span>
+            ))}
+          </div>
+        )}
+        
+        {/* Footer */}
+        <p className="font-body text-[10px] text-muted-foreground text-center">
+          PolyScore rates each trade from 0–100 based on the trader&apos;s track record, position sizing, market edge, and entry price. Tap any metric for details.
+        </p>
       </div>
     </TooltipProvider>
   )
