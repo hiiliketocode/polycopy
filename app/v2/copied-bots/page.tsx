@@ -37,6 +37,7 @@ interface PerformanceData {
   wins: number
   losses: number
   open_trades: number
+  pending_trades: number
   total_pnl: number
   win_rate: number
 }
@@ -487,6 +488,11 @@ export default function CopiedBotsPage() {
                           </p>
                           <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
                             {perf?.total_trades ?? 0}
+                            {(perf?.open_trades ?? 0) > 0 && (
+                              <span className="ml-1 text-[11px] font-normal text-muted-foreground">
+                                ({perf!.open_trades} open)
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>

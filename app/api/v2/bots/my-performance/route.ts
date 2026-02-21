@@ -33,6 +33,8 @@ export async function GET() {
     const strategyIds = strategies.map((s: any) => s.strategy_id);
 
     // Fetch ALL lt_orders with pagination to avoid Supabase 1000-row default limit
+    // Include PENDING orders so in-progress trades are visible
+    const INCLUDED_STATUSES = ['FILLED', 'PARTIAL', 'PENDING'];
     const PAGE_SIZE = 1000;
     let allOrders: any[] = [];
     let page = 0;
@@ -43,7 +45,7 @@ export async function GET() {
         .from('lt_orders')
         .select('strategy_id, outcome, pnl, executed_size_usd, status')
         .in('strategy_id', strategyIds)
-        .in('status', ['FILLED', 'PARTIAL'])
+        .in('status', INCLUDED_STATUSES)
         .range(from, to);
 
       if (ordersErr) {
@@ -57,9 +59,9 @@ export async function GET() {
     const orders = allOrders;
 
     // Aggregate per strategy
-    const statsMap: Record<string, { total: number; wins: number; losses: number; open: number; pnl: number }> = {};
+    const statsMap: Record<string, { total: number; wins: number; losses: number; open: number; pending: number; pnl: number }> = {};
     for (const sid of strategyIds) {
-      statsMap[sid] = { total: 0, wins: 0, losses: 0, open: 0, pnl: 0 };
+      statsMap[sid] = { total: 0, wins: 0, losses: 0, open: 0, pending: 0, pnl: 0 };
     }
 
     for (const o of (orders || [])) {
@@ -67,14 +69,17 @@ export async function GET() {
       if (!s) continue;
       s.total++;
       const outcome = ((o as any).outcome || '').toUpperCase();
+      const status = ((o as any).status || '').toUpperCase();
       if (outcome === 'WON') s.wins++;
       else if (outcome === 'LOST') s.losses++;
+      else if (status === 'PENDING') s.pending++;
       else if (outcome === 'OPEN') s.open++;
       s.pnl += Number((o as any).pnl) || 0;
     }
 
     const performance = strategies.map((st: any) => {
-      const s = statsMap[st.strategy_id] || { total: 0, wins: 0, losses: 0, open: 0, pnl: 0 };
+      const s = statsMap[st.strategy_id] || { total: 0, wins: 0, losses: 0, open: 0, pending: 0, pnl: 0 };
+      const resolved = s.wins + s.losses;
       return {
         strategy_id: st.strategy_id,
         ft_wallet_id: st.ft_wallet_id,
@@ -85,8 +90,9 @@ export async function GET() {
         wins: s.wins,
         losses: s.losses,
         open_trades: s.open,
+        pending_trades: s.pending,
         total_pnl: Math.round(s.pnl * 100) / 100,
-        win_rate: s.total > 0 ? Math.round((s.wins / s.total) * 1000) / 10 : 0,
+        win_rate: resolved > 0 ? Math.round((s.wins / resolved) * 1000) / 10 : 0,
       };
     });
 

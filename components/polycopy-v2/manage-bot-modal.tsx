@@ -6,7 +6,6 @@ import {
   Settings,
   Pause,
   Play,
-  XCircle,
   X,
   Loader2,
   AlertTriangle,
@@ -36,7 +35,7 @@ interface ManageBotModalProps {
   onUnsubscribe?: (ftWalletId: string) => void
 }
 
-type ModalView = "main" | "confirm-cancel" | "saving" | "success" | "error"
+type ModalView = "main" | "saving" | "success" | "error"
 
 export function ManageBotModal({
   open,
@@ -120,29 +119,6 @@ export function ManageBotModal({
       setIsTogglingPause(false)
     }
   }, [subscription, onUpdate])
-
-  const handleCancelSubscription = useCallback(async () => {
-    setView("saving")
-    try {
-      const res = await fetch("/api/v2/bots/unsubscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ft_wallet_id: subscription.ft_wallet_id }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        setErrorMessage(data.error || "Failed to deactivate bot")
-        setView("error")
-        return
-      }
-      setSuccessMessage("Bot deactivated")
-      setView("success")
-      onUnsubscribe?.(subscription.ft_wallet_id)
-    } catch {
-      setErrorMessage("Network error. Please try again.")
-      setView("error")
-    }
-  }, [subscription, onUnsubscribe])
 
   const capitalChanged = parseFloat(capitalInput) !== totalCapital && parseFloat(capitalInput) >= 5
 
@@ -247,39 +223,6 @@ export function ManageBotModal({
           </div>
         )}
 
-        {/* Confirm Cancel */}
-        {view === "confirm-cancel" && (
-          <div className="flex flex-col gap-4 px-6 py-8">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-loss-red" />
-              <div>
-                <h3 className="font-sans text-sm font-bold uppercase text-poly-black">
-                  Deactivate Bot?
-                </h3>
-                <p className="mt-1 font-body text-sm text-muted-foreground">
-                  This will deactivate {subscription.display_name}. The bot will
-                  stop placing new trades. Existing open positions will remain
-                  until resolved.
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setView("main")}
-                className="flex-1 border border-border py-3 font-sans text-xs font-bold uppercase tracking-widest text-muted-foreground transition-colors hover:border-poly-black hover:text-poly-black"
-              >
-                GO BACK
-              </button>
-              <button
-                onClick={handleCancelSubscription}
-                className="flex-1 bg-loss-red py-3 font-sans text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-loss-red/90"
-              >
-                YES, DEACTIVATE
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Main View */}
         {view === "main" && (
           <div className="flex flex-col gap-0">
@@ -364,37 +307,25 @@ export function ManageBotModal({
                 </h3>
               </div>
 
-              <div className="flex flex-col gap-3">
-                {/* Pause / Resume */}
-                <button
-                  onClick={handleTogglePause}
-                  disabled={isTogglingPause}
-                  className={cn(
-                    "flex w-full items-center justify-center gap-2 border py-3 font-sans text-xs font-bold uppercase tracking-widest transition-colors",
-                    isPaused
-                      ? "border-profit-green text-profit-green hover:bg-profit-green/10"
-                      : "border-poly-yellow text-poly-black hover:bg-poly-yellow/10"
-                  )}
-                >
-                  {isTogglingPause ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : isPaused ? (
-                    <Play className="h-4 w-4" />
-                  ) : (
-                    <Pause className="h-4 w-4" />
-                  )}
-                  {isPaused ? "RESUME BOT" : "PAUSE BOT"}
-                </button>
-
-                {/* Deactivate Bot */}
-                <button
-                  onClick={() => setView("confirm-cancel")}
-                  className="flex w-full items-center justify-center gap-2 border border-loss-red/30 py-3 font-sans text-xs font-bold uppercase tracking-widest text-loss-red transition-colors hover:bg-loss-red/10"
-                >
-                  <XCircle className="h-4 w-4" />
-                  DEACTIVATE BOT
-                </button>
-              </div>
+              <button
+                onClick={handleTogglePause}
+                disabled={isTogglingPause}
+                className={cn(
+                  "flex w-full items-center justify-center gap-2 border py-3 font-sans text-xs font-bold uppercase tracking-widest transition-colors",
+                  isPaused
+                    ? "border-profit-green text-profit-green hover:bg-profit-green/10"
+                    : "border-poly-yellow text-poly-black hover:bg-poly-yellow/10"
+                )}
+              >
+                {isTogglingPause ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : isPaused ? (
+                  <Play className="h-4 w-4" />
+                ) : (
+                  <Pause className="h-4 w-4" />
+                )}
+                {isPaused ? "RESUME BOT" : "PAUSE BOT"}
+              </button>
             </div>
           </div>
         )}
