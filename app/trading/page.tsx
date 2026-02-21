@@ -1649,7 +1649,16 @@ export default function TradingStrategiesPage() {
                 <p className="text-muted-foreground text-sm py-8 text-center">No LT orders yet.</p>
               ) : (
                 <div className="overflow-x-auto -mx-2">
-                  <table className="w-full text-sm border-collapse">
+                  <table className="w-full text-sm border-collapse" style={{ tableLayout: 'fixed', minWidth: '900px' }}>
+                    <colgroup>
+                      <col className="w-[140px]" />
+                      <col className="w-[200px]" />
+                      <col className="w-[90px]" />
+                      <col className="w-[70px]" />
+                      <col className="w-[140px]" />
+                      <col className="w-[80px]" />
+                      <col style={{ minWidth: '380px', width: '380px' }} />
+                    </colgroup>
                     <thead>
                       <tr className="border-b border-muted">
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Strategy</th>
@@ -1658,7 +1667,7 @@ export default function TradingStrategiesPage() {
                         <th className="text-right py-2 px-2 font-medium text-muted-foreground">Size</th>
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Timestamp</th>
                         <th className="text-left py-2 px-2 font-medium text-muted-foreground">Outcome</th>
-                        <th className="text-left py-2 px-2 font-medium text-muted-foreground min-w-[280px]">Rejection reason</th>
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Rejection reason</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1669,7 +1678,7 @@ export default function TradingStrategiesPage() {
                               {o.strategy_id}
                             </Link>
                           </td>
-                          <td className="py-2 px-2 max-w-[200px] truncate text-foreground" title={o.market_title || ''}>
+                          <td className="py-2 px-2 truncate text-foreground" title={o.market_title || ''}>
                             {o.market_title || '—'}
                           </td>
                           <td className="py-2 px-2">
@@ -1684,7 +1693,7 @@ export default function TradingStrategiesPage() {
                             {o.order_placed_at ? new Date(o.order_placed_at).toLocaleString() : '—'}
                           </td>
                           <td className="py-2 px-2 text-foreground">{o.outcome ?? '—'}</td>
-                          <td className="py-2 px-2 text-muted-foreground text-xs whitespace-normal break-words min-w-[280px] max-w-[400px]" title={o.rejection_reason || ''}>
+                          <td className="py-2 px-2 text-muted-foreground text-xs whitespace-normal break-words" style={{ minWidth: '380px' }} title={o.rejection_reason || ''}>
                             {o.rejection_reason ?? '—'}
                           </td>
                         </tr>
