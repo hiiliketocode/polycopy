@@ -118,6 +118,30 @@ async function fetchTop100Traders(): Promise<Set<string>> {
 /** Only fetch orders on or after this date to avoid statement timeout on full table scan. */
 const SINCE_DAYS = 180;
 
+/** Fetch from pre-aggregated cache (populate with scripts/populate-signals-backtest-cache.ts). */
+async function fetchOrdersFromCache(): Promise<OrderRow[]> {
+  const all: OrderRow[] = [];
+  const PAGE = 5000;
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('signals_backtest_cache')
+      .select('source_trade_id,trader_address,entry_price,outcome,model_probability,trader_win_rate,trader_roi,trader_resolved_count,conviction')
+      .order('order_time', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error('Cache fetch error:', error.message);
+      return [];
+    }
+    if (!data?.length) break;
+    all.push(...(data as OrderRow[]));
+    if (data.length < PAGE) break;
+    offset += PAGE;
+    if (all.length % 10000 === 0) console.log('  from cache:', all.length);
+  }
+  return all;
+}
+
 async function fetchOrders(): Promise<OrderRow[]> {
   const since = new Date();
   since.setDate(since.getDate() - SINCE_DAYS);
@@ -155,11 +179,34 @@ async function fetchOrders(): Promise<OrderRow[]> {
 }
 
 async function main() {
+  const useCacheOnly = process.argv.includes('--use-cache');
   console.log('Fetching top 100 traders (30d PnL)...');
   const top100 = await fetchTop100Traders();
-  console.log('Fetching resolved ft_orders...');
-  let orders = await fetchOrders();
-  console.log('Total rows:', orders.length);
+
+  let orders: OrderRow[];
+  let usedCache = false;
+  if (useCacheOnly) {
+    console.log('Reading from signals_backtest_cache (--use-cache)...');
+    orders = await fetchOrdersFromCache();
+    if (!orders.length) {
+      console.error('Cache is empty. Run: npx tsx scripts/populate-signals-backtest-cache.ts');
+      process.exit(1);
+    }
+    console.log('Total rows from cache:', orders.length);
+    usedCache = true;
+  } else {
+    console.log('Trying signals_backtest_cache first...');
+    const fromCache = await fetchOrdersFromCache();
+    if (fromCache.length > 0) {
+      console.log('Using cache:', fromCache.length, 'rows');
+      orders = fromCache;
+      usedCache = true;
+    } else {
+      console.log('Cache empty; fetching resolved ft_orders (may timeout)...');
+      orders = await fetchOrders();
+      console.log('Total rows:', orders.length);
+    }
+  }
 
   orders = orders.filter((o) => top100.has((o.trader_address ?? '').toLowerCase()));
   const seen = new Set<string>();
@@ -228,13 +275,25 @@ async function main() {
   const countStats = computeBucketStats(orders, COUNT_BUCKETS, count);
   const mlStats = computeBucketStats(ordersWithMl, ML_BUCKETS, mlPct);
 
+  const now = new Date();
+  let windowStart: string | undefined = new Date(now.getTime() - SINCE_DAYS * 864e5).toISOString().slice(0, 10);
+  let windowEnd: string | undefined = now.toISOString().slice(0, 10);
+  if (usedCache) {
+    const { data: range } = await supabase.from('signals_backtest_cache').select('order_time').order('order_time', { ascending: true }).limit(1).maybeSingle();
+    const { data: rangeEnd } = await supabase.from('signals_backtest_cache').select('order_time').order('order_time', { ascending: false }).limit(1).maybeSingle();
+    if (range?.order_time) windowStart = (range.order_time as string).slice(0, 10);
+    if (rangeEnd?.order_time) windowEnd = (rangeEnd.order_time as string).slice(0, 10);
+  }
   const summary = {
     meta: {
       title: 'Signals Backtest — Top 100 Traders (30d PnL)',
       uniqueTrades: orders.length,
       uniqueTradesWithMl: ordersWithMl.length,
-      scope: `Pure signal, 1 unit per trade, deduped by source_trade_id. Last ${SINCE_DAYS}d only.`,
-      generatedAt: new Date().toISOString(),
+      scope: usedCache ? 'Pure signal, 1 unit per trade, deduped. Data from signals_backtest_cache.' : `Pure signal, 1 unit per trade, deduped by source_trade_id. Last ${SINCE_DAYS}d only.`,
+      generatedAt: now.toISOString(),
+      backtestWindowStart: windowStart,
+      backtestWindowEnd: windowEnd,
+      scopeType: 'global',
     },
     byMlScore: mlStats.filter((s) => s.trades > 0),
     byWinRate: wrStats.filter((s) => s.trades > 0),

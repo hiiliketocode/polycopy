@@ -37,6 +37,9 @@ interface SignalsData {
     uniqueTradesWithMl?: number;
     scope: string;
     generatedAt: string | null;
+    backtestWindowStart?: string;
+    backtestWindowEnd?: string;
+    scopeType?: string;
   };
   byMlScore: BucketResult[];
   byWinRate: BucketResult[];
@@ -89,8 +92,8 @@ function PerformanceTable({
               <th className="px-4 py-2 text-right font-semibold text-foreground">
                 Unit ROI%
               </th>
-              <th className="px-4 py-2 text-right font-semibold text-foreground">
-                PF
+              <th className="px-4 py-2 text-right font-semibold text-foreground" title="Profit Factor: gross wins ÷ gross losses. &gt;1 = profitable.">
+                Profit Factor
               </th>
             </tr>
           </thead>
@@ -218,11 +221,18 @@ export default function PolycopySignalsPage() {
                       1. ML Score
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Our model’s predicted win probability (0–100%) for this
-                      trade, using 41 features (trader history, market type,
-                      conviction, trends). Higher score = model thinks the bet
-                      is more likely to win.
+                      The ML score is a <strong className="text-foreground">number</strong> (e.g. 0.55), not a percentage. It is produced by a classifier trained on advanced machine learning over <strong className="text-foreground">59 million trades</strong> from the top traders on Polymarket. The model estimates the probability that this trade will win. Higher score = the model thinks the bet is more likely to win. We sometimes display it on a 0–100 scale for readability, but the underlying value is the raw score.
                     </p>
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-foreground">Dimensions we analyze to predict win probability</p>
+                    <ul className="mt-1 list-inside list-disc text-sm text-muted-foreground space-y-0.5">
+                      <li><strong className="text-foreground">Trade:</strong> entry price, side (long/short), size, timestamp</li>
+                      <li><strong className="text-foreground">Market:</strong> niche (e.g. politics, sports), bet structure (standard/O/U/spread), volume, liquidity, market age, time to close</li>
+                      <li><strong className="text-foreground">Trader:</strong> global and recent win rate, lifetime and recent ROI, total trades, avg bet size, recent performance</li>
+                      <li><strong className="text-foreground">Profile:</strong> niche win rate, historical ROI by price bracket</li>
+                      <li><strong className="text-foreground">Trends:</strong> win-rate and ROI trends, performance regime</li>
+                      <li><strong className="text-foreground">Behavior:</strong> conviction (size vs usual), trade sequence, exposure, tempo, chasing, averaging down, hedging, crowd alignment</li>
+                      <li><strong className="text-foreground">Context:</strong> trade size tier, position direction, volume/liquidity momentum, trader selectivity, price vs trader average, niche experience</li>
+                    </ul>
                   </div>
                 </div>
                 <PerformanceTable
@@ -298,6 +308,9 @@ export default function PolycopySignalsPage() {
                   title="Performance by trader ROI band"
                   rows={data?.byTraderRoi ?? []}
                 />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  The bucket is the <strong className="text-foreground">trader’s historical average ROI</strong> at the time of the trade. &quot;Unit ROI%&quot; in the table is how trades in that bucket <em>actually performed</em> in this backtest—so a trader with 20%+ historical ROI can still show negative unit ROI here if those particular trades lost in our sample.
+                </p>
               </div>
 
               {/* 5. Conviction */}
@@ -321,17 +334,70 @@ export default function PolycopySignalsPage() {
                   title="Performance by conviction (trade size vs usual)"
                   rows={data?.byConviction ?? []}
                 />
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Sample sizes vary by bucket. In theory, higher conviction can mean stronger confidence; we are working on larger datasets and pre-aggregated lookups for more reliable conviction breakdowns.
+                </p>
               </div>
             </div>
           )}
 
+          {/* Backtest summary line: trades analyzed* + timestamp */}
           {data?.meta?.generatedAt && (
-            <p className="mt-6 text-xs text-muted-foreground">
-              Backtest data: {data.meta.uniqueTrades?.toLocaleString()} unique
-              trades (top 100 traders). Generated:{" "}
-              {new Date(data.meta.generatedAt).toLocaleString()}.
+            <p className="mt-6 text-sm text-muted-foreground">
+              Trades analyzed: <strong className="text-foreground">{data.meta.uniqueTrades?.toLocaleString()}</strong>*
+              {data.meta.backtestWindowStart && data.meta.backtestWindowEnd && (
+                <> · Window: {data.meta.backtestWindowStart} → {data.meta.backtestWindowEnd}</>
+              )}
+              {" "}· Last updated: {new Date(data.meta.generatedAt).toLocaleString()}
             </p>
           )}
+
+        </section>
+
+        {/* What this backtest is based on + How to read */}
+        <section className="mb-16 rounded-2xl border border-border bg-card p-8">
+          <h2 className="mb-6 font-sans text-2xl font-bold text-foreground">
+            What This Backtest Is Based On & How to Read It
+          </h2>
+          <div className="space-y-6 text-muted-foreground">
+            <div>
+              <h3 className="mb-2 font-sans text-sm font-bold uppercase tracking-wide text-foreground">
+                * Trades analyzed
+              </h3>
+              <p className="text-sm leading-relaxed">
+                The number of unique trades (deduped by trade ID) from the top 100 traders by 30-day PnL that we could load in this run. We currently limit the query to a recent time window to avoid database timeouts; we are adding a pre-aggregated lookup table so we can include tens of thousands of trades in future updates.
+              </p>
+            </div>
+            <div>
+              <h3 className="mb-2 font-sans text-sm font-bold uppercase tracking-wide text-foreground">
+                Global vs niche (classification)
+              </h3>
+              <p className="text-sm leading-relaxed">
+                This backtest is based on <strong className="text-foreground">global</strong> numbers: all top-100 traders and all market types combined. We do not split by niche or classification in this view. &quot;Classification&quot; is how we segment traders and trades for our intelligence:
+              </p>
+              <ul className="mt-2 list-inside list-disc text-sm space-y-1">
+                <li><strong className="text-foreground">Bet type</strong> — e.g. standard binary, spread, over/under</li>
+                <li><strong className="text-foreground">Market type</strong> — e.g. politics, sports, crypto, science</li>
+                <li><strong className="text-foreground">Bet size</strong> — tier of position size (e.g. small / medium / large vs trader average)</li>
+                <li><strong className="text-foreground">Average ROI</strong> — the trader’s historical return band (e.g. 0–5%, 10–20%)</li>
+              </ul>
+              <p className="mt-2 text-sm">
+                In the future we may add <strong className="text-foreground">niche</strong> (classification) breakdowns so you can see performance by market type, bet size, or ROI band separately.
+              </p>
+            </div>
+            <div>
+              <h3 className="mb-2 font-sans text-sm font-bold uppercase tracking-wide text-foreground">
+                How to read the tables
+              </h3>
+              <ul className="list-inside list-disc text-sm space-y-1">
+                <li><strong className="text-foreground">Bucket</strong> — range of the signal (e.g. ML score 55–60%, conviction 2–3x).</li>
+                <li><strong className="text-foreground">Trades</strong> — number of resolved trades in that bucket.</li>
+                <li><strong className="text-foreground">WR</strong> — win rate (% of those trades that won).</li>
+                <li><strong className="text-foreground">Unit ROI%</strong> — as if you risked 1 unit per trade; (sum of unit PnL) ÷ count × 100. Positive = profitable on average.</li>
+                <li><strong className="text-foreground">Profit Factor</strong> — gross wins ÷ gross losses. Above 1 = profitable; higher is better.</li>
+              </ul>
+            </div>
+          </div>
         </section>
 
         {/* How these help users */}
