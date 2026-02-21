@@ -3,11 +3,11 @@
  * Populate signals_backtest_cache in chunks to avoid Supabase statement timeout.
  * Run after applying migration 20260221_create_signals_backtest_cache.sql.
  *
+ * Fetches ALL resolved ft_orders (WON/LOST) in 30-day windows — no trader filter —
+ * so we get maximum N for statistical significance. Dedupes by source_trade_id.
+ *
  * Usage: npx tsx scripts/populate-signals-backtest-cache.ts
  *        npx tsx scripts/populate-signals-backtest-cache.ts --days 365
- *
- * Fetches resolved ft_orders in 30-day windows, dedupes by source_trade_id,
- * and upserts into signals_backtest_cache. Only includes traders in top 100 (30d PnL).
  */
 import { config } from 'dotenv';
 import path from 'path';
@@ -52,36 +52,12 @@ interface Row {
   order_time: string;
 }
 
-async function fetchTop100Traders(): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('wallet_realized_pnl_rankings')
-    .select('wallet_address')
-    .eq('window_key', '30D')
-    .order('rank', { ascending: true })
-    .limit(100);
-  if (!error && data?.length) {
-    return new Set(
-      data
-        .map((r: { wallet_address?: string }) => (r.wallet_address ?? '').toLowerCase())
-        .filter(Boolean)
-    );
-  }
-  return new Set();
-}
-
 async function main() {
-  console.log('Fetching top 100 traders (30d PnL)...');
-  const top100 = await fetchTop100Traders();
-  const wallets = Array.from(top100);
-  if (!wallets.length) {
-    console.error('No top-100 wallets found.');
-    process.exit(1);
-  }
-
   const end = new Date();
   const start = new Date();
   start.setDate(start.getDate() - DAYS);
-  console.log(`Populating cache from ${start.toISOString().slice(0, 10)} to ${end.toISOString().slice(0, 10)} in 30-day chunks...`);
+  console.log('Populating cache with ALL resolved ft_orders (no trader filter) for max N.');
+  console.log(`Window: ${start.toISOString().slice(0, 10)} → ${end.toISOString().slice(0, 10)} (${DAYS}d) in 30-day chunks...`);
 
   const CHUNK_DAYS = 30;
   let totalInserted = 0;
@@ -95,7 +71,7 @@ async function main() {
 
     const all: Row[] = [];
     let pageCursor: string | null = null;
-    const PAGE = 1000;
+    const PAGE = 500;
 
     while (true) {
       let q = supabase
@@ -104,7 +80,6 @@ async function main() {
         .in('outcome', ['WON', 'LOST'])
         .gte('order_time', fromIso)
         .lt('order_time', toIso)
-        .in('trader_address', wallets)
         .order('order_time', { ascending: true })
         .limit(PAGE);
       if (pageCursor) q = q.gt('order_time', pageCursor);

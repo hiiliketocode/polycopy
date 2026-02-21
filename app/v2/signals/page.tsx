@@ -40,7 +40,11 @@ interface SignalsData {
     backtestWindowStart?: string;
     backtestWindowEnd?: string;
     scopeType?: string;
+    top100Only?: boolean;
+    dataSource?: 'trades_public' | 'ft_orders' | 'enriched';
   };
+  byPrice?: BucketResult[];
+  bySize?: BucketResult[];
   byMlScore: BucketResult[];
   byWinRate: BucketResult[];
   byConviction: BucketResult[];
@@ -199,9 +203,10 @@ export default function PolycopySignalsPage() {
             The Five Signals We Use (and Prove)
           </h2>
           <p className="mb-10 text-muted-foreground">
-            Below: performance by signal bucket for top 100 traders (last 30d
-            PnL). Each trade counted once; metrics = win rate and unit ROI (as if
-            you risked 1 unit per trade). No bot sizing—pure signal value.
+            We use trades_public (resolved via markets) for large-N backtests; when available you’ll see performance by price and size. For ML, WR, conviction, ROI we use ft_orders. Each trade counted once;{" "}
+            <strong className="text-foreground">all resolved copied trades</strong>{" "}
+            (any trader we’ve copied) for statistical significance; each trade counted once.
+            Metrics = win rate and unit ROI (as if you risked 1 unit per trade). No bot sizing—pure signal value.
           </p>
 
           {loading ? (
@@ -210,6 +215,44 @@ export default function PolycopySignalsPage() {
             </div>
           ) : (
             <div className="space-y-12">
+              {/* Price & Size from trades_public (large N) */}
+              {(data?.byPrice?.length ?? 0) > 0 && (
+                <>
+                  <div>
+                    <div className="mb-4 flex items-start gap-3">
+                      <div className="rounded-lg bg-primary/10 p-2">
+                        <TrendingUp className="h-6 w-6 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="font-sans text-xl font-bold text-foreground">
+                          Performance by entry price (trades_public)
+                        </h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Resolved trades from the public feed, joined with market resolution. Large N for statistical significance.
+                        </p>
+                      </div>
+                    </div>
+                    <PerformanceTable title="By price bucket" rows={data!.byPrice!} />
+                  </div>
+                  <div>
+                    <div className="mb-4 flex items-start gap-3">
+                      <div className="rounded-lg bg-primary/10 p-2">
+                        <BarChart3 className="h-6 w-6 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="font-sans text-xl font-bold text-foreground">
+                          Performance by trade size (trades_public)
+                        </h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Same resolved trades, bucketed by position size in USD.
+                        </p>
+                      </div>
+                    </div>
+                    <PerformanceTable title="By size (USD)" rows={data!.bySize ?? []} />
+                  </div>
+                </>
+              )}
+
               {/* 1. ML Score */}
               <div>
                 <div className="mb-4 flex items-start gap-3">
@@ -345,6 +388,7 @@ export default function PolycopySignalsPage() {
           {data?.meta?.generatedAt && (
             <p className="mt-6 text-sm text-muted-foreground">
               Trades analyzed: <strong className="text-foreground">{data.meta.uniqueTrades?.toLocaleString()}</strong>*
+              {data.meta.top100Only && " (top 100 traders only)"}
               {data.meta.backtestWindowStart && data.meta.backtestWindowEnd && (
                 <> · Window: {data.meta.backtestWindowStart} → {data.meta.backtestWindowEnd}</>
               )}
@@ -365,7 +409,8 @@ export default function PolycopySignalsPage() {
                 * Trades analyzed
               </h3>
               <p className="text-sm leading-relaxed">
-                The number of unique trades (deduped by trade ID) from the top 100 traders by 30-day PnL that we could load in this run. We currently limit the query to a recent time window to avoid database timeouts; we are adding a pre-aggregated lookup table so we can include tens of thousands of trades in future updates.
+                Unique resolved trades (deduped by trade ID) we use for the backtest. We collect from{" "}
+                <strong className="text-foreground">ft_orders</strong> — the table of every trade our system has copied and that has resolved (WON/LOST). By default we use <strong className="text-foreground">all</strong> such trades (any trader) for statistical significance; a pre-aggregated cache is filled in time chunks so we can include tens of thousands of trades without timeouts.
               </p>
             </div>
             <div>

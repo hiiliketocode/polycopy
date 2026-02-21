@@ -56,6 +56,7 @@ function main(): number {
     return 1;
   }
   const buckets = ['byMlScore', 'byWinRate', 'byConviction', 'byTraderRoi', 'byTradeCount'] as const;
+  const optionalBuckets = ['byPrice', 'bySize'] as const;
   for (const key of buckets) {
     const arr = root[key];
     if (!Array.isArray(arr)) {
@@ -66,6 +67,21 @@ function main(): number {
       if (!validateBucketRow(row)) {
         console.error('Invalid bucket row in', key, row);
         return 1;
+      }
+    }
+  }
+  for (const key of optionalBuckets) {
+    const arr = root[key];
+    if (arr != null && !Array.isArray(arr)) {
+      console.error('Invalid (non-array):', key);
+      return 1;
+    }
+    if (Array.isArray(arr)) {
+      for (const row of arr) {
+        if (!validateBucketRow(row)) {
+          console.error('Invalid bucket row in', key, row);
+          return 1;
+        }
       }
     }
   }

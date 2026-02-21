@@ -60,3 +60,4 @@ top5_ml_full.csv
 !vercel.json
 !**/supabase/**/*.json
 !lib/ml/poly_predictor_v11_weights.json
+!/public/data/signals-backtest-results.json
