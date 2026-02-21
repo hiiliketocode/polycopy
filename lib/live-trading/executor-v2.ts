@@ -24,7 +24,7 @@ import { prepareOrderParamsForClob } from '@/lib/polymarket/order-prep';
 import { getAuthedClobClientForUserAnyWallet } from '@/lib/polymarket/authed-client';
 import { ensureTraderId } from '@/lib/traders/ensure-id';
 import { calculateBetSize, getSourceTradeId, FT_SLIPPAGE_PCT, type EnrichedTrade, type FTWallet } from '@/lib/ft-sync/shared-logic';
-import { lockCapitalForTrade, unlockCapital, type CapitalState } from './capital-manager';
+import { getCapitalState, lockCapitalForTrade, unlockCapital, type CapitalState } from './capital-manager';
 import { checkRisk, recordDailySpend, loadStrategyRiskState } from './risk-manager-v2';
 import { resolveTokenId } from './token-cache';
 import { getActualFillPrice } from '@/lib/polymarket/fill-price';
@@ -151,6 +151,11 @@ export async function getActiveStrategies(
  * to order placement and recording, with proper capital management
  * at every step.
  */
+export interface ExecuteTradeContext {
+    /** 1-based attempt index this run (for diagnostics when cash rejection happens). */
+    attemptIndexThisRun?: number;
+}
+
 export async function executeTrade(
     supabase: SupabaseClient,
     strategy: LTStrategy,
@@ -158,6 +163,7 @@ export async function executeTrade(
     ftWallet: FTWallet,
     ftOrderId: string | undefined,
     logger: LTLogger,
+    context?: ExecuteTradeContext,
 ): Promise<ExecutionResult> {
     const traceLogger = logger.forTrade({
         strategy_id: strategy.strategy_id,
@@ -200,10 +206,13 @@ export async function executeTrade(
     }
 
     // ── Step 2: Calculate bet size (same as FT) ──
-    // BANKROLL: Match FT's formula: startingBalance + realizedPnl - openExposure.
-    // In LT terms: available_cash + cooldown_capital (excludes locked/open positions).
-    // FT has no cooldown, so cooldown capital is immediately available in FT equivalent.
-    const effectiveBankroll = strategy.available_cash + strategy.cooldown_capital;
+    // BANKROLL: Use current capital state so bet sizing reflects cash already locked this run.
+    // (Strategy object has stale available_cash from start of run; re-read to avoid requesting
+    // full-sized bets when we're nearly exhausted and then rejecting with "Insufficient cash".)
+    const capitalState = await getCapitalState(supabase, strategy.strategy_id);
+    const effectiveBankroll = capitalState
+        ? capitalState.available_cash + capitalState.cooldown_capital
+        : strategy.available_cash + strategy.cooldown_capital;
     const traderWinRate = trade.traderWinRate;
 
     // EDGE: Use FT_SLIPPAGE_PCT (0.3%) for edge calculation — MUST match FT exactly.
@@ -221,6 +230,12 @@ export async function executeTrade(
     // Clamp to strategy limits
     betSize = Math.max(strategy.min_order_size_usd, Math.min(strategy.max_order_size_usd, betSize));
 
+    // Never request more than we have — avoids "Insufficient cash" when we've already locked most cash this run
+    const availableNow = capitalState?.available_cash ?? strategy.available_cash;
+    if (availableNow > 0 && betSize > availableNow) {
+        betSize = Math.max(strategy.min_order_size_usd, +(availableNow.toFixed(2)));
+    }
+
     await traceLogger.debug('ORDER_PREP', `Bet size calculated: $${betSize.toFixed(2)}`, {
         method: ftWallet.allocation_method,
         edge: +edge.toFixed(4),
@@ -234,6 +249,7 @@ export async function executeTrade(
         await traceLogger.warn('CASH_CHECK', `CASH: Capital lock failed: ${lockResult.error}`, {
             needed: betSize,
             available_before: lockResult.available_before,
+            attempt_index_this_run: context?.attemptIndexThisRun,
         });
         // Record as rejected order for visibility
         await recordRejectedOrder(supabase, strategy, trade, sourceTradeId, ftOrderId, betSize, price, side, lockResult.error || 'Cash check failed');

@@ -76,6 +76,14 @@ export function V2Footer() {
             <ul className="flex flex-col gap-3">
               <li>
                 <Link
+                  href="/v2/signals"
+                  className="font-sans text-xs font-bold uppercase tracking-wider text-white/80 transition-colors hover:text-white"
+                >
+                  SIGNALS
+                </Link>
+              </li>
+              <li>
+                <Link
                   href="/copy-trading"
                   className="font-sans text-xs font-bold uppercase tracking-wider text-white/80 transition-colors hover:text-white"
                 >

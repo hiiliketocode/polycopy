@@ -57,9 +57,11 @@ async function main() {
   const start = new Date();
   start.setDate(start.getDate() - DAYS);
   console.log('Populating cache with ALL resolved ft_orders (no trader filter) for max N.');
-  console.log(`Window: ${start.toISOString().slice(0, 10)} → ${end.toISOString().slice(0, 10)} (${DAYS}d) in 30-day chunks...`);
+  console.log(`Window: ${start.toISOString().slice(0, 10)} → ${end.toISOString().slice(0, 10)} (${DAYS}d) in ${CHUNK_DAYS}-day chunks...`);
 
-  const CHUNK_DAYS = 30;
+  const CHUNK_DAYS = process.argv.includes('--chunk-days')
+    ? Math.max(1, parseInt(process.argv[process.argv.indexOf('--chunk-days') + 1], 10) || 7)
+    : 7;
   let totalInserted = 0;
   let cursor = new Date(start);
 

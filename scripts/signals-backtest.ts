@@ -203,6 +203,42 @@ async function fetchTradesPublicResolved(): Promise<Array<{ entry_price: number;
   return all;
 }
 
+/** Fetch ALL resolved ft_orders in pages (no date limit). Use for max N backtest from copied trades. */
+async function fetchOrdersFromFtOrdersAll(): Promise<OrderRow[]> {
+  const all: OrderRow[] = [];
+  const PAGE = 2000;
+  let cursor: string | null = null;
+  const seen = new Set<string>();
+  while (true) {
+    let q = supabase
+      .from('ft_orders')
+      .select('source_trade_id,trader_address,entry_price,outcome,model_probability,trader_win_rate,trader_roi,trader_resolved_count,conviction,order_time')
+      .in('outcome', ['WON', 'LOST'])
+      .order('order_time', { ascending: true })
+      .limit(PAGE);
+    if (cursor) q = q.gt('order_time', cursor);
+    const { data, error } = await q;
+    if (error) {
+      console.error('ft_orders fetch error:', error.message);
+      break;
+    }
+    if (!data?.length) break;
+    const rows = data as (OrderRow & { order_time?: string })[];
+    for (const r of rows) {
+      const id = r.source_trade_id;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const { order_time: _ot, ...rest } = r;
+      all.push(rest as OrderRow);
+    }
+    const last = rows[rows.length - 1];
+    cursor = last?.order_time ?? null;
+    if (!cursor || rows.length < PAGE) break;
+    if (all.length % 50000 < PAGE) console.log('  ft_orders:', all.length);
+  }
+  return all;
+}
+
 /** Fetch from pre-aggregated cache (populate with scripts/populate-signals-backtest-cache.ts). */
 async function fetchOrdersFromCache(): Promise<OrderRow[]> {
   const all: OrderRow[] = [];
@@ -267,6 +303,7 @@ async function main() {
   const sourceArg = process.argv.includes('--source') ? process.argv[process.argv.indexOf('--source') + 1] : null;
   const sourceTradesPublic = sourceArg === 'trades_public';
   const sourceEnriched = sourceArg === 'enriched';
+  const sourceFtOrdersAll = sourceArg === 'ft_orders';
   const filterStr = process.argv.includes('--filter') ? process.argv[process.argv.indexOf('--filter') + 1] : undefined;
 
   if (sourceEnriched) {
@@ -468,7 +505,12 @@ async function main() {
 
   let orders: OrderRow[];
   let usedCache = false;
-  if (useCacheOnly) {
+  if (sourceFtOrdersAll) {
+    console.log('Source: ft_orders (all resolved WON/LOST, paged)...');
+    orders = await fetchOrdersFromFtOrdersAll();
+    console.log('Total unique trades:', orders.length);
+    usedCache = true; // use same bucket path; meta will show dataSource ft_orders
+  } else if (useCacheOnly) {
     console.log('Reading from signals_backtest_cache (--use-cache)...');
     orders = await fetchOrdersFromCache();
     if (!orders.length) {
@@ -564,7 +606,12 @@ async function main() {
   const now = new Date();
   let windowStart: string | undefined = new Date(now.getTime() - SINCE_DAYS * 864e5).toISOString().slice(0, 10);
   let windowEnd: string | undefined = now.toISOString().slice(0, 10);
-  if (usedCache) {
+  if (sourceFtOrdersAll) {
+    const { data: range } = await supabase.from('ft_orders').select('order_time').in('outcome', ['WON', 'LOST']).order('order_time', { ascending: true }).limit(1).maybeSingle();
+    const { data: rangeEnd } = await supabase.from('ft_orders').select('order_time').in('outcome', ['WON', 'LOST']).order('order_time', { ascending: false }).limit(1).maybeSingle();
+    if (range?.order_time) windowStart = (range.order_time as string).slice(0, 10);
+    if (rangeEnd?.order_time) windowEnd = (rangeEnd.order_time as string).slice(0, 10);
+  } else if (usedCache) {
     const { data: range } = await supabase.from('signals_backtest_cache').select('order_time').order('order_time', { ascending: true }).limit(1).maybeSingle();
     const { data: rangeEnd } = await supabase.from('signals_backtest_cache').select('order_time').order('order_time', { ascending: false }).limit(1).maybeSingle();
     if (range?.order_time) windowStart = (range.order_time as string).slice(0, 10);
@@ -573,18 +620,28 @@ async function main() {
   const scopeLabel = top100Only
     ? 'Top 100 traders (30d PnL). Pure signal, 1 unit per trade, deduped.'
     : 'All resolved copied trades (any trader). Pure signal, 1 unit per trade, deduped.';
+  const dataSourceLabel = sourceFtOrdersAll ? 'ft_orders' : 'ft_orders';
+  const scopeNote = sourceFtOrdersAll
+    ? 'All-time resolved ft_orders (paged).'
+    : usedCache
+      ? `${scopeLabel} Data from signals_backtest_cache.`
+      : `${scopeLabel} Last ${SINCE_DAYS}d only.`;
   const summary = {
     meta: {
-      title: top100Only ? 'Signals Backtest — Top 100 Traders (30d PnL)' : 'Signals Backtest — All Resolved Copied Trades',
+      title: sourceFtOrdersAll
+        ? 'Signals Backtest — All Resolved Copied Trades (ft_orders)'
+        : top100Only
+          ? 'Signals Backtest — Top 100 Traders (30d PnL)'
+          : 'Signals Backtest — All Resolved Copied Trades',
       uniqueTrades: orders.length,
       uniqueTradesWithMl: ordersWithMl.length,
-      scope: usedCache ? `${scopeLabel} Data from signals_backtest_cache.` : `${scopeLabel} Last ${SINCE_DAYS}d only.`,
+      scope: scopeNote,
       generatedAt: now.toISOString(),
       backtestWindowStart: windowStart,
       backtestWindowEnd: windowEnd,
       scopeType: 'global',
       top100Only: !!top100Only,
-      dataSource: 'ft_orders',
+      dataSource: dataSourceLabel,
     },
     byPrice: [] as BucketResult[],
     bySize: [] as BucketResult[],

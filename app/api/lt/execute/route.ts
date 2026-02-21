@@ -26,6 +26,8 @@ import { type FTWallet, type EnrichedTrade, getSourceTradeId, FT_SLIPPAGE_PCT } 
 
 const FT_LOOKBACK_HOURS = 12;  // Look back 12 hours for FT orders (was 6h; extended so we don't miss orders)
 const FT_ORDERS_FETCH_LIMIT = 2000;  // Explicit limit so we see newer trades when many OPEN (Supabase default 1000 would starve them)
+/** Max new order attempts per strategy per run. Prevents exhausting cash in one run and rejecting the rest with "Insufficient cash". */
+const MAX_ORDER_ATTEMPTS_PER_STRATEGY_PER_RUN = 50;
 
 export async function POST(request: Request) {
     const authError = await requireAdminOrCron(request);
@@ -173,12 +175,13 @@ export async function POST(request: Request) {
             // ── Step 5d: Execute each trade ──
             const totalFtOrders = ftOrders.length;
             let dedupSkipped = 0;
+            let attemptsThisRun = 0;
             const strategyStartTime = Date.now();
 
             for (const fo of ftOrders) {
                 // Time budget: don't let one strategy monopolize the cron
                 if (Date.now() - strategyStartTime > STRATEGY_TIME_BUDGET_MS) {
-                    await strategyLogger.warn('TIME_BUDGET', `Strategy time budget exhausted (${STRATEGY_TIME_BUDGET_MS}ms) — deferring remaining ${totalFtOrders - dedupSkipped - summary.executed - summary.errors} trades to next run`);
+                    await strategyLogger.warn('TIME_BUDGET', `Strategy time budget exhausted (${STRATEGY_TIME_BUDGET_MS}ms) — deferring remaining trades to next run`);
                     break;
                 }
 
@@ -189,6 +192,13 @@ export async function POST(request: Request) {
                     summary.skipped++;
                     continue;
                 }
+
+                // Cap attempts per run so we don't exhaust cash and reject the rest with "Insufficient cash"
+                if (attemptsThisRun >= MAX_ORDER_ATTEMPTS_PER_STRATEGY_PER_RUN) {
+                    await strategyLogger.info('CASH', `Reached cap of ${MAX_ORDER_ATTEMPTS_PER_STRATEGY_PER_RUN} attempts this run — deferring remaining to next run`);
+                    break;
+                }
+                attemptsThisRun++;
 
                 const entryPrice = Number(fo.entry_price) || 0;
                 const sizeUsd = Number(fo.size) || 0;
@@ -223,7 +233,9 @@ export async function POST(request: Request) {
                 };
 
                 try {
-                    const result = await executeTrade(supabase, strategy, trade, ftWallet, fo.order_id, strategyLogger);
+                    const result = await executeTrade(supabase, strategy, trade, ftWallet, fo.order_id, strategyLogger, {
+                        attemptIndexThisRun: attemptsThisRun,
+                    });
 
                     if (result.success) {
                         summary.executed++;

@@ -51,7 +51,7 @@ export function TopNav() {
   }, [])
 
   const allLinks = isAdmin
-    ? [...navLinks, { href: "/v2/signals", label: "SIGNALS" }, { href: "/v2/admin", label: "ADMIN" }]
+    ? [...navLinks, { href: "/v2/admin", label: "ADMIN" }]
     : navLinks
 
   return (

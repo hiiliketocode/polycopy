@@ -118,14 +118,48 @@ async function main() {
     const traders = [...new Set((trades as { trader_wallet: string }[]).map((t) => t.trader_wallet))];
     const { data: ftRows } = await supabase
       .from('ft_orders')
-      .select('source_trade_id, trader_address, model_probability')
+      .select('source_trade_id, trader_address, condition_id, order_time, model_probability, outcome')
       .in('source_trade_id', tradeIds)
       .in('trader_address', traders);
 
     const mlByKey = new Map<string, number>();
+    const resolutionByTradeId = new Map<string, string>();
+    const ftByTraderCid = new Map<string, Array<{ order_time: string; outcome: string }>>();
     for (const r of ftRows || []) {
       const key = `${(r.trader_address ?? '').toLowerCase()}:${r.source_trade_id}`;
       if (r.model_probability != null) mlByKey.set(key, Number(r.model_probability));
+      if (r.source_trade_id && (r.outcome === 'WON' || r.outcome === 'LOST')) resolutionByTradeId.set(r.source_trade_id, r.outcome);
+      if (r.trader_address && r.condition_id && (r.outcome === 'WON' || r.outcome === 'LOST')) {
+        const k = `${(r.trader_address ?? '').toLowerCase()}:${r.condition_id}`;
+        if (!ftByTraderCid.has(k)) ftByTraderCid.set(k, []);
+        ftByTraderCid.get(k)!.push({ order_time: String(r.order_time), outcome: r.outcome });
+      }
+    }
+    const RESOLVE_TIME_WINDOW_MS = 5 * 60 * 1000;
+    function resolveByTraderCidTime(t: { trader_wallet: string; condition_id: string; trade_timestamp: string }): string | null {
+      const k = `${(t.trader_wallet ?? '').toLowerCase()}:${t.condition_id ?? ''}`;
+      const list = ftByTraderCid.get(k);
+      if (!list?.length) return null;
+      const tradeTs = new Date(t.trade_timestamp).getTime();
+      let best: { outcome: string; diff: number } | null = null;
+      for (const o of list) {
+        const diff = Math.abs(new Date(o.order_time).getTime() - tradeTs);
+        if (diff <= RESOLVE_TIME_WINDOW_MS && (best == null || diff < best.diff)) best = { outcome: o.outcome, diff };
+      }
+      return best?.outcome ?? null;
+    }
+    const tradersInBatch = [...new Set((trades as { trader_wallet: string }[]).map((t) => t.trader_wallet.toLowerCase()).filter(Boolean))];
+    const { data: ftExtra } = await supabase
+      .from('ft_orders')
+      .select('trader_address, condition_id, order_time, outcome')
+      .in('condition_id', conditionIds)
+      .in('outcome', ['WON', 'LOST']);
+    for (const r of ftExtra || []) {
+      const addr = (r.trader_address ?? '').toLowerCase();
+      if (!tradersInBatch.includes(addr)) continue;
+      const k = `${addr}:${r.condition_id ?? ''}`;
+      if (!ftByTraderCid.has(k)) ftByTraderCid.set(k, []);
+      ftByTraderCid.get(k)!.push({ order_time: String(r.order_time), outcome: String(r.outcome) });
     }
 
     const toUpsert: Array<{
@@ -154,11 +188,16 @@ async function main() {
       trade_timestamp: string;
       outcome: string | null;
     }>) {
-      const winner = resolutionByCid.get(t.condition_id);
-      if (!winner) continue;
       const side = normalizeOutcome(t.outcome);
       if (!side) continue;
-      const resolved = side === winner ? 'WON' : 'LOST';
+      let resolved: string | null = null;
+      const winner = resolutionByCid.get(t.condition_id);
+      if (winner) {
+        resolved = side === winner ? 'WON' : 'LOST';
+      } else {
+        resolved = resolutionByTradeId.get(t.trade_id) ?? resolveByTraderCidTime(t);
+      }
+      if (!resolved) continue;
       let price = Number(t.price);
       if (price > 1 && price <= 100) price = price / 100;
       if (price <= 0 || price >= 1) continue;

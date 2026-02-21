@@ -121,6 +121,49 @@ async function main() {
       if (winner) resolutionByCid.set(m.condition_id, winner);
     }
 
+    // Fallback 1: resolution from ft_orders by exact trade_id = source_trade_id
+    const tradeIds = (trades as Array<{ trade_id: string }>).map((t) => t.trade_id);
+    const { data: ftRows } = await supabase
+      .from('ft_orders')
+      .select('source_trade_id, outcome')
+      .in('source_trade_id', tradeIds)
+      .in('outcome', ['WON', 'LOST']);
+    const resolutionByTradeId = new Map<string, string>();
+    for (const r of ftRows || []) {
+      if (r.source_trade_id && r.outcome) resolutionByTradeId.set(r.source_trade_id, r.outcome);
+    }
+
+    // Fallback 2: resolution from ft_orders by (trader_wallet, condition_id, order_time ~ trade_timestamp)
+    // (trades_public.trade_id often differs from ft_orders.source_trade_id)
+    const tradersInBatch = [...new Set((trades as { trader_wallet: string }[]).map((t) => t.trader_wallet.toLowerCase()).filter(Boolean))];
+    const { data: ftByTraderCid } = await supabase
+      .from('ft_orders')
+      .select('trader_address, condition_id, order_time, outcome')
+      .in('condition_id', conditionIds)
+      .in('outcome', ['WON', 'LOST']);
+    const ftByKey = new Map<string, Array<{ order_time: string; outcome: string }>>();
+    for (const r of ftByTraderCid || []) {
+      const addr = (r.trader_address ?? '').toLowerCase();
+      if (!tradersInBatch.includes(addr)) continue;
+      const key = `${addr}:${r.condition_id ?? ''}`;
+      if (!ftByKey.has(key)) ftByKey.set(key, []);
+      ftByKey.get(key)!.push({ order_time: String(r.order_time), outcome: String(r.outcome) });
+    }
+    const RESOLVE_TIME_WINDOW_MS = 5 * 60 * 1000; // 5 min
+    function resolveByTraderCidTime(t: { trader_wallet: string; condition_id: string; trade_timestamp: string }): string | null {
+      const key = `${(t.trader_wallet ?? '').toLowerCase()}:${t.condition_id ?? ''}`;
+      const list = ftByKey.get(key);
+      if (!list?.length) return null;
+      const tradeTs = new Date(t.trade_timestamp).getTime();
+      let best: { outcome: string; diff: number } | null = null;
+      for (const o of list) {
+        const orderTs = new Date(o.order_time).getTime();
+        const diff = Math.abs(orderTs - tradeTs);
+        if (diff <= RESOLVE_TIME_WINDOW_MS && (best == null || diff < best.diff)) best = { outcome: o.outcome, diff };
+      }
+      return best?.outcome ?? null;
+    }
+
     const toUpsert: Array<{
       trade_id: string;
       trader_wallet: string;
@@ -134,11 +177,16 @@ async function main() {
     }> = [];
 
     for (const t of trades as Array<{ trade_id: string; trader_wallet: string; condition_id: string; price: number; size: number | null; trade_timestamp: string; outcome: string | null }>) {
-      const winner = resolutionByCid.get(t.condition_id);
-      if (!winner) continue;
       const side = normalizeOutcome(t.outcome);
       if (!side) continue;
-      const resolved = side === winner ? 'WON' : 'LOST';
+      let resolved: string | null = null;
+      const winner = resolutionByCid.get(t.condition_id);
+      if (winner) {
+        resolved = side === winner ? 'WON' : 'LOST';
+      } else {
+        resolved = resolutionByTradeId.get(t.trade_id) ?? resolveByTraderCidTime(t);
+      }
+      if (!resolved) continue;
       let price = Number(t.price);
       if (price > 1 && price <= 100) price = price / 100;
       toUpsert.push({

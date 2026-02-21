@@ -107,7 +107,7 @@ export async function lockCapitalForTrade(
     const newLocked = wouldBeLocked;
 
     // 2. Atomic update with optimistic concurrency check
-    const { error, count } = await supabase
+    const { data: updatedRows, error } = await supabase
         .from('lt_strategies')
         .update({
             available_cash: newAvailable,
@@ -115,14 +115,15 @@ export async function lockCapitalForTrade(
             updated_at: new Date().toISOString(),
         })
         .eq('strategy_id', strategyId)
-        .eq('available_cash', state.available_cash);  // optimistic lock
+        .eq('available_cash', state.available_cash)  // optimistic lock
+        .select('strategy_id');
 
     if (error) {
         return { success: false, error: `DB error locking capital: ${error.message}` };
     }
 
-    // If count is 0, someone else modified available_cash — retry once
-    if (count === 0) {
+    // If no row matched, available_cash was changed by another process — retry once
+    if (!updatedRows || updatedRows.length === 0) {
         const retryState = await getCapitalState(supabase, strategyId);
         if (!retryState || retryState.available_cash < amount) {
             return {
