@@ -31,9 +31,23 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       .single();
 
     if (!trader) {
+      // Trader not in local DB — try Polymarket's public profile API
+      let fallbackName = `Trader ${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
+      try {
+        const pmRes = await fetch(`https://gamma-api.polymarket.com/public-profile?address=${wallet}`, {
+          next: { revalidate: 3600 },
+        });
+        if (pmRes.ok) {
+          const pmData = await pmRes.json();
+          if (pmData?.username) fallbackName = pmData.username;
+        }
+      } catch {
+        // Silent — use abbreviated wallet
+      }
+
       return {
-        title: 'Trader Not Found | Polycopy',
-        description: 'This trader profile was not found. Discover other top Polymarket traders on Polycopy.',
+        title: `${fallbackName} - Polymarket Trader Profile | Polycopy`,
+        description: `View ${fallbackName}'s Polymarket trading profile, positions, and performance history on Polycopy.`,
         alternates: {
           canonical: `https://polycopy.app/trader/${wallet}`,
         },
@@ -110,9 +124,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     };
   } catch (error) {
     console.error('Error generating trader metadata:', error);
+    const fallbackName = `Trader ${wallet.slice(0, 6)}...${wallet.slice(-4)}`;
     return {
-      title: 'Trader Not Found | Polycopy',
-      description: 'This trader profile could not be loaded. Discover other top Polymarket traders on Polycopy.',
+      title: `${fallbackName} - Polymarket Trader Profile | Polycopy`,
+      description: `View ${fallbackName}'s Polymarket trading profile on Polycopy.`,
       alternates: {
         canonical: `https://polycopy.app/trader/${wallet}`,
       },

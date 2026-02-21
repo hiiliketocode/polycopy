@@ -2654,9 +2654,8 @@ export function TradeCard({
     pendingTimeoutRef.current = setTimeout(async () => {
       if (timeoutTriggeredRef.current) return
       if (TERMINAL_STATUS_PHASES.has(statusPhaseRef.current)) return
-      timeoutTriggeredRef.current = true
-      statusPhaseRef.current = 'timed_out'
-      setStatusPhase('timed_out')
+
+      // Stop polling before the final check
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current)
         pollIntervalRef.current = null
@@ -2665,6 +2664,46 @@ export function TradeCard({
         pollAbortRef.current.abort()
         pollAbortRef.current = null
       }
+
+      // Final status check before declaring timeout — the order may have
+      // filled between the last poll and now.
+      try {
+        const finalRes = await fetch(
+          `/api/polymarket/orders/${encodeURIComponent(orderId)}/status`,
+          { cache: 'no-store' }
+        )
+        if (finalRes.ok) {
+          const finalData = await finalRes.json()
+          const rawStatus = finalData?.status ? String(finalData.status) : ''
+          let finalPhase = normalizeStatusPhase(rawStatus)
+          const filledSize = typeof finalData?.filledSize === 'number' ? finalData.filledSize : null
+          const remainingSize = typeof finalData?.remainingSize === 'number' ? finalData.remainingSize : null
+          const totalSize = typeof finalData?.size === 'number' ? finalData.size : null
+
+          if (filledSize !== null && filledSize > 0) {
+            if (totalSize !== null && filledSize < totalSize) {
+              finalPhase = 'partial'
+            } else if (remainingSize !== null && remainingSize <= 0) {
+              finalPhase = 'filled'
+            }
+          }
+
+          if (TERMINAL_STATUS_PHASES.has(finalPhase)) {
+            statusPhaseRef.current = finalPhase
+            setStatusPhase(finalPhase)
+            statusDataRef.current = finalData
+            setStatusData(finalData)
+            return
+          }
+        }
+      } catch {
+        // Final check failed — proceed with timeout
+      }
+
+      timeoutTriggeredRef.current = true
+      statusPhaseRef.current = 'timed_out'
+      setStatusPhase('timed_out')
+
       setIsCancelingOrder(true)
       setCancelStatus({
         message: 'Order timed out. Attempting to cancel automatically.',
@@ -2683,6 +2722,43 @@ export function TradeCard({
           payload = null
         }
         if (!response.ok) {
+          // Cancel failed — order may have filled while we were canceling.
+          // Do one more status check to see if it actually filled.
+          try {
+            const recheckRes = await fetch(
+              `/api/polymarket/orders/${encodeURIComponent(orderId)}/status`,
+              { cache: 'no-store' }
+            )
+            if (recheckRes.ok) {
+              const recheckData = await recheckRes.json()
+              const rawStatus = recheckData?.status ? String(recheckData.status) : ''
+              let recheckPhase = normalizeStatusPhase(rawStatus)
+              const filledSize = typeof recheckData?.filledSize === 'number' ? recheckData.filledSize : null
+              const remainingSize = typeof recheckData?.remainingSize === 'number' ? recheckData.remainingSize : null
+              const totalSize = typeof recheckData?.size === 'number' ? recheckData.size : null
+
+              if (filledSize !== null && filledSize > 0) {
+                if (totalSize !== null && filledSize < totalSize) {
+                  recheckPhase = 'partial'
+                } else if (remainingSize !== null && remainingSize <= 0) {
+                  recheckPhase = 'filled'
+                }
+              }
+
+              if (recheckPhase === 'filled' || recheckPhase === 'partial') {
+                statusPhaseRef.current = recheckPhase
+                setStatusPhase(recheckPhase)
+                statusDataRef.current = recheckData
+                setStatusData(recheckData)
+                timeoutTriggeredRef.current = false
+                setCancelStatus(null)
+                return
+              }
+            }
+          } catch {
+            // Recheck failed — keep the timeout/cancel error state
+          }
+
           throw new Error(
             payload?.error ||
               payload?.message ||
