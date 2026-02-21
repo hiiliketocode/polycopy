@@ -21,6 +21,7 @@ import {
   Check,
   X,
   Bot,
+  Settings,
 } from "lucide-react"
 import { ShareCardModal } from "@/components/polycopy-v2/share-card-modal"
 import { supabase } from "@/lib/supabase"
@@ -1246,6 +1247,13 @@ export default function PortfolioPage() {
                   {filter}
                 </button>
               ))}
+              <Link
+                href="/v2/copied-bots"
+                className="flex items-center gap-1.5 border border-border bg-poly-yellow px-3 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
+              >
+                <Settings className="h-3 w-3" />
+                VIEW COPIED BOTS
+              </Link>
               <span className="ml-auto font-body text-xs tabular-nums text-muted-foreground">
                 {filteredTrades.length} trade{filteredTrades.length !== 1 ? "s" : ""}
               </span>

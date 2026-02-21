@@ -32,16 +32,29 @@ export async function GET() {
 
     const strategyIds = strategies.map((s: any) => s.strategy_id);
 
-    // Fetch all lt_orders for the user's strategies
-    const { data: orders, error: ordersErr } = await supabase
-      .from('lt_orders')
-      .select('strategy_id, outcome, pnl, executed_size_usd, status')
-      .in('strategy_id', strategyIds)
-      .in('status', ['FILLED', 'PARTIAL']);
+    // Fetch ALL lt_orders with pagination to avoid Supabase 1000-row default limit
+    const PAGE_SIZE = 1000;
+    let allOrders: any[] = [];
+    let page = 0;
+    while (true) {
+      const from = page * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+      const { data: batch, error: ordersErr } = await supabase
+        .from('lt_orders')
+        .select('strategy_id, outcome, pnl, executed_size_usd, status')
+        .in('strategy_id', strategyIds)
+        .in('status', ['FILLED', 'PARTIAL'])
+        .range(from, to);
 
-    if (ordersErr) {
-      return NextResponse.json({ error: ordersErr.message }, { status: 500 });
+      if (ordersErr) {
+        return NextResponse.json({ error: ordersErr.message }, { status: 500 });
+      }
+      if (!batch || batch.length === 0) break;
+      allOrders = allOrders.concat(batch);
+      if (batch.length < PAGE_SIZE) break;
+      page++;
     }
+    const orders = allOrders;
 
     // Aggregate per strategy
     const statsMap: Record<string, { total: number; wins: number; losses: number; open: number; pnl: number }> = {};

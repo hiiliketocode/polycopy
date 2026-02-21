@@ -131,11 +131,11 @@ export function ManageBotModal({
       })
       const data = await res.json()
       if (!res.ok || !data.success) {
-        setErrorMessage(data.error || "Failed to cancel subscription")
+        setErrorMessage(data.error || "Failed to deactivate bot")
         setView("error")
         return
       }
-      setSuccessMessage("Subscription cancelled")
+      setSuccessMessage("Bot deactivated")
       setView("success")
       onUnsubscribe?.(subscription.ft_wallet_id)
     } catch {
@@ -254,7 +254,7 @@ export function ManageBotModal({
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-loss-red" />
               <div>
                 <h3 className="font-sans text-sm font-bold uppercase text-poly-black">
-                  Cancel Subscription?
+                  Deactivate Bot?
                 </h3>
                 <p className="mt-1 font-body text-sm text-muted-foreground">
                   This will deactivate {subscription.display_name}. The bot will
@@ -274,7 +274,7 @@ export function ManageBotModal({
                 onClick={handleCancelSubscription}
                 className="flex-1 bg-loss-red py-3 font-sans text-xs font-bold uppercase tracking-widest text-white transition-colors hover:bg-loss-red/90"
               >
-                YES, CANCEL
+                YES, DEACTIVATE
               </button>
             </div>
           </div>
@@ -386,13 +386,13 @@ export function ManageBotModal({
                   {isPaused ? "RESUME BOT" : "PAUSE BOT"}
                 </button>
 
-                {/* Cancel Subscription */}
+                {/* Deactivate Bot */}
                 <button
                   onClick={() => setView("confirm-cancel")}
                   className="flex w-full items-center justify-center gap-2 border border-loss-red/30 py-3 font-sans text-xs font-bold uppercase tracking-widest text-loss-red transition-colors hover:bg-loss-red/10"
                 >
                   <XCircle className="h-4 w-4" />
-                  CANCEL SUBSCRIPTION
+                  DEACTIVATE BOT
                 </button>
               </div>
             </div>

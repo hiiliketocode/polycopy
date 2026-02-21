@@ -323,8 +323,8 @@ export default function BotsPage() {
                 ecosystem in seconds.
               </p>
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-end">
-              <div className="flex items-center gap-2 border border-border px-4 py-2.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-stretch sm:w-56">
+              <div className="flex items-center justify-center gap-2 border border-border px-4 py-2.5">
                 <span className="h-2 w-2 rounded-full bg-profit-green" />
                 <span className="font-sans text-xs font-bold uppercase tracking-widest text-foreground">
                   {onlineCount} STRATEGIES ONLINE
@@ -332,7 +332,7 @@ export default function BotsPage() {
               </div>
               <button
                 onClick={() => router.push("/v2/copied-bots")}
-                className="flex items-center gap-2 border border-border bg-poly-yellow px-4 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
+                className="flex items-center justify-center gap-2 border border-border bg-poly-yellow px-4 py-2.5 font-sans text-xs font-bold uppercase tracking-widest text-poly-black transition-colors hover:bg-poly-black hover:text-poly-yellow"
               >
                 <Settings className="h-3.5 w-3.5" />
                 VIEW COPIED BOTS{subscribedBotIds.size > 0 ? ` (${subscribedBotIds.size})` : ""}

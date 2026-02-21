@@ -21,6 +21,9 @@ import {
   Pause,
   Play,
   Settings,
+  AlertTriangle,
+  Percent,
+  Target,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -150,6 +153,22 @@ export default function CopiedBotsPage() {
   const totalCapitalDeployed = subscriptions
     .filter((s) => s.is_active)
     .reduce((sum, s) => sum + Number(s.initial_capital || 0), 0)
+  const aggregateRoi =
+    totalCapitalDeployed > 0
+      ? (aggregate.total_pnl / totalCapitalDeployed) * 100
+      : 0
+  const aggregateWinRate =
+    aggregate.total_trades > 0
+      ? (aggregate.wins / aggregate.total_trades) * 100
+      : 0
+  const totalAvailableCash = subscriptions
+    .filter((s) => s.is_active)
+    .reduce((sum, s) => sum + Number(s.available_cash || 0), 0)
+  const walletIsEmpty = totalAvailableCash <= 0 && subscriptions.some((s) => s.is_active)
+  const walletIsLow =
+    !walletIsEmpty &&
+    totalCapitalDeployed > 0 &&
+    totalAvailableCash / totalCapitalDeployed < 0.1
 
   return (
     <div className="min-h-screen bg-poly-cream pb-20 md:pb-0">
@@ -165,18 +184,36 @@ export default function CopiedBotsPage() {
             <ArrowLeft className="h-3.5 w-3.5" />
             BACK TO BOTS
           </button>
-          <h1 className="mb-2 font-sans text-3xl font-black uppercase tracking-tight text-poly-black">
-            YOUR COPIED BOTS
-          </h1>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+            <h1 className="font-sans text-3xl font-black uppercase tracking-tight text-poly-black">
+              YOUR COPIED BOTS
+            </h1>
+            {walletIsEmpty && (
+              <div className="flex items-center gap-2 border border-loss-red/40 bg-loss-red/10 px-3 py-2">
+                <AlertTriangle className="h-4 w-4 text-loss-red shrink-0" />
+                <p className="font-sans text-xs font-bold text-loss-red">
+                  OUT OF FUNDS — Bot copies will not execute. Add funds to your wallet.
+                </p>
+              </div>
+            )}
+            {walletIsLow && (
+              <div className="flex items-center gap-2 border border-poly-yellow/60 bg-poly-yellow/10 px-3 py-2">
+                <AlertTriangle className="h-4 w-4 text-poly-yellow shrink-0" />
+                <p className="font-sans text-xs font-bold text-poly-black">
+                  LOW BALANCE — Your bots may fail to execute if funds run out.
+                </p>
+              </div>
+            )}
+          </div>
           <p className="font-body text-sm text-muted-foreground">
             Manage your active bot subscriptions and review performance.
           </p>
         </div>
       </div>
 
-      {/* Aggregate Stats Bar */}
+      {/* Aggregate Stats Bar — 2 rows of 3 */}
       <div className="border-b border-border bg-card">
-        <div className="mx-auto grid max-w-4xl grid-cols-2 gap-px bg-border sm:grid-cols-4">
+        <div className="mx-auto grid max-w-4xl grid-cols-2 gap-px bg-border sm:grid-cols-3">
           <div className="bg-card px-4 py-4">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-muted-foreground" />
@@ -186,17 +223,6 @@ export default function CopiedBotsPage() {
             </div>
             <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black">
               {activeBotCount}
-            </p>
-          </div>
-          <div className="bg-card px-4 py-4">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                Capital Deployed
-              </p>
-            </div>
-            <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black">
-              ${totalCapitalDeployed.toFixed(2)}
             </p>
           </div>
           <div className="bg-card px-4 py-4">
@@ -213,6 +239,44 @@ export default function CopiedBotsPage() {
               )}
             >
               {formatSignedUSD(aggregate.total_pnl)}
+            </p>
+          </div>
+          <div className="bg-card px-4 py-4">
+            <div className="flex items-center gap-2">
+              <Percent className="h-4 w-4 text-muted-foreground" />
+              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                ROI
+              </p>
+            </div>
+            <p
+              className={cn(
+                "mt-1 font-sans text-2xl font-bold tabular-nums",
+                aggregateRoi >= 0 ? "text-profit-green" : "text-loss-red"
+              )}
+            >
+              {aggregateRoi >= 0 ? "+" : ""}{aggregateRoi.toFixed(1)}%
+            </p>
+          </div>
+          <div className="bg-card px-4 py-4">
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                Capital Deployed
+              </p>
+            </div>
+            <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black">
+              ${totalCapitalDeployed.toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-card px-4 py-4">
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-muted-foreground" />
+              <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                Win Rate
+              </p>
+            </div>
+            <p className="mt-1 font-sans text-2xl font-bold tabular-nums text-poly-black">
+              {aggregateWinRate.toFixed(1)}%
             </p>
           </div>
           <div className="bg-card px-4 py-4">
@@ -335,7 +399,7 @@ export default function CopiedBotsPage() {
                         </span>
                       </div>
                       <p className="mt-0.5 font-body text-[11px] text-muted-foreground">
-                        Subscribed{" "}
+                        Copied{" "}
                         {new Date(sub.created_at).toLocaleDateString()}
                       </p>
                     </div>
@@ -362,63 +426,72 @@ export default function CopiedBotsPage() {
                   </div>
 
                   {/* Stats Grid */}
-                  <div className="grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-3 lg:grid-cols-6">
-                    <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                        Total Capital
-                      </p>
-                      <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
-                        ${total.toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                        Available
-                      </p>
-                      <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-profit-green">
-                        ${available.toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                        Locked
-                      </p>
-                      <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
-                        ${locked.toFixed(2)}
-                      </p>
-                    </div>
-                    <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                        P&L
-                      </p>
-                      <p
-                        className={cn(
-                          "mt-0.5 font-body text-sm font-semibold tabular-nums",
-                          (perf?.total_pnl ?? 0) >= 0
-                            ? "text-profit-green"
-                            : "text-loss-red"
-                        )}
-                      >
-                        {formatSignedUSD(perf?.total_pnl ?? 0)}
-                      </p>
-                    </div>
-                    <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                        Win Rate
-                      </p>
-                      <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
-                        {perf?.win_rate?.toFixed(1) ?? "0.0"}%
-                      </p>
-                    </div>
-                    <div className="bg-card px-3 py-3">
-                      <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-                        Trades
-                      </p>
-                      <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
-                        {perf?.total_trades ?? 0}
-                      </p>
-                    </div>
-                  </div>
+                  {(() => {
+                    const pnl = perf?.total_pnl ?? 0
+                    const roi = total > 0 ? (pnl / total) * 100 : 0
+                    return (
+                      <div className="grid grid-cols-2 gap-px border-t border-border bg-border sm:grid-cols-3 lg:grid-cols-6">
+                        <div className="bg-card px-3 py-3">
+                          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                            Total Allocated
+                          </p>
+                          <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
+                            ${total.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="bg-card px-3 py-3">
+                          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                            Available
+                          </p>
+                          <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-profit-green">
+                            ${available.toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="bg-card px-3 py-3">
+                          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                            Win Rate
+                          </p>
+                          <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
+                            {perf?.win_rate?.toFixed(1) ?? "0.0"}%
+                          </p>
+                        </div>
+                        <div className="bg-card px-3 py-3">
+                          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                            P&L
+                          </p>
+                          <p
+                            className={cn(
+                              "mt-0.5 font-body text-sm font-semibold tabular-nums",
+                              pnl >= 0 ? "text-profit-green" : "text-loss-red"
+                            )}
+                          >
+                            {formatSignedUSD(pnl)}
+                          </p>
+                        </div>
+                        <div className="bg-card px-3 py-3">
+                          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                            ROI
+                          </p>
+                          <p
+                            className={cn(
+                              "mt-0.5 font-body text-sm font-semibold tabular-nums",
+                              roi >= 0 ? "text-profit-green" : "text-loss-red"
+                            )}
+                          >
+                            {roi >= 0 ? "+" : ""}{roi.toFixed(1)}%
+                          </p>
+                        </div>
+                        <div className="bg-card px-3 py-3">
+                          <p className="font-sans text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
+                            Trades
+                          </p>
+                          <p className="mt-0.5 font-body text-sm font-semibold tabular-nums text-poly-black">
+                            {perf?.total_trades ?? 0}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}
