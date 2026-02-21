@@ -18,6 +18,7 @@ import { requireAdminOrCron } from '@/lib/ft-auth';
 import { createLTLogger } from '@/lib/live-trading/lt-logger';
 import { processAllCooldowns } from '@/lib/live-trading/capital-manager';
 import { runCapitalReconciliation } from '@/lib/live-trading/capital-reconciliation';
+import { syncPendingOrdersWithClob } from '@/lib/live-trading/sync-pending-orders';
 import { resetDailyRiskState } from '@/lib/live-trading/risk-manager-v2';
 import { getActiveStrategies, executeTrade, type LTStrategy } from '@/lib/live-trading/executor-v2';
 import { batchResolveTokenIds } from '@/lib/live-trading/token-cache';
@@ -53,7 +54,14 @@ export async function POST(request: Request) {
             await logger.info('COOLDOWN_PROCESS', `Released $${cooldownResult.totalReleased.toFixed(2)} from cooldown across ${cooldownResult.processed} strategies`);
         }
 
-        // ── Step 2.5: Capital reconciliation (so available_cash is correct before we lock) ──
+        // ── Step 2.5: Sync PENDING/PARTIAL lt_orders with CLOB so reconciliation sees true open orders ──
+        // (Stale PENDING rows inflate locked_capital and make available_cash 0; sync updates them to FILLED/CANCELLED/LOST.)
+        const syncResult = await syncPendingOrdersWithClob(supabase, { maxMs: 25_000, log: true });
+        if (syncResult.checked > 0) {
+            await logger.info('CASH', `Synced ${syncResult.checked} pending orders with CLOB (updated ${syncResult.updated}, errors ${syncResult.errors})`);
+        }
+
+        // ── Step 2.6: Capital reconciliation (so available_cash is correct before we lock) ──
         const recon = await runCapitalReconciliation(supabase, { now, log: true });
         if (recon.strategiesReconciled > 0) {
             await logger.info('CASH', `Reconciled ${recon.strategiesReconciled} strategies, freed $${recon.capitalReconciled.toFixed(2)}`);
