@@ -364,8 +364,9 @@ function LTLogsContent() {
                                                     <th className="text-left py-2 px-2 font-medium text-slate-600">Market</th>
                                                     <th className="text-left py-2 px-2 font-medium text-slate-600">Status</th>
                                                     <th className="text-right py-2 px-2 font-medium text-slate-600">Size</th>
-                                                    <th className="text-left py-2 px-2 font-medium text-slate-600">Placed</th>
-                                                    <th className="text-left py-2 px-2 font-medium text-slate-600">Outcome</th>
+                                                <th className="text-left py-2 px-2 font-medium text-slate-600">Timestamp</th>
+                                                <th className="text-left py-2 px-2 font-medium text-slate-600">Outcome</th>
+                                                <th className="text-left py-2 px-2 font-medium text-slate-600">Rejection reason</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
@@ -387,10 +388,13 @@ function LTLogsContent() {
                                                         <td className="py-2 px-2 text-right font-mono">
                                                             ${Number(o.executed_size_usd ?? o.signal_size_usd ?? 0).toFixed(2)}
                                                         </td>
-                                                        <td className="py-2 px-2 text-slate-500 text-xs">
-                                                            {o.order_placed_at ? formatTime(o.order_placed_at) : '—'}
+                                                        <td className="py-2 px-2 text-slate-500 text-xs whitespace-nowrap">
+                                                            {o.order_placed_at ? new Date(o.order_placed_at).toLocaleString() : '—'}
                                                         </td>
                                                         <td className="py-2 px-2 text-slate-600">{o.outcome ?? '—'}</td>
+                                                        <td className="py-2 px-2 max-w-[220px] truncate text-slate-500 text-xs" title={o.rejection_reason || ''}>
+                                                            {o.rejection_reason ?? '—'}
+                                                        </td>
                                                     </tr>
                                                 ))}
                                             </tbody>

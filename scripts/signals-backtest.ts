@@ -115,7 +115,14 @@ async function fetchTop100Traders(): Promise<Set<string>> {
   return new Set();
 }
 
+/** Only fetch orders on or after this date to avoid statement timeout on full table scan. */
+const SINCE_DAYS = 180;
+
 async function fetchOrders(): Promise<OrderRow[]> {
+  const since = new Date();
+  since.setDate(since.getDate() - SINCE_DAYS);
+  const sinceIso = since.toISOString();
+  console.log('  (since', sinceIso.slice(0, 10), ')');
   const all: OrderRow[] = [];
   const PAGE = 1000;
   let cursor: string | null = null;
@@ -124,6 +131,7 @@ async function fetchOrders(): Promise<OrderRow[]> {
       .from('ft_orders')
       .select('source_trade_id,trader_address,entry_price,outcome,model_probability,trader_win_rate,trader_roi,trader_resolved_count,conviction,order_time')
       .in('outcome', ['WON', 'LOST'])
+      .gte('order_time', sinceIso)
       .order('order_time', { ascending: true })
       .limit(PAGE);
     if (cursor) q = q.gt('order_time', cursor);
@@ -225,7 +233,7 @@ async function main() {
       title: 'Signals Backtest — Top 100 Traders (30d PnL)',
       uniqueTrades: orders.length,
       uniqueTradesWithMl: ordersWithMl.length,
-      scope: 'Pure signal, 1 unit per trade, deduped by source_trade_id',
+      scope: `Pure signal, 1 unit per trade, deduped by source_trade_id. Last ${SINCE_DAYS}d only.`,
       generatedAt: new Date().toISOString(),
     },
     byMlScore: mlStats.filter((s) => s.trades > 0),

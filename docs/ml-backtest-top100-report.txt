@@ -1,0 +1,18 @@
+
+==========================================================================================
+  ML Score Backtest — Top 100 traders (last 30d PnL) only
+==========================================================================================
+
+  Pure signal backtest: value of the ML score only. Not FT/bot PnL or strategies.
+  Each unique trade counted once (deduped by source_trade_id). Metrics = win rate + unit ROI.
+  Unit ROI: as if you risked 1 unit per trade; profit = WON ? (1/entry_price - 1) : -1.
+
+  ... fetched 10000 orders
+  ... fetched 20000 orders
+  ... fetched 30000 orders
+  ... fetched 40000 orders
+  ... fetched 50000 orders
+  ... fetched 60000 orders
+  ... fetched 70000 orders
+  ... fetched 80000 orders
+  ... fetched 90000 orders

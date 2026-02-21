@@ -1,0 +1,292 @@
+{
+  "meta": {
+    "title": "Signals Backtest — Top 100 Traders (30d PnL)",
+    "uniqueTrades": 711,
+    "uniqueTradesWithMl": 710,
+    "scope": "Pure signal, 1 unit per trade, deduped by source_trade_id. Last 180d only.",
+    "generatedAt": "2026-02-20T23:58:45.738Z"
+  },
+  "byMlScore": [
+    {
+      "label": "0-50%",
+      "min": 0,
+      "max": 50.001,
+      "trades": 354,
+      "wins": 95,
+      "losses": 259,
+      "winRatePct": 26.836158192090398,
+      "unitRoiPct": -28.918040561749002,
+      "unitPnlSum": -102.36986358859147,
+      "avgPerTrade": -0.28918040561749003,
+      "profitFactor": 0.6047495614340093
+    },
+    {
+      "label": "50-55%",
+      "min": 50,
+      "max": 55.001,
+      "trades": 91,
+      "wins": 51,
+      "losses": 40,
+      "winRatePct": 56.043956043956044,
+      "unitRoiPct": 47.918192691568024,
+      "unitPnlSum": 43.6055553493269,
+      "avgPerTrade": 0.47918192691568023,
+      "profitFactor": 2.090138883733174
+    },
+    {
+      "label": "55-60%",
+      "min": 55,
+      "max": 60.001,
+      "trades": 149,
+      "wins": 91,
+      "losses": 58,
+      "winRatePct": 61.07382550335571,
+      "unitRoiPct": 19.069497103030553,
+      "unitPnlSum": 28.413550683515524,
+      "avgPerTrade": 0.19069497103030553,
+      "profitFactor": 1.4898888048881984
+    },
+    {
+      "label": "60-70%",
+      "min": 60,
+      "max": 70.001,
+      "trades": 61,
+      "wins": 43,
+      "losses": 18,
+      "winRatePct": 70.49180327868852,
+      "unitRoiPct": 25.12507750201128,
+      "unitPnlSum": 15.326297276226878,
+      "avgPerTrade": 0.2512507750201128,
+      "profitFactor": 1.851460959790382
+    },
+    {
+      "label": "70-80%",
+      "min": 70,
+      "max": 80.001,
+      "trades": 47,
+      "wins": 33,
+      "losses": 14,
+      "winRatePct": 70.2127659574468,
+      "unitRoiPct": 9.294653384214424,
+      "unitPnlSum": 4.368487090580779,
+      "avgPerTrade": 0.09294653384214424,
+      "profitFactor": 1.3120347921843407
+    },
+    {
+      "label": "80%+",
+      "min": 80,
+      "max": 101,
+      "trades": 8,
+      "wins": 5,
+      "losses": 3,
+      "winRatePct": 62.5,
+      "unitRoiPct": -35.83753421075785,
+      "unitPnlSum": -2.867002736860628,
+      "avgPerTrade": -0.3583753421075785,
+      "profitFactor": 0.044332421046457515
+    }
+  ],
+  "byWinRate": [
+    {
+      "label": "40-50%",
+      "min": 40,
+      "max": 50.001,
+      "trades": 170,
+      "wins": 62,
+      "losses": 108,
+      "winRatePct": 36.470588235294116,
+      "unitRoiPct": -13.933486908626561,
+      "unitPnlSum": -23.68692774466515,
+      "avgPerTrade": -0.1393348690862656,
+      "profitFactor": 0.7806765949568041
+    },
+    {
+      "label": "50-55%",
+      "min": 50,
+      "max": 55.001,
+      "trades": 226,
+      "wins": 82,
+      "losses": 144,
+      "winRatePct": 36.283185840707965,
+      "unitRoiPct": -13.4579172299232,
+      "unitPnlSum": -30.41489293962643,
+      "avgPerTrade": -0.134579172299232,
+      "profitFactor": 0.7887854656970387
+    },
+    {
+      "label": "55-60%",
+      "min": 55,
+      "max": 60.001,
+      "trades": 315,
+      "wins": 178,
+      "losses": 137,
+      "winRatePct": 56.507936507936506,
+      "unitRoiPct": 17.469490442843586,
+      "unitPnlSum": 55.02889489495729,
+      "avgPerTrade": 0.17469490442843585,
+      "profitFactor": 1.4016707656566232
+    },
+    {
+      "label": "60-65%",
+      "min": 60,
+      "max": 65.001,
+      "trades": 6,
+      "wins": 4,
+      "losses": 2,
+      "winRatePct": 66.66666666666666,
+      "unitRoiPct": 22.713493472308688,
+      "unitPnlSum": 1.3628096083385213,
+      "avgPerTrade": 0.22713493472308688,
+      "profitFactor": 1.6814048041692606
+    },
+    {
+      "label": "70-80%",
+      "min": 70,
+      "max": 80.001,
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "winRatePct": 0,
+      "unitRoiPct": -100,
+      "unitPnlSum": -1,
+      "avgPerTrade": -1,
+      "profitFactor": 0
+    },
+    {
+      "label": "80%+",
+      "min": 80,
+      "max": 101,
+      "trades": 8,
+      "wins": 2,
+      "losses": 6,
+      "winRatePct": 25,
+      "unitRoiPct": -50.79090542718968,
+      "unitPnlSum": -4.0632724341751745,
+      "avgPerTrade": -0.5079090542718968,
+      "profitFactor": 0.32278792763747094
+    }
+  ],
+  "byConviction": [
+    {
+      "label": "0-1x",
+      "min": 0,
+      "max": 1.001,
+      "trades": 296,
+      "wins": 110,
+      "losses": 186,
+      "winRatePct": 37.16216216216216,
+      "unitRoiPct": -17.13751497059892,
+      "unitPnlSum": -50.72704431297281,
+      "avgPerTrade": -0.17137514970598922,
+      "profitFactor": 0.7272739553065979
+    },
+    {
+      "label": "1-1.5x",
+      "min": 1,
+      "max": 1.501,
+      "trades": 49,
+      "wins": 28,
+      "losses": 21,
+      "winRatePct": 57.14285714285714,
+      "unitRoiPct": 23.611828397046757,
+      "unitPnlSum": 11.56979591455291,
+      "avgPerTrade": 0.23611828397046758,
+      "profitFactor": 1.5509426625977578
+    },
+    {
+      "label": "1.5-2x",
+      "min": 1.5,
+      "max": 2.001,
+      "trades": 19,
+      "wins": 3,
+      "losses": 16,
+      "winRatePct": 15.789473684210526,
+      "unitRoiPct": -70.2395935087764,
+      "unitPnlSum": -13.345522766667516,
+      "avgPerTrade": -0.702395935087764,
+      "profitFactor": 0.16590482708328025
+    },
+    {
+      "label": "2-3x",
+      "min": 2,
+      "max": 3.001,
+      "trades": 84,
+      "wins": 38,
+      "losses": 46,
+      "winRatePct": 45.23809523809524,
+      "unitRoiPct": 6.076994557377153,
+      "unitPnlSum": 5.104675428196809,
+      "avgPerTrade": 0.060769945573771536,
+      "profitFactor": 1.1109712049608005
+    },
+    {
+      "label": "3x+",
+      "min": 3,
+      "max": 999,
+      "trades": 279,
+      "wins": 150,
+      "losses": 129,
+      "winRatePct": 53.76344086021505,
+      "unitRoiPct": 16.16357615324809,
+      "unitPnlSum": 45.09637746756217,
+      "avgPerTrade": 0.1616357615324809,
+      "profitFactor": 1.3495843214539707
+    }
+  ],
+  "byTraderRoi": [
+    {
+      "label": "<0%",
+      "min": -999,
+      "max": 0.001,
+      "trades": 711,
+      "wins": 318,
+      "losses": 393,
+      "winRatePct": 44.72573839662447,
+      "unitRoiPct": -2.0426126477921134,
+      "unitPnlSum": -14.522975925801928,
+      "avgPerTrade": -0.020426126477921136,
+      "profitFactor": 0.9630458627842197
+    }
+  ],
+  "byTradeCount": [
+    {
+      "label": "30-100",
+      "min": 30,
+      "max": 100.001,
+      "trades": 25,
+      "wins": 14,
+      "losses": 11,
+      "winRatePct": 56.00000000000001,
+      "unitRoiPct": 39.364043292259545,
+      "unitPnlSum": 9.841010823064886,
+      "avgPerTrade": 0.39364043292259543,
+      "profitFactor": 1.8946373475513532
+    },
+    {
+      "label": "100-500",
+      "min": 100,
+      "max": 500.001,
+      "trades": 14,
+      "wins": 3,
+      "losses": 11,
+      "winRatePct": 21.428571428571427,
+      "unitRoiPct": -52.632721259622116,
+      "unitPnlSum": -7.368580976347097,
+      "avgPerTrade": -0.5263272125962212,
+      "profitFactor": 0.33012900215026403
+    },
+    {
+      "label": "500+",
+      "min": 500,
+      "max": 999999,
+      "trades": 672,
+      "wins": 301,
+      "losses": 371,
+      "winRatePct": 44.79166666666667,
+      "unitRoiPct": -2.5290782399583165,
+      "unitPnlSum": -16.995405772519888,
+      "avgPerTrade": -0.025290782399583166,
+      "profitFactor": 0.9541902809366047
+    }
+  ]
+}

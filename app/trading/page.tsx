@@ -29,6 +29,8 @@ import {
   Settings,
   FileText,
   Brain,
+  ListOrdered,
+  AlertCircle,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PerformanceCharts } from '@/components/ft/performance-charts';
@@ -309,7 +311,8 @@ interface Totals {
 export default function TradingStrategiesPage() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const initialTab = (tabParam === 'performance' || tabParam === 'compare' || tabParam === 'charts' || tabParam === 'live' || tabParam === 'settings' || tabParam === 'alpha') ? tabParam : 'performance';
+  const tabValues = ['performance', 'compare', 'charts', 'live', 'lt-trades', 'alpha', 'settings'] as const;
+  const initialTab = tabValues.includes(tabParam as typeof tabValues[number]) ? (tabParam as typeof tabValues[number]) : 'performance';
   const [wallets, setWallets] = useState<FTWallet[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
   const [loading, setLoading] = useState(true);
@@ -321,7 +324,7 @@ export default function TradingStrategiesPage() {
   const [lastAutoSync, setLastAutoSync] = useState<Date | null>(null);
   const [sortField, setSortField] = useState<SortField>('pnl_pct');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [activeTab, setActiveTab] = useState<'performance' | 'compare' | 'charts' | 'live' | 'settings' | 'alpha'>(initialTab);
+  const [activeTab, setActiveTab] = useState<typeof tabValues[number]>(initialTab);
   const [compareSortField, setCompareSortField] = useState<CompareSortField>('pnl');
   const [compareSortDir, setCompareSortDir] = useState<SortDir>('desc');
   const [ltStrategyFtIds, setLtStrategyFtIds] = useState<Set<string>>(new Set());
@@ -345,6 +348,29 @@ export default function TradingStrategiesPage() {
   const [showLtInTable, setShowLtInTable] = useState(true);
   const [tableFilter, setTableFilter] = useState<'all' | 'ft' | 'lt'>('all');
   const [showPaused, setShowPaused] = useState(false);
+  const [ltOrders, setLtOrders] = useState<Array<{
+    lt_order_id: string; strategy_id: string; order_id: string; market_title: string | null; market_slug: string | null;
+    token_label: string | null; status: string; outcome: string | null; signal_price: number | null; signal_size_usd: number | null;
+    executed_price: number | null; executed_size_usd: number | null; shares_bought: number | null;
+    order_placed_at: string; fully_filled_at: string | null; rejection_reason: string | null; pnl: number | null; created_at: string;
+  }>>([]);
+  const [ltOrdersLoading, setLtOrdersLoading] = useState(false);
+  const [ltOrdersError, setLtOrdersError] = useState<string | null>(null);
+
+  const fetchLtOrders = useCallback(async () => {
+    setLtOrdersLoading(true);
+    setLtOrdersError(null);
+    try {
+      const res = await fetch('/api/lt/orders?limit=200', { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load orders');
+      setLtOrders(data.orders || []);
+    } catch (e: unknown) {
+      setLtOrdersError(e instanceof Error ? e.message : 'Failed to load');
+    } finally {
+      setLtOrdersLoading(false);
+    }
+  }, []);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -635,8 +661,13 @@ export default function TradingStrategiesPage() {
 
   // Sync initial tab from URL
   useEffect(() => {
-    if (tabParam) setActiveTab(tabParam as 'performance' | 'compare' | 'charts' | 'live' | 'settings' | 'alpha');
+    if (tabParam && tabValues.includes(tabParam as typeof tabValues[number])) setActiveTab(tabParam as typeof tabValues[number]);
   }, [tabParam]);
+
+  // Fetch LT orders when LT Trades tab is selected
+  useEffect(() => {
+    if (activeTab === 'lt-trades') fetchLtOrders();
+  }, [activeTab, fetchLtOrders]);
 
   // Auto-sync every 30 seconds
   useEffect(() => {
@@ -985,7 +1016,7 @@ export default function TradingStrategiesPage() {
       )}
 
       {/* Tabs: Performance | Compare Strategies | Live | Alpha AI | Settings */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'performance' | 'compare' | 'charts' | 'live' | 'settings' | 'alpha')}>
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof tabValues[number])}>
         <TabsList className="mb-4">
           <TabsTrigger value="performance" className="flex items-center gap-2">
             <BarChart3 className="h-4 w-4" />
@@ -1002,6 +1033,10 @@ export default function TradingStrategiesPage() {
           <TabsTrigger value="live" className="flex items-center gap-2">
             <Activity className="h-4 w-4" />
             Live
+          </TabsTrigger>
+          <TabsTrigger value="lt-trades" className="flex items-center gap-2">
+            <ListOrdered className="h-4 w-4" />
+            LT Trades
           </TabsTrigger>
           <TabsTrigger value="alpha" className="flex items-center gap-2">
             <Brain className="h-4 w-4" />
@@ -1574,6 +1609,84 @@ export default function TradingStrategiesPage() {
                   </ul>
                 )}
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="lt-trades" className="mt-0">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ListOrdered className="h-5 w-5" />
+                  LT Trades
+                </CardTitle>
+                <CardDescription>
+                  Recent live orders across all LT strategies. Click a strategy to open its detail page.
+                </CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={fetchLtOrders} disabled={ltOrdersLoading}>
+                <RefreshCw className={`h-4 w-4 mr-1 ${ltOrdersLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {ltOrdersError && (
+                <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  {ltOrdersError}
+                </div>
+              )}
+              {ltOrdersLoading && ltOrders.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-8 text-center">Loading orders…</p>
+              ) : ltOrders.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-8 text-center">No LT orders yet.</p>
+              ) : (
+                <div className="overflow-x-auto -mx-2">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-muted">
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Strategy</th>
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Market</th>
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Status</th>
+                        <th className="text-right py-2 px-2 font-medium text-muted-foreground">Size</th>
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Timestamp</th>
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Outcome</th>
+                        <th className="text-left py-2 px-2 font-medium text-muted-foreground">Rejection reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ltOrders.map((o) => (
+                        <tr key={o.lt_order_id} className="border-b border-muted/50 hover:bg-muted/30">
+                          <td className="py-2 px-2">
+                            <Link href={`/lt/${o.strategy_id}`} className="text-primary hover:underline font-medium">
+                              {o.strategy_id}
+                            </Link>
+                          </td>
+                          <td className="py-2 px-2 max-w-[200px] truncate text-foreground" title={o.market_title || ''}>
+                            {o.market_title || '—'}
+                          </td>
+                          <td className="py-2 px-2">
+                            <Badge variant={o.status === 'FILLED' ? 'default' : o.status === 'REJECTED' ? 'destructive' : 'secondary'} className="text-xs">
+                              {o.status}
+                            </Badge>
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono">
+                            ${Number(o.executed_size_usd ?? o.signal_size_usd ?? 0).toFixed(2)}
+                          </td>
+                          <td className="py-2 px-2 text-muted-foreground whitespace-nowrap">
+                            {o.order_placed_at ? new Date(o.order_placed_at).toLocaleString() : '—'}
+                          </td>
+                          <td className="py-2 px-2 text-foreground">{o.outcome ?? '—'}</td>
+                          <td className="py-2 px-2 max-w-[220px] truncate text-muted-foreground" title={o.rejection_reason || ''}>
+                            {o.rejection_reason ?? '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
